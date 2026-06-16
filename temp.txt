@@ -1,0 +1,41 @@
+Implemented and documented v1.3.
+
+  Open the updated dashboard here:
+
+  http://127.0.0.1:8766/
+
+  Running v1.3 server PID: 4704
+
+  What changed:
+
+  - Added a visible Manual tab.
+  - Added built-in user manual content covering:
+      - purpose of the tool
+      - recommended first scan: C:\Users
+      - how to use scan/results/process/history/exit
+      - common use cases
+      - expanded do’s and don’ts from windows\temp.txt
+      - cleanup workflow
+      - Unity, Blender/3D, and developer folder notes
+      - process review caution
+      - report privacy reminder
+      - final safety rule
+
+  - Opening the Manual tab updates the action alert panel.
+  - Updated app/docs metadata to 1.3.0 / 1.3.
+  - Renamed/updated requirements doc:
+    windows/Windows_Disk_Usage_Dashboard_AppRequirements_v1.3_2026-06-17.md
+
+  Verification passed:
+
+  - Python compile check.
+  - Manual tab and panel are present in generated HTML.
+  - Manual includes use guide, use cases, do/don’t sections, Unity/Blender/developer notes, privacy reminder, and
+    final safety rule.
+
+  - Generated dashboard HTML has no non-ASCII encoding artifacts.
+  - Legacy --scan-once still works.
+  - Temporary server served v1.3 manual content and shutdown endpoint worked.
+  - Safety scan found no destructive file/process APIs; only UI classList.remove('hidden').
+
+  I also shut down the older v1.2 server and started v1.3 on the same port, 8766.

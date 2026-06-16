@@ -1,0 +1,28 @@
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Generated dashboard output and private scan records
+generated_reports/
+scan_records/
+DiskUsageDashboard.html
+*_Dashboard.html
+*scan-once.html
+
+# Local logs and temporary outputs
+*.log
+temp-*.txt
+
+# Local scan/report artifacts that may contain private paths
+C_Drive_DiskUsageReport.txt
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
