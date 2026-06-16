@@ -19,8 +19,8 @@ from urllib.parse import parse_qs, urlparse
 
 sys.setrecursionlimit(10000)
 
-APP_VERSION = "1.3.0"
-DOC_VERSION = "1.3"
+APP_VERSION = "1.4.0"
+DOC_VERSION = "1.4"
 APP_DIR = Path(__file__).resolve().parent
 RECORDS_DIR = APP_DIR / "scan_records"
 REPORTS_DIR = APP_DIR / "generated_reports"
@@ -29,6 +29,34 @@ VERSION_FILE = APP_DIR / "dashboard_version.json"
 
 class ScanCancelled(Exception):
     pass
+
+
+SKIP_CATEGORY_DETAILS = {
+    "locked_or_in_use": {
+        "label": "Locked or in use",
+        "explanation": "Another app, game, editor, backup tool, or service may be using this file or folder. Close active apps and scan again if you need a more complete result.",
+    },
+    "permission_denied": {
+        "label": "Permission denied",
+        "explanation": "Windows blocked access for the current user. Run the terminal as Administrator if you need a more complete scan.",
+    },
+    "path_not_found": {
+        "label": "Path disappeared",
+        "explanation": "The path changed or disappeared while scanning. This can happen when apps create and remove temporary files.",
+    },
+    "reparse_point": {
+        "label": "Reparse point skipped",
+        "explanation": "A junction, symlink, or reparse point was skipped to avoid duplicate scans or folder loops.",
+    },
+    "duplicate_target": {
+        "label": "Already scanned target",
+        "explanation": "This directory points to a location that was already scanned, so it was skipped to avoid duplicate counting.",
+    },
+    "other": {
+        "label": "Other scan issue",
+        "explanation": "The path could not be scanned for another local filesystem reason. Review the detail message if this path matters.",
+    },
+}
 
 
 def format_size(num_bytes: int) -> str:
@@ -64,6 +92,29 @@ def is_reparse_point(entry) -> bool:
 
 def html_escape(value) -> str:
     return html.escape(str(value), quote=True)
+
+
+def classify_skip_reason(error) -> str:
+    if isinstance(error, FileNotFoundError):
+        return "path_not_found"
+    if isinstance(error, PermissionError):
+        return "permission_denied"
+
+    text = str(error).lower()
+    winerror = getattr(error, "winerror", None)
+
+    if winerror in (32, 33) or "being used by another process" in text or "sharing violation" in text:
+        return "locked_or_in_use"
+    if "access is denied" in text or "permission denied" in text or winerror == 5:
+        return "permission_denied"
+    if "cannot find" in text or "not found" in text or winerror in (2, 3):
+        return "path_not_found"
+    if "reparse" in text or "junction" in text or "symlink" in text:
+        return "reparse_point"
+    if "already scanned" in text:
+        return "duplicate_target"
+
+    return "other"
 
 
 def positive_int(value: str) -> int:
@@ -111,6 +162,8 @@ class DiskScanner:
         self.file_count = 0
         self.total_bytes = 0
         self.skipped = []
+        self.skipped_details = []
+        self.skip_categories = defaultdict(int)
         self.folder_records = []
         self.ext_stats = defaultdict(lambda: {"bytes": 0, "count": 0})
         self.top_files_heap = []
@@ -147,12 +200,22 @@ class DiskScanner:
         self.last_status = now
 
     def add_skipped(self, path: str, error):
+        category = classify_skip_reason(error)
+        category_info = SKIP_CATEGORY_DETAILS[category]
         message = f"{path} - {error}"
         self.skipped.append(message)
+        self.skipped_details.append({
+            "path": path,
+            "error": str(error),
+            "category": category,
+            "category_label": category_info["label"],
+            "explanation": category_info["explanation"],
+        })
+        self.skip_categories[category] += 1
 
         if self.args.show_skipped_live:
             print()
-            print(f"SKIPPED: {message}")
+            print(f"SKIPPED ({category_info['label']}): {message}")
 
     def add_top_file(self, size: int, path: str, modified_time: float):
         item = (size, path, modified_time)
@@ -839,14 +902,15 @@ def ensure_version_metadata():
         "documentation_version": DOC_VERSION,
         "last_updated": "2026-06-17",
         "revision_notes": (
-            "Added built-in Manual/User Guide panel with safe scan workflow, use cases, "
-            "expanded do's and don'ts, project cleanup notes, and privacy reminders."
+            "Added scan health summaries, skipped-path categories, and clearer notices "
+            "for locked, in-use, permission-limited, changed, and skipped paths."
         ),
         "affected_areas": [
             "browser_dashboard",
-            "manual_panel",
-            "user_guidance",
-            "safety_documentation",
+            "scan_health",
+            "skip_reason_classification",
+            "scan_records",
+            "dashboard_results",
             "documentation_versioning"
         ],
         "compatibility_notes": "Default run starts the browser app. Use --scan-once for legacy one-shot HTML report generation."
@@ -999,6 +1063,15 @@ def build_scan_result_payload(root, root_node, scanner: DiskScanner):
         scanner.args.max_tree_children,
         0
     )
+    category_counts = {
+        category: {
+            "count": count,
+            "label": SKIP_CATEGORY_DETAILS[category]["label"],
+            "explanation": SKIP_CATEGORY_DETAILS[category]["explanation"],
+        }
+        for category, count in sorted(scanner.skip_categories.items())
+    }
+    scan_health = build_scan_health(scanner, category_counts)
 
     return {
         "summary": {
@@ -1008,16 +1081,74 @@ def build_scan_result_payload(root, root_node, scanner: DiskScanner):
             "files_scanned": scanner.file_count,
             "skipped_count": len(scanner.skipped),
         },
+        "scan_health": scan_health,
+        "skip_categories": category_counts,
         "top_folders": top_folders,
         "file_types": file_types,
         "biggest_files": biggest_files,
         "tree_html": tree_html,
         "skipped": scanner.skipped[:1000],
+        "skipped_details": scanner.skipped_details[:1000],
         "skipped_truncated": len(scanner.skipped) > 1000,
     }
 
 
+def build_scan_health(scanner: DiskScanner, category_counts: dict):
+    skipped_count = len(scanner.skipped)
+
+    if skipped_count == 0:
+        return {
+            "level": "success",
+            "title": "Scan completed cleanly",
+            "message": "No skipped paths were recorded.",
+            "next_steps": "Review the results before deleting anything.",
+        }
+
+    if category_counts.get("locked_or_in_use", {}).get("count", 0) > 0:
+        return {
+            "level": "warning",
+            "title": "Scan completed with locked or in-use files",
+            "message": "Some files or folders could not be scanned because another app, game, editor, backup tool, or Windows service may have been using them.",
+            "next_steps": "Close heavy apps or games and scan again if those skipped paths matter. The scan still saved available results.",
+        }
+
+    if category_counts.get("permission_denied", {}).get("count", 0) > 0:
+        return {
+            "level": "warning",
+            "title": "Scan completed with permission-limited paths",
+            "message": "Windows blocked access to some paths for the current user.",
+            "next_steps": "Run PowerShell or Terminal as Administrator if you need a more complete full-drive scan.",
+        }
+
+    if category_counts.get("path_not_found", {}).get("count", 0) > 0:
+        return {
+            "level": "info",
+            "title": "Scan completed while some paths changed",
+            "message": "Some temporary paths disappeared or changed while the scan was running.",
+            "next_steps": "This is common when apps are active. Re-scan when fewer apps are running if you need cleaner results.",
+        }
+
+    if category_counts.get("reparse_point", {}).get("count", 0) > 0:
+        return {
+            "level": "info",
+            "title": "Scan completed with reparse points skipped",
+            "message": "Some junctions, symlinks, or reparse points were skipped to avoid loops and duplicate counting.",
+            "next_steps": "Avoid enabling reparse-point scanning unless you specifically need it.",
+        }
+
+    return {
+        "level": "info",
+        "title": "Scan completed with skipped paths",
+        "message": "Some paths could not be scanned. Review skipped path details for exact reasons.",
+        "next_steps": "If a skipped path matters, close active apps or run as Administrator and scan again.",
+    }
+
+
 def record_summary(record):
+    result = record.get("result", {})
+    summary = result.get("summary", {})
+    health = result.get("scan_health", {})
+
     return {
         "scan_id": record.get("scan_id"),
         "scan_type": record.get("scan_type"),
@@ -1026,10 +1157,11 @@ def record_summary(record):
         "completed_at": record.get("completed_at"),
         "duration_seconds": record.get("duration_seconds"),
         "status": record.get("status"),
-        "total_size": record.get("result", {}).get("summary", {}).get("total_size", "0 B"),
-        "folders_scanned": record.get("result", {}).get("summary", {}).get("folders_scanned", 0),
-        "files_scanned": record.get("result", {}).get("summary", {}).get("files_scanned", 0),
-        "skipped_count": record.get("result", {}).get("summary", {}).get("skipped_count", 0),
+        "total_size": summary.get("total_size", "0 B"),
+        "folders_scanned": summary.get("folders_scanned", 0),
+        "files_scanned": summary.get("files_scanned", 0),
+        "skipped_count": summary.get("skipped_count", 0),
+        "scan_health": health.get("title"),
         "report_path": record.get("report_path"),
         "error": record.get("error"),
     }
@@ -1516,8 +1648,21 @@ summary {{ cursor: pointer; padding: 6px; }}
 .manual-section ul, .manual-section ol {{ margin: 8px 0 0 22px; padding: 0; }}
 .manual-section li {{ margin: 6px 0; line-height: 1.45; }}
 .manual-section.full {{ grid-column: 1 / -1; }}
+.health-panel {{
+    border: 1px solid var(--line);
+    border-left-width: 5px;
+    border-radius: 8px;
+    padding: 14px;
+    background: #fff;
+}}
+.health-panel.success {{ border-left-color: var(--ok); background: #f0faf5; }}
+.health-panel.warning {{ border-left-color: var(--warn); background: #fff8e6; }}
+.health-panel.error {{ border-left-color: var(--bad); background: #fff1f0; }}
+.health-panel.info {{ border-left-color: var(--accent); background: #f3f8ff; }}
+.category-list {{ display: grid; grid-template-columns: repeat(2, minmax(240px, 1fr)); gap: 10px; margin-top: 10px; }}
+.category-item {{ border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: #fff; }}
 @media (max-width: 980px) {{
-    .layout, .form-grid, .grid, .manual-grid {{ grid-template-columns: 1fr; }}
+    .layout, .form-grid, .grid, .manual-grid, .category-list {{ grid-template-columns: 1fr; }}
     .manual-section.full {{ grid-column: auto; }}
     header {{ display: block; }}
     main {{ padding: 14px; }}
@@ -1610,6 +1755,10 @@ summary {{ cursor: pointer; padding: 6px; }}
         <section class="section">
             <h2>Scan Results</h2>
             <div id="resultSummary" class="grid"></div>
+        </section>
+        <section class="section">
+            <h2>Scan Health</h2>
+            <div id="scanHealth" class="health-panel info">No scan health details yet.</div>
         </section>
         <section class="section"><h2>Top Biggest Folders</h2><input id="folderFilter" placeholder="Search folders..."><div class="table-wrap"><table><thead><tr><th>#</th><th>Size</th><th>Files</th><th>Path</th></tr></thead><tbody id="topFolders"></tbody></table></div></section>
         <section class="section"><h2>File Types By Total Size</h2><input id="typeFilter" placeholder="Search file types..."><div class="table-wrap"><table><thead><tr><th>Extension</th><th>Total Size</th><th>Files</th></tr></thead><tbody id="fileTypes"></tbody></table></div></section>
@@ -1854,6 +2003,28 @@ function metric(label, value) {{
     return `<div class="metric"><div class="label">${{esc(label)}}</div><div class="value">${{esc(value)}}</div></div>`;
 }}
 
+function renderScanHealth(result) {{
+    const health = result.scan_health || {{
+        level: 'info',
+        title: 'Scan health unavailable',
+        message: 'This record was created before scan health summaries were added.',
+        next_steps: 'Run a new scan to see detailed health information.'
+    }};
+    const categories = result.skip_categories || {{}};
+    const categoryRows = Object.values(categories).map(item =>
+        `<div class="category-item"><strong>${{esc(item.label)}}: ${{esc(item.count)}}</strong><p>${{esc(item.explanation)}}</p></div>`
+    ).join('');
+    const categoryHtml = categoryRows ? `<div class="category-list">${{categoryRows}}</div>` : '<p class="muted">No skipped-path categories recorded.</p>';
+
+    $('scanHealth').className = 'health-panel ' + (health.level || 'info');
+    $('scanHealth').innerHTML = `
+        <h3>${{esc(health.title)}}</h3>
+        <p>${{esc(health.message)}}</p>
+        <p><strong>What to do next:</strong> ${{esc(health.next_steps)}}</p>
+        ${{categoryHtml}}
+    `;
+}}
+
 function renderResult(record) {{
     state.currentRecord = record;
     if (!record || !record.result) return;
@@ -1865,6 +2036,7 @@ function renderResult(record) {{
         metric('Skipped', summary.skipped_count),
         metric('Status', record.status)
     ].join('');
+    renderScanHealth(record.result);
     $('topFolders').innerHTML = record.result.top_folders.map((row, index) =>
         `<tr><td>${{index + 1}}</td><td>${{esc(row.size)}}</td><td>${{esc(row.file_count)}}</td><td><code>${{esc(row.path)}}</code></td></tr>`
     ).join('') || '<tr><td colspan="4">No folder data.</td></tr>';
@@ -1875,8 +2047,12 @@ function renderResult(record) {{
         `<tr><td>${{index + 1}}</td><td>${{esc(row.size)}}</td><td>${{esc(row.modified)}}</td><td><code>${{esc(row.path)}}</code></td></tr>`
     ).join('') || '<tr><td colspan="4">No file data.</td></tr>';
     $('treeView').innerHTML = record.result.tree_html || '<p class="muted">No tree data.</p>';
-    $('skippedPaths').innerHTML = record.result.skipped.length
-        ? `<ul>${{record.result.skipped.map(item => `<li><code>${{esc(item)}}</code></li>`).join('')}}</ul>`
+    const skippedDetails = record.result.skipped_details || [];
+    const skippedFallback = record.result.skipped || [];
+    $('skippedPaths').innerHTML = skippedDetails.length
+        ? `<ul>${{skippedDetails.map(item => `<li><strong>${{esc(item.category_label || 'Skipped')}}</strong><br><code>${{esc(item.path)}}</code><br><span class="muted">${{esc(item.explanation || item.error)}}</span></li>`).join('')}}</ul>`
+        : skippedFallback.length
+            ? `<ul>${{skippedFallback.map(item => `<li><code>${{esc(item)}}</code></li>`).join('')}}</ul>`
         : '<p class="muted">No skipped paths recorded.</p>';
 }}
 
@@ -1960,6 +2136,8 @@ async function pollStatus() {{
                         `Path: ${{status.root}}`,
                         `Files: ${{status.result.summary.files_scanned}}`,
                         `Skipped paths: ${{status.result.summary.skipped_count}}`,
+                        `Health: ${{status.result.scan_health?.title || 'Unavailable'}}`,
+                        status.result.scan_health?.message || 'Review scan health details in Results.',
                         status.error ? `Error: ${{status.error}}` : 'A local scan record was saved.'
                     ]);
                 }}
@@ -2158,7 +2336,7 @@ loadInitial();
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
-    server_version = "DiskUsageDashboard/1.3"
+    server_version = "DiskUsageDashboard/1.4"
 
     def log_message(self, format, *args):
         return

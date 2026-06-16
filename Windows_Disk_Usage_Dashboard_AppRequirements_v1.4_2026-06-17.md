@@ -2,12 +2,12 @@
 
 - Document: App Requirements
 - Client/Project: Windows Disk Usage Dashboard
-- Version: v1.3
+- Version: v1.4
 - Date: 2026-06-17
 - Prepared by: Codex / Project Team
 - Prepared for: Windows users, support users, and technical reviewers
 - Status: Revised
-- Revision notes: Added planned and implemented requirements for a built-in Manual/User Guide panel with use cases, safe workflow, and expanded do's/don'ts based on `windows/temp.txt`.
+- Revision notes: Added scan health summaries and skipped-path reason categories so users understand when scans are affected by locked files, running apps, permissions, changing paths, or reparse points.
 
 ## Revision History
 
@@ -17,6 +17,7 @@
 | v1.1 | 2026-06-17 | Revised | Implemented the standard-library localhost dashboard and updated the requirements to match delivered behavior. |
 | v1.2 | 2026-06-17 | Revised | Implemented shutdown and action-alert requirements. |
 | v1.3 | 2026-06-17 | Revised | Added built-in Manual/User Guide requirements and implementation status. |
+| v1.4 | 2026-06-17 | Revised | Added scan health summaries and skipped-path reason categories. |
 
 ## Implementation Status
 
@@ -52,6 +53,14 @@ Implemented in v1.3:
 - Base the expanded safety guidance on `windows/temp.txt`, with readable apostrophes and cleaned wording.
 - Update the action alert panel when the manual is opened.
 - Update version metadata after implementation.
+
+Implemented in v1.4:
+
+- Add a Scan Health panel to results.
+- Classify skipped paths as locked/in-use, permission denied, path disappeared, reparse point skipped, already scanned target, or other.
+- Show user-friendly explanations when apps, games, editors, backup tools, or permissions affect scan completeness.
+- Store scan health and skip categories in scan records.
+- Include scan health in completion alerts.
 
 ## 1. Purpose
 
@@ -91,6 +100,7 @@ The app should reduce guesswork during disk cleanup and process review. It shoul
 - Formal app exit button and local server shutdown flow.
 - Action alert panel for user actions, warnings, and errors.
 - Built-in Manual/User Guide panel with safe usage guidance and use cases.
+- Scan Health panel with skipped-path reason summaries and next steps.
 - Local documentation and version metadata updates when behavior changes.
 
 ### 4.2 Excluded
@@ -181,6 +191,8 @@ The scan results screen must show:
 - Large folder tree.
 - Skipped and access denied paths.
 - Error summary if any.
+- Scan Health summary with plain-language status and next steps.
+- Skipped-path categories with counts and explanations.
 
 Tables must support search and sorting.
 
@@ -358,6 +370,14 @@ If a scan is running:
 4. Action alert panel explains that the manual contains safe usage guidance.
 5. User can read scan workflow, use cases, do's/don'ts, project cleanup notes, and privacy reminders.
 
+### 8.6 Scan Health Review Flow
+
+1. User runs a scan.
+2. Dashboard stores skipped paths with categorized reasons.
+3. User opens Results.
+4. Scan Health explains whether the scan completed cleanly or was affected by locked files, running apps, permissions, changing paths, or reparse points.
+5. User sees next steps, such as closing games/editors and scanning again, or running as Administrator for permission-limited paths.
+
 ## 9. Safety Notice Requirements
 
 Before the user starts any scan, the browser UI must show a clear "Before You Scan" notice.
@@ -419,6 +439,9 @@ Each scan record must include:
 - File count.
 - Skipped count.
 - Status: completed, cancelled, or failed.
+- Scan health title, message, severity, and next steps.
+- Skipped-path category counts.
+- Structured skipped-path details where available.
 - Report path or record path.
 - Error summary.
 
@@ -599,7 +622,30 @@ Required manual sections:
 - Report privacy reminder.
 - Final safety rule.
 
-## 18. Success States
+## 18. Scan Health Requirements
+
+The dashboard must explain when a scan was incomplete or affected by local conditions.
+
+Scan Health must classify skipped paths into these categories:
+
+- Locked or in use: another app, game, editor, backup tool, or service may be using the file or folder.
+- Permission denied: Windows blocked access for the current user.
+- Path disappeared: the path changed or disappeared during scanning.
+- Reparse point skipped: a junction, symlink, or reparse point was skipped to avoid loops or duplicate counts.
+- Already scanned target: a directory target was already scanned.
+- Other scan issue: a filesystem issue that does not match the above categories.
+
+Scan Health must show:
+
+- Health level: success, info, warning, or error.
+- Health title.
+- Plain-language message.
+- Recommended next steps.
+- Category counts and explanations.
+
+Scan Health must not claim that a game or app definitely caused the issue. It should say a file or folder may be locked or in use by another app and suggest closing heavy apps before rescanning.
+
+## 19. Success States
 
 - Browser dashboard opens after running the tool.
 - User can start a drive scan from the browser.
@@ -618,8 +664,11 @@ Required manual sections:
 - Manual/User Guide tab opens successfully.
 - Manual can be read before any scan has run.
 - Opening manual updates the action alert panel.
+- Scan Health appears in Results after a scan.
+- Completion alerts include scan health summary.
+- Scan records include scan health details.
 
-## 19. Error, Empty, And Loading States
+## 20. Error, Empty, And Loading States
 
 The app must handle:
 
@@ -641,8 +690,9 @@ The app must handle:
 - Alert panel display for user-facing errors.
 - Manual is available even when scan history is empty.
 - If manual content is ever loaded from a file, missing content shows a readable fallback error.
+- Older scan records without scan health still open with a fallback message.
 
-## 20. Edge Cases
+## 21. Edge Cases
 
 - Full `C:\` scan takes several minutes.
 - Browser is closed while scan continues.
@@ -662,8 +712,12 @@ The app must handle:
 - User opens manual before any scan exists.
 - Manual content is long and must stay readable.
 - Source guidance contains encoding artifacts.
+- A game or editor is running and locks some files during scan.
+- Temporary files disappear during scan.
+- Permission-denied and locked-file issues happen in the same scan.
+- Old scan records lack scan health fields.
 
-## 21. Testing Checklist
+## 22. Testing Checklist
 
 - Start the tool and verify the browser UI opens.
 - Verify local server binds to localhost only.
@@ -700,8 +754,15 @@ The app must handle:
 - Confirm manual includes process review caution.
 - Confirm manual includes report privacy reminders and final safety rule.
 - Confirm manual text does not include visible encoding artifacts from `temp.txt`.
+- Confirm scanner classifies locked/in-use style errors.
+- Confirm scanner classifies permission denied errors.
+- Confirm scanner classifies missing path errors.
+- Confirm scanner classifies reparse point skips.
+- Confirm Scan Health panel appears in Results.
+- Confirm completion alert includes scan health title/message.
+- Confirm old history records without scan health still open.
 
-## 22. Final Acceptance Criteria
+## 23. Final Acceptance Criteria
 
 - [ ] User can run one command and interact through a browser UI.
 - [ ] User can select a drive to scan.
@@ -745,8 +806,16 @@ The app must handle:
 - [ ] Manual content is readable, structured, and local-only.
 - [ ] Opening the manual updates the action alert panel.
 - [ ] Existing scan, process, history, and exit behavior remains unchanged.
+- [ ] Results include a Scan Health panel.
+- [ ] Skipped paths are categorized by likely reason.
+- [ ] Scan Health explains when files may be locked or in use by another app/game/editor/service.
+- [ ] Scan Health explains permission-limited paths and Administrator next steps.
+- [ ] Scan Health explains changing temporary paths and reparse-point skips.
+- [ ] Scan records store scan health and skip-category details.
+- [ ] Completion alerts include scan health information.
+- [ ] Older scan records still open safely.
 
-## 23. Open Questions Before Implementation
+## 24. Open Questions Before Implementation
 
 - Should process inspection include file hashes in v1, or should hashes be deferred?
 - Should `.docx` output remain required, or is Markdown plus generated HTML documentation acceptable for v1?
@@ -754,7 +823,7 @@ The app must handle:
 - Should the final shutdown page try to close the browser tab, or only show "You may close this tab"? Current assumption: show the message only, because browser tab closing is restricted by browser security rules.
 - Should future versions load the manual from an editable Markdown file instead of embedding it in the dashboard HTML? Current assumption: embed in v1.3 for reliability and no extra file dependency.
 
-## 24. Recommended Implementation Phases
+## 25. Recommended Implementation Phases
 
 ### Phase 1: Local Browser App Foundation
 
@@ -804,4 +873,12 @@ The app must handle:
 - Add alert-panel update on manual open.
 - Update version metadata.
 - Verify existing dashboard behavior remains unchanged.
+
+### Phase 7: Scan Health And Blocked-Reason Notices
+
+- Add skipped-path categorization.
+- Add scan health summary to scan payloads and records.
+- Add Scan Health panel to Results.
+- Add scan health detail to completion alerts.
+- Update README and version metadata.
 

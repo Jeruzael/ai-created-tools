@@ -1,13 +1,14 @@
 {
-  "app_version": "1.3.0",
-  "documentation_version": "1.3",
+  "app_version": "1.4.0",
+  "documentation_version": "1.4",
   "last_updated": "2026-06-17",
-  "revision_notes": "Added built-in Manual/User Guide panel with safe scan workflow, use cases, expanded do's and don'ts, project cleanup notes, and privacy reminders.",
+  "revision_notes": "Added scan health summaries, skipped-path categories, and clearer notices for locked, in-use, permission-limited, changed, and skipped paths.",
   "affected_areas": [
     "browser_dashboard",
-    "manual_panel",
-    "user_guidance",
-    "safety_documentation",
+    "scan_health",
+    "skip_reason_classification",
+    "scan_records",
+    "dashboard_results",
     "documentation_versioning"
   ],
   "compatibility_notes": "Default run starts the browser app. Use --scan-once for legacy one-shot HTML report generation."

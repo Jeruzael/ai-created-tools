@@ -1,41 +1,39 @@
-Implemented and documented v1.3.
+Implemented the scan-block/stop explanation upgrade as v1.4.
 
   Open the updated dashboard here:
 
-  http://127.0.0.1:8766/
+  http://127.0.0.1:8765/
 
-  Running v1.3 server PID: 4704
+  Running v1.4 server PID: 5752
 
   What changed:
 
-  - Added a visible Manual tab.
-  - Added built-in user manual content covering:
-      - purpose of the tool
-      - recommended first scan: C:\Users
-      - how to use scan/results/process/history/exit
-      - common use cases
-      - expanded do’s and don’ts from windows\temp.txt
-      - cleanup workflow
-      - Unity, Blender/3D, and developer folder notes
-      - process review caution
-      - report privacy reminder
-      - final safety rule
+  - Added Scan Health panel in Results.
+  - Skipped paths are now categorized as:
+      - locked or in use
+      - permission denied
+      - path disappeared
+      - reparse point skipped
+      - already scanned target
+      - other scan issue
 
-  - Opening the Manual tab updates the action alert panel.
-  - Updated app/docs metadata to 1.3.0 / 1.3.
-  - Renamed/updated requirements doc:
-    windows/Windows_Disk_Usage_Dashboard_AppRequirements_v1.3_2026-06-17.md
+  - Scan records now store scan_health, skip_categories, and structured skipped_details.
+  - Completion alerts now include Scan Health details.
+  - If a game/app/editor causes files to be locked or changing, the dashboard now explains that files may be in use
+    and suggests closing heavy apps/games before rescanning.
+
+  - Updated version metadata to 1.4.0.
+  - Updated requirements doc to windows/Windows_Disk_Usage_Dashboard_AppRequirements_v1.4_2026-06-17.md.
+  - Updated both README files with Scan Health notes.
 
   Verification passed:
 
   - Python compile check.
-  - Manual tab and panel are present in generated HTML.
-  - Manual includes use guide, use cases, do/don’t sections, Unity/Blender/developer notes, privacy reminder, and
-    final safety rule.
-
-  - Generated dashboard HTML has no non-ASCII encoding artifacts.
+  - Skip reason classification checks.
+  - Generated dashboard contains Scan Health UI.
+  - Browser API scan creates scan_health, skip_categories, and skipped_details.
   - Legacy --scan-once still works.
-  - Temporary server served v1.3 manual content and shutdown endpoint worked.
   - Safety scan found no destructive file/process APIs; only UI classList.remove('hidden').
 
-  I also shut down the older v1.2 server and started v1.3 on the same port, 8766.
+  So yes: after this update, if scanning is affected by a running game/app, the user gets a clearer reason and next
+  step instead of only raw skipped paths.

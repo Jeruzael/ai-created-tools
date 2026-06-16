@@ -1,6 +1,6 @@
 # Windows Disk Usage Dashboard
 
-Version: `1.3.0`
+Version: `1.4.0`
 
 This folder contains a local Windows browser dashboard for disk usage review, scan history, process review, and safe cleanup guidance.
 
@@ -48,11 +48,13 @@ This is usually faster and safer than scanning the full `C:\` drive.
 - Large files are not automatically safe to delete.
 - Unknown processes are not automatically malware.
 - Keep generated reports private because they can contain local paths and filenames.
+- Scan Health explains if a scan was affected by locked files, running apps, permissions, changing paths, or skipped reparse points.
 
 ## Main Tabs
 
 - `Scan`: choose a drive or folder and start a scan.
 - `Results`: review biggest folders, file types, biggest files, tree view, and skipped paths.
+- `Scan Health`: inside Results, explains whether any skipped paths may have been caused by locked files, running apps, permissions, changing paths, or reparse points.
 - `Processes`: review running programs and local technical indicators.
 - `History`: open previous scan records.
 - `Manual`: read safe usage guidance, use cases, cleanup workflow, and do's/don'ts.
@@ -84,10 +86,15 @@ Use `--force` only when you intentionally want to overwrite an existing output f
 - Scan records are stored in `scan_records/`.
 - These generated folders are ignored by git because they may contain private local paths.
 
+## Scan Health
+
+If a game, editor, backup tool, or app is active while scanning, some files may be locked or changing. The scan should continue where possible and show a Scan Health message after completion.
+
+If Scan Health reports locked or in-use files, close heavy apps or games and scan again if those skipped paths matter.
+
 ## Verify
 
 ```powershell
 python -m py_compile .\DiskUsageHtmlReport.py
 python .\DiskUsageHtmlReport.py --help
 ```
-
