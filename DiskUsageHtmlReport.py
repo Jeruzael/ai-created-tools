@@ -19,8 +19,8 @@ from urllib.parse import parse_qs, urlparse
 
 sys.setrecursionlimit(10000)
 
-APP_VERSION = "1.6.0"
-DOC_VERSION = "1.6"
+APP_VERSION = "1.7.0"
+DOC_VERSION = "1.7"
 APP_DIR = Path(__file__).resolve().parent
 RECORDS_DIR = APP_DIR / "scan_records"
 REPORTS_DIR = APP_DIR / "generated_reports"
@@ -346,12 +346,14 @@ def render_top_folders_table(rows):
     body = []
 
     for index, row in enumerate(rows, 1):
+        directory = html_escape(row["path"])
         body.append(
             "<tr>"
             f"<td>{index}</td>"
             f"<td data-sort='{row['size']}'>{format_size(row['size'])}</td>"
             f"<td data-sort='{row['file_count']}'>{row['file_count']:,}</td>"
             f"<td><code>{html_escape(row['path'])}</code></td>"
+            f"<td><button class='copy-button' data-copy-path='{directory}' data-copy-label='folder directory' onclick='copyPath(this)'>Copy directory</button></td>"
             "</tr>"
         )
 
@@ -389,6 +391,7 @@ def render_biggest_files_table(rows):
 
     for index, (size, path, modified_time) in enumerate(rows, 1):
         modified = dt.datetime.fromtimestamp(modified_time).strftime("%Y-%m-%d %H:%M")
+        directory = html_escape(os.path.dirname(path) or path)
 
         body.append(
             "<tr>"
@@ -396,6 +399,7 @@ def render_biggest_files_table(rows):
             f"<td data-sort='{size}'>{format_size(size)}</td>"
             f"<td data-sort='{int(modified_time)}'>{modified}</td>"
             f"<td><code>{html_escape(path)}</code></td>"
+            f"<td><button class='copy-button' data-copy-path='{directory}' data-copy-label='file directory' onclick='copyPath(this)'>Copy directory</button></td>"
             "</tr>"
         )
 
@@ -601,6 +605,21 @@ input[type="search"]:focus {
     border-radius: 14px;
 }
 
+.copy-button {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #0b1220;
+    color: var(--text);
+    padding: 7px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.copy-button:hover {
+    border-color: var(--accent);
+    color: #f9fafb;
+}
+
 table {
     width: 100%;
     border-collapse: collapse;
@@ -746,6 +765,7 @@ summary:hover,
                         <th data-sort="number">Size</th>
                         <th data-sort="number">Files</th>
                         <th data-sort="text">Path</th>
+                        <th>Copy</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -792,6 +812,7 @@ summary:hover,
                         <th data-sort="number">Size</th>
                         <th data-sort="number">Modified</th>
                         <th data-sort="text">Path</th>
+                        <th>Copy</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -829,6 +850,36 @@ function filterRows(inputId, tableId) {
         const text = row.innerText.toLowerCase();
         row.style.display = text.includes(query) ? '' : 'none';
     });
+}
+
+async function copyPath(button) {
+    const path = button.dataset.copyPath || '';
+    const label = button.dataset.copyLabel || 'directory';
+
+    if (!path) {
+        alert('No directory path is available to copy.');
+        return;
+    }
+
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(path);
+        } else {
+            const textarea = document.createElement('textarea');
+            textarea.value = path;
+            textarea.setAttribute('readonly', '');
+            textarea.style.position = 'fixed';
+            textarea.style.left = '-9999px';
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            textarea.remove();
+        }
+        button.textContent = 'Copied';
+        window.setTimeout(() => { button.textContent = 'Copy directory'; }, 1400);
+    } catch (error) {
+        alert('Could not copy ' + label + ': ' + error.message);
+    }
 }
 
 document.querySelectorAll('th[data-sort]').forEach(th => {
@@ -902,13 +953,13 @@ def ensure_version_metadata():
         "documentation_version": DOC_VERSION,
         "last_updated": "2026-06-17",
         "revision_notes": (
-            "Added scrollable, draggable process review panes so users can resize "
-            "the running-program list and technical detail panel."
+            "Added Results copy buttons so users can copy folder directories "
+            "from largest-folder and biggest-file rows."
         ),
         "affected_areas": [
             "browser_dashboard",
-            "process_review",
-            "process_detail_panel",
+            "dashboard_results",
+            "clipboard_actions",
             "documentation_versioning"
         ],
         "compatibility_notes": "Default run starts the browser app. Use --scan-once for legacy one-shot HTML report generation."
@@ -1578,6 +1629,7 @@ button {{
 button.primary {{ background: var(--accent); border-color: var(--accent); color: #fff; }}
 button.danger {{ color: var(--bad); }}
 button:disabled {{ opacity: .55; cursor: not-allowed; }}
+.copy-button {{ white-space: nowrap; }}
 input, select {{
     width: 100%;
     padding: 9px 10px;
@@ -1848,9 +1900,9 @@ summary {{ cursor: pointer; padding: 6px; }}
             <h2>Scan Health</h2>
             <div id="scanHealth" class="health-panel info">No scan health details yet.</div>
         </section>
-        <section class="section"><h2>Top Biggest Folders</h2><input id="folderFilter" placeholder="Search folders..."><div class="table-wrap"><table><thead><tr><th>#</th><th>Size</th><th>Files</th><th>Path</th></tr></thead><tbody id="topFolders"></tbody></table></div></section>
+        <section class="section"><h2>Top Biggest Folders</h2><input id="folderFilter" placeholder="Search folders..."><div class="table-wrap"><table><thead><tr><th>#</th><th>Size</th><th>Files</th><th>Path</th><th>Copy</th></tr></thead><tbody id="topFolders"></tbody></table></div></section>
         <section class="section"><h2>File Types By Total Size</h2><input id="typeFilter" placeholder="Search file types..."><div class="table-wrap"><table><thead><tr><th>Extension</th><th>Total Size</th><th>Files</th></tr></thead><tbody id="fileTypes"></tbody></table></div></section>
-        <section class="section"><h2>Biggest Files</h2><input id="fileFilter" placeholder="Search files..."><div class="table-wrap"><table><thead><tr><th>#</th><th>Size</th><th>Modified</th><th>Path</th></tr></thead><tbody id="biggestFiles"></tbody></table></div></section>
+        <section class="section"><h2>Biggest Files</h2><input id="fileFilter" placeholder="Search files..."><div class="table-wrap"><table><thead><tr><th>#</th><th>Size</th><th>Modified</th><th>Path</th><th>Copy</th></tr></thead><tbody id="biggestFiles"></tbody></table></div></section>
         <section class="section"><h2>Large Folder Tree</h2><div id="treeView" class="tree"></div></section>
         <section class="section"><h2>Skipped / Access Denied Paths</h2><div id="skippedPaths"></div></section>
     </section>
@@ -2067,6 +2119,61 @@ const state = {{ currentRecord: null, processes: [], lastScanStatusKey: null, is
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));
 
+function directoryFromPath(path) {{
+    let value = String(path || '').replace(/[\\\\/]+$/, '');
+    const slashIndex = Math.max(value.lastIndexOf('\\\\'), value.lastIndexOf('/'));
+    if (slashIndex <= 0) return value || path || '';
+    if (/^[A-Za-z]:/.test(value) && slashIndex === 2) return value.slice(0, 3);
+    return value.slice(0, slashIndex);
+}}
+
+async function writeClipboardText(text) {{
+    if (navigator.clipboard && window.isSecureContext) {{
+        await navigator.clipboard.writeText(text);
+        return;
+    }}
+
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    const copied = document.execCommand('copy');
+    textarea.remove();
+
+    if (!copied) throw new Error('Browser clipboard command was not available.');
+}}
+
+async function copyDirectoryFromButton(button) {{
+    const path = button.dataset.copyPath || '';
+    const label = button.dataset.copyLabel || 'directory';
+
+    if (!path) {{
+        showActionAlert('warning', 'Copy Directory Unavailable', 'No directory path is available for this result row.', [
+            'Try selecting another row with a visible path.'
+        ]);
+        return;
+    }}
+
+    try {{
+        await writeClipboardText(path);
+        const originalText = button.textContent;
+        button.textContent = 'Copied';
+        window.setTimeout(() => {{ button.textContent = originalText; }}, 1400);
+        showActionAlert('success', 'Directory Copied', 'The directory path was copied to the clipboard.', [
+            `Source: ${{label}}`,
+            `Path: ${{path}}`
+        ]);
+    }} catch (error) {{
+        showActionAlert('error', 'Copy Directory Failed', error.message, [
+            'Your browser may have blocked clipboard access.',
+            `Path: ${{path}}`
+        ]);
+    }}
+}}
+
 async function api(path, options = {{}}) {{
     const response = await fetch(path, {{
         ...options,
@@ -2227,14 +2334,14 @@ function renderResult(record) {{
     ].join('');
     renderScanHealth(record.result);
     $('topFolders').innerHTML = record.result.top_folders.map((row, index) =>
-        `<tr><td>${{index + 1}}</td><td>${{esc(row.size)}}</td><td>${{esc(row.file_count)}}</td><td><code>${{esc(row.path)}}</code></td></tr>`
-    ).join('') || '<tr><td colspan="4">No folder data.</td></tr>';
+        `<tr><td>${{index + 1}}</td><td>${{esc(row.size)}}</td><td>${{esc(row.file_count)}}</td><td><code>${{esc(row.path)}}</code></td><td><button class="copy-button" data-copy-path="${{esc(row.path)}}" data-copy-label="largest folder">Copy directory</button></td></tr>`
+    ).join('') || '<tr><td colspan="5">No folder data.</td></tr>';
     $('fileTypes').innerHTML = record.result.file_types.map(row =>
         `<tr><td><code>${{esc(row.extension)}}</code></td><td>${{esc(row.size)}}</td><td>${{esc(row.count)}}</td></tr>`
     ).join('') || '<tr><td colspan="3">No file type data.</td></tr>';
     $('biggestFiles').innerHTML = record.result.biggest_files.map((row, index) =>
-        `<tr><td>${{index + 1}}</td><td>${{esc(row.size)}}</td><td>${{esc(row.modified)}}</td><td><code>${{esc(row.path)}}</code></td></tr>`
-    ).join('') || '<tr><td colspan="4">No file data.</td></tr>';
+        `<tr><td>${{index + 1}}</td><td>${{esc(row.size)}}</td><td>${{esc(row.modified)}}</td><td><code>${{esc(row.path)}}</code></td><td><button class="copy-button" data-copy-path="${{esc(directoryFromPath(row.path))}}" data-copy-label="file folder">Copy directory</button></td></tr>`
+    ).join('') || '<tr><td colspan="5">No file data.</td></tr>';
     $('treeView').innerHTML = record.result.tree_html || '<p class="muted">No tree data.</p>';
     const skippedDetails = record.result.skipped_details || [];
     const skippedFallback = record.result.skipped || [];
@@ -2513,6 +2620,14 @@ $('processFilter').addEventListener('input', renderProcesses);
 $('folderFilter').addEventListener('input', () => filterTable('folderFilter', 'topFolders'));
 $('typeFilter').addEventListener('input', () => filterTable('typeFilter', 'fileTypes'));
 $('fileFilter').addEventListener('input', () => filterTable('fileFilter', 'biggestFiles'));
+$('topFolders').addEventListener('click', event => {{
+    const button = event.target.closest('button[data-copy-path]');
+    if (button) copyDirectoryFromButton(button);
+}});
+$('biggestFiles').addEventListener('click', event => {{
+    const button = event.target.closest('button[data-copy-path]');
+    if (button) copyDirectoryFromButton(button);
+}});
 $('historyRows').addEventListener('click', event => {{
     const scanId = event.target.dataset.scan;
     if (scanId) openHistory(scanId);
@@ -2537,7 +2652,7 @@ loadInitial();
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
-    server_version = "DiskUsageDashboard/1.6"
+    server_version = "DiskUsageDashboard/1.7"
 
     def log_message(self, format, *args):
         return

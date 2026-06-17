@@ -1,25 +1,24 @@
-Implemented v1.6.
+ Implemented v1.7 copy-directory feature.
 
-  Updated windows/DiskUsageHtmlReport.py:1655:
+  Updated windows/DiskUsageHtmlReport.py:2337:
 
-  - Running Programs now has its own scrollable pane.
-  - Process Details now has its own scrollable pane.
-  - Added a draggable divider between both panes.
-  - Divider supports keyboard resizing with Left, Right, Home, and End.
-  - Resizing updates the action alert panel after the action completes.
+  - Added Copy directory buttons to Top Biggest Folders.
+  - Added Copy directory buttons to Biggest Files; these copy the containing folder, not the file path.
+  - Added clipboard support with fallback behavior.
+  - Copy success/failure updates the action alert panel.
+  - Legacy --scan-once HTML reports also include the copy buttons.
 
   Updated docs/version files:
 
   - README.md:5
   - windows/README.md:3
   - windows/dashboard_version.json:2
-  - windows/Windows_Disk_Usage_Dashboard_AppRequirements_v1.6_2026-06-17.md:5
+  - windows/Windows_Disk_Usage_Dashboard_AppRequirements_v1.7_2026-06-17.md:5
 
   Verified:
 
   - python -m py_compile windows\DiskUsageHtmlReport.py passed.
-  - Served HTML includes the splitter, scroll containers, resize JS, and v1.6 metadata.
-  - /api/processes loaded 305 processes.
-  - Legacy --scan-once report generation still works.
+  - Served dashboard contains v1.7 copy UI and clipboard helpers.
+  - Legacy one-shot report generated successfully with copy buttons.
 
-  The updated dashboard is running at http://127.0.0.1:8765/ with PID 26748.
+  The updated dashboard is running at http://127.0.0.1:8765/ with PID 29352.

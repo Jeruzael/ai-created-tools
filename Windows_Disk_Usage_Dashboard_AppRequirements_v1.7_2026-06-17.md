@@ -2,12 +2,12 @@
 
 - Document: App Requirements
 - Client/Project: Windows Disk Usage Dashboard
-- Version: v1.6
+- Version: v1.7
 - Date: 2026-06-17
 - Prepared by: Codex / Project Team
 - Prepared for: Windows users, support users, and technical reviewers
 - Status: Revised
-- Revision notes: Added scrollable and draggable process review panes so users can resize the Running Programs list and Process Details panel.
+- Revision notes: Added Results copy buttons so users can copy directory paths from largest-folder and biggest-file rows.
 
 ## Revision History
 
@@ -20,6 +20,7 @@
 | v1.4 | 2026-06-17 | Revised | Added scan health summaries and skipped-path reason categories. |
 | v1.5 | 2026-06-17 | Revised | Improved process row selection, wrapped long process paths, and expanded manual explanations for scan settings and Windows link-like folders. |
 | v1.6 | 2026-06-17 | Revised | Added scrollable, draggable process review panes for Running Programs and Process Details. |
+| v1.7 | 2026-06-17 | Revised | Added copy-directory actions in Results for largest folders and biggest files. |
 
 ## Implementation Status
 
@@ -79,6 +80,13 @@ Implemented in v1.6:
 - Add a draggable divider between the process list and detail panel.
 - Allow keyboard resizing of the divider with arrow keys, Home, and End.
 - Show an action alert after the process panes are resized.
+
+Implemented in v1.7:
+
+- Add a Copy directory button to each Top Biggest Folders row.
+- Add a Copy directory button to each Biggest Files row that copies the containing folder.
+- Show a success or failure action alert after copy attempts in the browser dashboard.
+- Keep legacy one-shot reports consistent by adding copy buttons to their folder and file tables.
 
 ## 1. Purpose
 
@@ -208,6 +216,7 @@ The scan results screen must show:
 - Largest folders.
 - File types by total size.
 - Biggest files.
+- Copy directory actions for path-bearing result rows.
 - Large folder tree.
 - Skipped and access denied paths.
 - Error summary if any.
@@ -215,6 +224,12 @@ The scan results screen must show:
 - Skipped-path categories with counts and explanations.
 
 Tables must support search and sorting.
+
+Top Biggest Folders rows must include a copy action that copies the folder path.
+
+Biggest Files rows must include a copy action that copies the file's containing directory, not just the file name.
+
+Copy actions must show a clear success or failure alert. Failed copy attempts must not modify scan records or files.
 
 ### 7.4 Process Review
 
@@ -760,6 +775,11 @@ The app must handle:
 - Enter an invalid folder path and verify a clear error.
 - Confirm scan progress updates while scanning.
 - Confirm scan results show all required dashboard sections.
+- Confirm Top Biggest Folders rows include Copy directory buttons.
+- Confirm Biggest Files rows include Copy directory buttons.
+- Confirm folder copy buttons copy the folder path.
+- Confirm file copy buttons copy the containing directory path.
+- Confirm copy success and failure states update the action alert panel.
 - Confirm scan history creates a dated record.
 - Confirm cancelled scans are recorded correctly.
 - Confirm process list loads.
@@ -816,6 +836,9 @@ The app must handle:
 - [ ] Safety notice includes required do's and don'ts.
 - [ ] Scan progress appears live in the dashboard.
 - [ ] Disk usage results include summary, largest folders, file types, biggest files, tree view, skipped paths, and errors.
+- [ ] Results include copy-directory buttons for largest folders.
+- [ ] Results include copy-directory buttons for biggest files.
+- [ ] Copy-directory actions update the alert panel and do not modify scan data.
 - [ ] User can view running processes in a non-technical list.
 - [ ] User can open a technical detail panel for each process.
 - [ ] User can open process details by selecting a row or using the Details button.

@@ -1,12 +1,12 @@
 {
-  "app_version": "1.6.0",
-  "documentation_version": "1.6",
+  "app_version": "1.7.0",
+  "documentation_version": "1.7",
   "last_updated": "2026-06-17",
-  "revision_notes": "Added scrollable, draggable process review panes so users can resize the running-program list and technical detail panel.",
+  "revision_notes": "Added Results copy buttons so users can copy folder directories from largest-folder and biggest-file rows.",
   "affected_areas": [
     "browser_dashboard",
-    "process_review",
-    "process_detail_panel",
+    "dashboard_results",
+    "clipboard_actions",
     "documentation_versioning"
   ],
   "compatibility_notes": "Default run starts the browser app. Use --scan-once for legacy one-shot HTML report generation."
