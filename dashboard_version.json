@@ -1,13 +1,12 @@
 {
-  "app_version": "1.5.0",
-  "documentation_version": "1.5",
+  "app_version": "1.6.0",
+  "documentation_version": "1.6",
   "last_updated": "2026-06-17",
-  "revision_notes": "Improved process row selection, wrapped long process paths, and expanded the manual with scan-setting and reparse-point explanations.",
+  "revision_notes": "Added scrollable, draggable process review panes so users can resize the running-program list and technical detail panel.",
   "affected_areas": [
     "browser_dashboard",
     "process_review",
     "process_detail_panel",
-    "manual_user_guide",
     "documentation_versioning"
   ],
   "compatibility_notes": "Default run starts the browser app. Use --scan-once for legacy one-shot HTML report generation."

@@ -19,8 +19,8 @@ from urllib.parse import parse_qs, urlparse
 
 sys.setrecursionlimit(10000)
 
-APP_VERSION = "1.5.0"
-DOC_VERSION = "1.5"
+APP_VERSION = "1.6.0"
+DOC_VERSION = "1.6"
 APP_DIR = Path(__file__).resolve().parent
 RECORDS_DIR = APP_DIR / "scan_records"
 REPORTS_DIR = APP_DIR / "generated_reports"
@@ -902,14 +902,13 @@ def ensure_version_metadata():
         "documentation_version": DOC_VERSION,
         "last_updated": "2026-06-17",
         "revision_notes": (
-            "Improved process row selection, wrapped long process paths, and expanded "
-            "the manual with scan-setting and reparse-point explanations."
+            "Added scrollable, draggable process review panes so users can resize "
+            "the running-program list and technical detail panel."
         ),
         "affected_areas": [
             "browser_dashboard",
             "process_review",
             "process_detail_panel",
-            "manual_user_guide",
             "documentation_versioning"
         ],
         "compatibility_notes": "Default run starts the browser app. Use --scan-once for legacy one-shot HTML report generation."
@@ -1653,6 +1652,67 @@ tr:hover td {{ background: #f8fbff; }}
     word-break: break-word;
 }}
 .small-action {{ white-space: nowrap; }}
+.process-layout {{
+    --process-list-width: 58%;
+    display: grid;
+    grid-template-columns: minmax(320px, var(--process-list-width)) 12px minmax(300px, 1fr);
+    gap: 0;
+    align-items: stretch;
+    min-height: 420px;
+}}
+.process-panel {{
+    margin-bottom: 0;
+    min-width: 0;
+    height: calc(100vh - 230px);
+    min-height: 420px;
+    max-height: 760px;
+    display: flex;
+    flex-direction: column;
+}}
+.process-panel-body {{
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+}}
+.process-panel .table-wrap {{
+    height: 100%;
+}}
+.process-detail-scroll {{
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding-right: 6px;
+}}
+.process-splitter {{
+    position: relative;
+    border: 0;
+    border-left: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+    background: #dbe7f3;
+    cursor: col-resize;
+    min-height: 420px;
+    padding: 0;
+}}
+.process-splitter::before {{
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 4px;
+    height: 56px;
+    border-left: 1px solid #8aa4bd;
+    border-right: 1px solid #8aa4bd;
+    transform: translate(-50%, -50%);
+}}
+.process-splitter:hover, .process-splitter:focus {{
+    background: #c7d9eb;
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}}
+body.resizing-process-panes {{
+    cursor: col-resize;
+    user-select: none;
+}}
 .pill {{ display: inline-block; padding: 3px 7px; border-radius: 999px; background: #e9eef5; margin: 2px 3px 2px 0; font-size: 12px; }}
 .pill.review {{ background: #fff2d8; color: var(--warn); }}
 .pill.info {{ background: #e8f3ff; color: var(--accent-strong); }}
@@ -1684,6 +1744,13 @@ summary {{ cursor: pointer; padding: 6px; }}
 .category-item {{ border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: #fff; }}
 @media (max-width: 980px) {{
     .layout, .form-grid, .grid, .manual-grid, .category-list {{ grid-template-columns: 1fr; }}
+    .process-layout {{ display: block; }}
+    .process-panel {{
+        height: 58vh;
+        max-height: none;
+        margin-bottom: 16px;
+    }}
+    .process-splitter {{ display: none; }}
     .manual-section.full {{ grid-column: auto; }}
     header {{ display: block; }}
     main {{ padding: 14px; }}
@@ -1789,17 +1856,18 @@ summary {{ cursor: pointer; padding: 6px; }}
     </section>
 
     <section id="tab-processes" class="tab-panel hidden">
-        <div class="layout">
-            <section class="section">
+        <div id="processLayout" class="process-layout">
+            <section class="section process-panel">
                 <h2>Running Programs</h2>
                 <p>These are risk indicators, not final malware decisions.</p>
                 <div class="actions"><button id="refreshProcesses" class="primary">Refresh processes</button></div>
                 <input id="processFilter" placeholder="Search programs, paths, or PID..." style="margin:12px 0">
-                <div class="table-wrap"><table class="process-table"><thead><tr><th>Program</th><th>Memory</th><th>Indicators</th><th>Action</th></tr></thead><tbody id="processRows"></tbody></table></div>
+                <div class="process-panel-body"><div class="table-wrap"><table class="process-table"><thead><tr><th>Program</th><th>Memory</th><th>Indicators</th><th>Action</th></tr></thead><tbody id="processRows"></tbody></table></div></div>
             </section>
-            <section class="section detail-panel">
+            <button id="processSplitter" class="process-splitter" type="button" aria-label="Drag to resize process list and process details panels" title="Drag to resize panels"></button>
+            <section class="section detail-panel process-panel">
                 <h2>Process Details</h2>
-                <div id="processDetail" class="muted">Select any process row or use the Details button to see technical details.</div>
+                <div id="processDetail" class="muted process-detail-scroll">Select any process row or use the Details button to see technical details.</div>
             </section>
         </div>
     </section>
@@ -2047,6 +2115,77 @@ function showTab(name) {{
             'Unfamiliar processes are not automatically malware.'
         ]);
     }}
+}}
+
+function setProcessPaneWidth(percent) {{
+    const layout = $('processLayout');
+    if (!layout) return 58;
+    const clamped = Math.max(35, Math.min(72, Number(percent) || 58));
+    layout.style.setProperty('--process-list-width', clamped.toFixed(1) + '%');
+    return clamped;
+}}
+
+function initProcessPaneResizer() {{
+    const layout = $('processLayout');
+    const splitter = $('processSplitter');
+    if (!layout || !splitter) return;
+
+    let dragging = false;
+    let currentPercent = 58;
+    let moved = false;
+
+    const percentFromClientX = clientX => {{
+        const rect = layout.getBoundingClientRect();
+        if (!rect.width) return currentPercent;
+        return ((clientX - rect.left) / rect.width) * 100;
+    }};
+
+    const finishResize = () => {{
+        if (!dragging) return;
+        dragging = false;
+        document.body.classList.remove('resizing-process-panes');
+        if (splitter.releasePointerCapture && splitter.dataset.pointerId) {{
+            try {{ splitter.releasePointerCapture(Number(splitter.dataset.pointerId)); }} catch (error) {{}}
+        }}
+        delete splitter.dataset.pointerId;
+        if (moved) {{
+            showActionAlert('info', 'Process Panels Resized', 'The running-program list and process details panel were resized for this session.', [
+                `Running Programs width: ${{currentPercent.toFixed(0)}}%`,
+                `Process Details width: ${{(100 - currentPercent).toFixed(0)}}%`
+            ]);
+        }}
+    }};
+
+    splitter.addEventListener('pointerdown', event => {{
+        dragging = true;
+        moved = false;
+        splitter.dataset.pointerId = event.pointerId;
+        document.body.classList.add('resizing-process-panes');
+        if (splitter.setPointerCapture) splitter.setPointerCapture(event.pointerId);
+        event.preventDefault();
+    }});
+
+    splitter.addEventListener('pointermove', event => {{
+        if (!dragging) return;
+        currentPercent = setProcessPaneWidth(percentFromClientX(event.clientX));
+        moved = true;
+    }});
+
+    splitter.addEventListener('pointerup', finishResize);
+    splitter.addEventListener('pointercancel', finishResize);
+
+    splitter.addEventListener('keydown', event => {{
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'Home' && event.key !== 'End') return;
+        if (event.key === 'Home') currentPercent = setProcessPaneWidth(42);
+        if (event.key === 'End') currentPercent = setProcessPaneWidth(68);
+        if (event.key === 'ArrowLeft') currentPercent = setProcessPaneWidth(currentPercent - 4);
+        if (event.key === 'ArrowRight') currentPercent = setProcessPaneWidth(currentPercent + 4);
+        event.preventDefault();
+        showActionAlert('info', 'Process Panels Resized', 'The process panel split was adjusted with the keyboard.', [
+            `Running Programs width: ${{currentPercent.toFixed(0)}}%`,
+            'Use Left/Right arrows, Home, or End while the divider is focused.'
+        ]);
+    }});
 }}
 
 function metric(label, value) {{
@@ -2390,6 +2529,7 @@ $('processRows').addEventListener('keydown', event => {{
     event.preventDefault();
     showProcessDetail(row.dataset.pid);
 }});
+initProcessPaneResizer();
 loadInitial();
 </script>
 </body>
@@ -2397,7 +2537,7 @@ loadInitial();
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
-    server_version = "DiskUsageDashboard/1.5"
+    server_version = "DiskUsageDashboard/1.6"
 
     def log_message(self, format, *args):
         return

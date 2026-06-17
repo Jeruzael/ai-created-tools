@@ -2,12 +2,12 @@
 
 - Document: App Requirements
 - Client/Project: Windows Disk Usage Dashboard
-- Version: v1.5
+- Version: v1.6
 - Date: 2026-06-17
 - Prepared by: Codex / Project Team
 - Prepared for: Windows users, support users, and technical reviewers
 - Status: Revised
-- Revision notes: Improved process list usability and expanded the built-in manual with scan-setting, example-use-case, reparse-point, junction, and symlink explanations.
+- Revision notes: Added scrollable and draggable process review panes so users can resize the Running Programs list and Process Details panel.
 
 ## Revision History
 
@@ -19,6 +19,7 @@
 | v1.3 | 2026-06-17 | Revised | Added built-in Manual/User Guide requirements and implementation status. |
 | v1.4 | 2026-06-17 | Revised | Added scan health summaries and skipped-path reason categories. |
 | v1.5 | 2026-06-17 | Revised | Improved process row selection, wrapped long process paths, and expanded manual explanations for scan settings and Windows link-like folders. |
+| v1.6 | 2026-06-17 | Revised | Added scrollable, draggable process review panes for Running Programs and Process Details. |
 
 ## Implementation Status
 
@@ -71,6 +72,14 @@ Implemented in v1.5:
 - Expand the manual with definitions and examples for top items, tree depth, children per folder, and minimum tree size.
 - Expand the manual with explanations and examples for reparse points, junctions, and symlinks.
 
+Implemented in v1.6:
+
+- Make the Running Programs pane independently scrollable.
+- Make the Process Details pane independently scrollable.
+- Add a draggable divider between the process list and detail panel.
+- Allow keyboard resizing of the divider with arrow keys, Home, and End.
+- Show an action alert after the process panes are resized.
+
 ## 1. Purpose
 
 The Windows Disk Usage Dashboard will become a local browser-based utility for reviewing disk usage and running background programs. The goal is to make storage and process review understandable for non-technical users while still giving technical users enough detail to investigate suspicious or unfamiliar programs.
@@ -105,6 +114,7 @@ The app should reduce guesswork during disk cleanup and process review. It shoul
 - Running process review in a user-friendly view.
 - Technical process detail panel.
 - Selectable process rows with wrapped executable path text.
+- Scrollable and resizable process review panes.
 - Scan history and local scan records.
 - Safety notice with do's and don'ts before scanning.
 - Formal app exit button and local server shutdown flow.
@@ -222,6 +232,10 @@ Each process row should show, where available:
 Process rows must be directly selectable with mouse click and keyboard interaction. The app must also keep a visible Details button for users who prefer an explicit action.
 
 Long program locations and command/path text must wrap within the process panel so other columns remain readable and accessible.
+
+The Running Programs pane and Process Details pane must be independently scrollable so long process lists and long technical details do not push the whole page out of view.
+
+The user must be able to drag the divider between the Running Programs pane and Process Details pane to resize both panels. The divider should also support keyboard resizing for accessibility.
 
 The screen must not label a process as definitely safe, malware, virus, or malicious. It may show caution indicators such as unsigned executable, unusual location, missing publisher, high resource use, inaccessible path, or recently started.
 
@@ -754,6 +768,11 @@ The app must handle:
 - Confirm process details open when pressing Enter or Space on a focused process row.
 - Confirm the Details button still opens the same technical detail panel.
 - Confirm long process directory/path text wraps and does not hide memory, indicators, or action controls.
+- Confirm the Running Programs pane has its own scrollbar when the process list is long.
+- Confirm the Process Details pane has its own scrollbar when technical details are long.
+- Confirm dragging the process divider resizes both process panes.
+- Confirm keyboard resizing works when the divider is focused.
+- Confirm resizing the process panes updates the action alert panel.
 - Confirm exited or inaccessible processes show partial-data messages.
 - Confirm the app does not delete, move, rename, kill, quarantine, or upload anything.
 - Confirm documentation version metadata updates when behavior changes.
@@ -801,6 +820,10 @@ The app must handle:
 - [ ] User can open a technical detail panel for each process.
 - [ ] User can open process details by selecting a row or using the Details button.
 - [ ] Long process paths wrap so other process table columns remain visible.
+- [ ] Running Programs and Process Details panes are independently scrollable.
+- [ ] User can drag the process divider to resize the process list and detail panes.
+- [ ] Process divider supports keyboard resizing.
+- [ ] Resizing process panes updates the action alert panel.
 - [ ] Process safety is shown as risk indicators, not definitive malware claims.
 - [ ] Every scan creates a local dated record with settings, acknowledgement status, and results.
 - [ ] Documentation and revision metadata update when app behavior changes.
