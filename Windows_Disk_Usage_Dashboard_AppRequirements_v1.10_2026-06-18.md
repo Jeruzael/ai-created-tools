@@ -2,12 +2,12 @@
 
 - Document: App Requirements
 - Client/Project: Windows Disk Usage Dashboard
-- Version: v1.9
+- Version: v1.10
 - Date: 2026-06-18
 - Prepared by: Codex / Project Team
 - Prepared for: Windows users, support users, and technical reviewers
 - Status: Revised
-- Revision notes: Added Process grouping by publisher and memory, grouped tree summaries, publisher filtering, and downloadable grouped process reports.
+- Revision notes: Added Needs Review filtering, process verification summaries, review-reason filters, and downloadable process verification reports.
 
 ## Revision History
 
@@ -23,6 +23,7 @@
 | v1.7 | 2026-06-17 | Revised | Added copy-directory actions in Results for largest folders and biggest files. |
 | v1.8 | 2026-06-17 | Revised | Fixed History record opening, added visible loaded-record context, and hardened Results rendering for older records. |
 | v1.9 | 2026-06-18 | Revised | Added Process grouping/filtering and downloadable grouped running-program reports. |
+| v1.10 | 2026-06-18 | Revised | Added Needs Review filtering, process verification summaries, and downloadable verification reports. |
 
 ## Implementation Status
 
@@ -107,6 +108,17 @@ Implemented in v1.9:
 - Add Process summary metrics for visible count, publisher count, memory total, and uncategorized count.
 - Add a downloadable local HTML grouped process report.
 - Include an uncategorized running background programs section in the downloaded report.
+
+Implemented in v1.10:
+
+- Add local review reasons for missing publisher metadata, unavailable paths, unusual locations, shell/developer runners, and non-Microsoft publishers in Windows folders.
+- Add Needs Review only filtering in the Process section.
+- Add review-reason filtering in the Process section.
+- Add Needs Review grouping mode.
+- Add a verification checklist to the selected process detail panel.
+- Add publisher/product metadata to process details when available.
+- Add a downloadable local HTML process verification report.
+- Keep all verification language as review guidance, not a malware verdict.
 
 ## 1. Purpose
 
@@ -285,9 +297,21 @@ The Process screen must support:
 - Grouping by publisher.
 - Grouping by largest memory consumed.
 - Viewing uncategorized processes where publisher/company metadata is unavailable.
+- Viewing only processes that need review.
+- Filtering by review reason.
 - A collapsible tree-style grouped summary.
 - Summary metrics for visible process count, publisher count, memory total, and uncategorized process count.
 - Downloading a local grouped process report.
+- Downloading a local process verification report.
+
+Needs Review must flag local review reasons such as:
+
+- Publisher metadata unavailable.
+- Program path unavailable or inaccessible.
+- Running from temporary folders or Downloads.
+- Windows folder process with non-Microsoft publisher metadata.
+- Shell or developer command runner.
+- High memory use as informational context.
 
 The grouped process report must include:
 
@@ -298,6 +322,15 @@ The grouped process report must include:
 - Separate uncategorized running background programs section.
 - Local paths where available.
 - Reminder that the report is informational only and not a malware verdict.
+
+The process verification report must include:
+
+- Generation date/time.
+- Count of visible processes and needs-review processes.
+- Needs Review groups by reason.
+- Program name, PID, publisher, memory, review reasons, and path.
+- Safe next steps that recommend signature/hash review and trusted security tools.
+- Clear wording that it is not a malware verdict.
 
 The screen must not label a process as definitely safe, malware, virus, or malicious. It may show caution indicators such as unsigned executable, unusual location, missing publisher, high resource use, inaccessible path, or recently started.
 
@@ -840,9 +873,14 @@ The app must handle:
 - Confirm process grouping by publisher renders a collapsible tree.
 - Confirm process grouping by largest memory consumed sorts groups by memory.
 - Confirm uncategorized process view shows only entries without publisher/company metadata.
+- Confirm Needs Review only shows flagged entries.
+- Confirm review-reason filter narrows the list.
+- Confirm selected process detail shows a verification checklist.
 - Confirm process summary metrics update when filters change.
 - Confirm grouped process report downloads as a local HTML file.
 - Confirm downloaded process report includes grouped tree and uncategorized entries.
+- Confirm process verification report downloads as a local HTML file.
+- Confirm downloaded verification report includes needs-review reasons and safe next steps.
 - Confirm process detail panel shows available metadata.
 - Confirm process details open when clicking a process row.
 - Confirm process details open when pressing Enter or Space on a focused process row.
@@ -904,9 +942,13 @@ The app must handle:
 - [ ] User can group processes by publisher.
 - [ ] User can group processes by largest memory consumed.
 - [ ] User can view uncategorized running background programs.
+- [ ] User can filter to Needs Review processes only.
+- [ ] User can filter by review reason.
 - [ ] Process groups render as a collapsible tree.
 - [ ] User can download a grouped process report.
 - [ ] Downloaded process report includes uncategorized running background programs.
+- [ ] User can download a process verification report.
+- [ ] Downloaded verification report includes needs-review groups and safe next steps.
 - [ ] User can open a technical detail panel for each process.
 - [ ] User can open process details by selecting a row or using the Details button.
 - [ ] Long process paths wrap so other process table columns remain visible.

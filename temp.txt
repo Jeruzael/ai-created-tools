@@ -1,33 +1,36 @@
-Implemented v1.9 for the Process section.
+Implemented v1.10.
 
-  Changed windows/DiskUsageHtmlReport.py:1986:
+  Added to the Process section:
 
-  - Added process search by program, publisher, path, or PID.
-  - Added publisher filter.
-  - Added grouping modes:
-      - Publisher
-      - Largest memory consumed
-      - Uncategorized only
+  - Needs review only filter.
+  - Review reason filter.
+  - New Needs review grouping mode.
+  - Local review reasons for:
+      - publisher metadata unavailable
+      - program path unavailable/inaccessible
+      - running from Temp or Downloads
+      - Windows folder with non-Microsoft publisher
+      - shell/developer command runners
 
-  - Added a collapsible tree summary for each process group.
-  - Added summary metrics: shown count, publisher count, total memory, uncategorized count.
-  - Added Download grouped report, generated locally as an HTML report.
-  - The report includes grouped running programs and a separate uncategorized running background programs section.
-  - Process snapshot now includes local publisher/company metadata when Windows exposes it.
+  - Verification checklist in the selected process detail panel.
+  - Publisher/product metadata in process details where available.
+  - Download verification report as a local HTML report with Needs Review groups and safe next steps.
 
   Updated docs:
 
   - README.md:5
   - windows/README.md:3
   - windows/dashboard_version.json:2
-  - windows/Windows_Disk_Usage_Dashboard_AppRequirements_v1.9_2026-06-18.md:5
+  - windows/Windows_Disk_Usage_Dashboard_AppRequirements_v1.10_2026-06-18.md:5
 
   Verified:
 
   - python -m py_compile windows\DiskUsageHtmlReport.py passed.
-  - Live /api/processes returned 313 processes, 274 with publisher metadata, 39 uncategorized.
-  - Served dashboard contains v1.9 controls and grouped-report code.
-  - Browser-script check passed for publisher grouping, memory grouping, and report HTML generation.
+  - Live /api/processes returned 300 processes, 57 flagged as Needs Review.
+  - Served dashboard contains v1.10 controls and report generator.
+  - Browser-script check passed for Needs Review filtering, review reason options, grouped tree rendering, and
+    verification report HTML.
+
   - Legacy --scan-once report generation still works.
 
-  The updated dashboard is running at http://127.0.0.1:8765/ with PID 14808.
+  Dashboard is running at http://127.0.0.1:8765/ with PID 30804.

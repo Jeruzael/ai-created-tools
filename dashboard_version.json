@@ -1,12 +1,12 @@
 {
-  "app_version": "1.9.0",
-  "documentation_version": "1.9",
+  "app_version": "1.10.0",
+  "documentation_version": "1.10",
   "last_updated": "2026-06-18",
-  "revision_notes": "Added process grouping, publisher filtering, memory grouping, tree summaries, and downloadable grouped process reports.",
+  "revision_notes": "Added Needs Review filtering, review reasons, verification summaries, and downloadable process verification reports.",
   "affected_areas": [
     "browser_dashboard",
     "process_review",
-    "process_grouping",
+    "process_verification",
     "process_report_download",
     "documentation_versioning"
   ],

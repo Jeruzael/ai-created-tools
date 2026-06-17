@@ -19,8 +19,8 @@ from urllib.parse import parse_qs, urlparse
 
 sys.setrecursionlimit(10000)
 
-APP_VERSION = "1.9.0"
-DOC_VERSION = "1.9"
+APP_VERSION = "1.10.0"
+DOC_VERSION = "1.10"
 APP_DIR = Path(__file__).resolve().parent
 RECORDS_DIR = APP_DIR / "scan_records"
 REPORTS_DIR = APP_DIR / "generated_reports"
@@ -953,13 +953,13 @@ def ensure_version_metadata():
         "documentation_version": DOC_VERSION,
         "last_updated": "2026-06-18",
         "revision_notes": (
-            "Added process grouping, publisher filtering, memory grouping, "
-            "tree summaries, and downloadable grouped process reports."
+            "Added Needs Review filtering, review reasons, verification summaries, "
+            "and downloadable process verification reports."
         ),
         "affected_areas": [
             "browser_dashboard",
             "process_review",
-            "process_grouping",
+            "process_verification",
             "process_report_download",
             "documentation_versioning"
         ],
@@ -1250,7 +1250,9 @@ def process_risk_indicators(process):
     indicators = []
     path = process.get("ExecutablePath") or ""
     name = process.get("Name") or "Unknown process"
+    company = (process.get("CompanyName") or "").strip()
     working_set = int(process.get("WorkingSetSize") or 0)
+    lower_name = name.lower()
 
     if not path:
         indicators.append({"level": "review", "label": "Program path unavailable"})
@@ -1262,6 +1264,17 @@ def process_risk_indicators(process):
             indicators.append({"level": "review", "label": "Running from Downloads"})
         if not os.path.exists(path):
             indicators.append({"level": "review", "label": "Program file is not accessible"})
+        if lower_path.startswith("c:\\windows") and company and "microsoft" not in company.lower():
+            indicators.append({"level": "review", "label": "Windows folder with non-Microsoft publisher"})
+        if "\\appdata\\" in lower_path and "\\temp\\" not in lower_path:
+            indicators.append({"level": "info", "label": "Running from user AppData"})
+
+    if not company:
+        indicators.append({"level": "review", "label": "Publisher metadata unavailable"})
+
+    shell_names = {"powershell.exe", "pwsh.exe", "cmd.exe", "bash.exe", "sh.exe", "node.exe", "python.exe", "python3.11.exe", "codex.exe"}
+    if lower_name in shell_names:
+        indicators.append({"level": "review", "label": "Shell or developer command runner"})
 
     if working_set > 1024 * 1024 * 1024:
         indicators.append({"level": "info", "label": "High memory use"})
@@ -1299,6 +1312,7 @@ ConvertTo-Json -Depth 4
         name = item.get("Name") or "Unknown process"
         memory_bytes = int(item.get("WorkingSetSize") or 0)
 
+        indicators = process_risk_indicators(item)
         rows.append({
             "pid": pid,
             "name": name,
@@ -1311,7 +1325,9 @@ ConvertTo-Json -Depth 4
             "started_at": item.get("CreationDate"),
             "publisher": item.get("CompanyName"),
             "product_name": item.get("ProductName"),
-            "risk_indicators": process_risk_indicators(item),
+            "risk_indicators": indicators,
+            "needs_review": any(indicator.get("level") == "review" for indicator in indicators),
+            "review_reasons": [indicator.get("label") for indicator in indicators if indicator.get("level") == "review"],
         })
 
     return sorted(rows, key=lambda row: (row["friendly_name"].lower(), row["pid"] or 0))
@@ -1368,7 +1384,17 @@ def get_process_detail(pid: int):
     command = """
 $pidValue = [int]$env:PROCESS_ID
 Get-CimInstance Win32_Process -Filter "ProcessId=$pidValue" |
-Select-Object ProcessId,Name,ExecutablePath,CommandLine,ParentProcessId,CreationDate,WorkingSetSize |
+Select-Object ProcessId,Name,ExecutablePath,CommandLine,ParentProcessId,CreationDate,WorkingSetSize,
+@{Name='CompanyName';Expression={
+    if ($_.ExecutablePath -and (Test-Path -LiteralPath $_.ExecutablePath)) {
+        try { [System.Diagnostics.FileVersionInfo]::GetVersionInfo($_.ExecutablePath).CompanyName } catch { $null }
+    } else { $null }
+}},
+@{Name='ProductName';Expression={
+    if ($_.ExecutablePath -and (Test-Path -LiteralPath $_.ExecutablePath)) {
+        try { [System.Diagnostics.FileVersionInfo]::GetVersionInfo($_.ExecutablePath).ProductName } catch { $null }
+    } else { $null }
+}} |
 ConvertTo-Json -Depth 4
 """
     rows = run_powershell_json(command, timeout_seconds=12, env_extra={"PROCESS_ID": str(pid)})
@@ -1379,6 +1405,7 @@ ConvertTo-Json -Depth 4
     path = item.get("ExecutablePath") or ""
     signature = get_signature_details(path)
     file_hash, hash_error = sha256_for_file(path) if path else (None, "Program path is unavailable.")
+    indicators = process_risk_indicators(item)
 
     return {
         "pid": item.get("ProcessId"),
@@ -1390,10 +1417,14 @@ ConvertTo-Json -Depth 4
         "started_at": item.get("CreationDate"),
         "memory_bytes": int(item.get("WorkingSetSize") or 0),
         "memory": format_size(int(item.get("WorkingSetSize") or 0)),
+        "publisher": item.get("CompanyName"),
+        "product_name": item.get("ProductName"),
         "signature": signature,
         "sha256": file_hash,
         "hash_error": hash_error,
-        "risk_indicators": process_risk_indicators(item),
+        "risk_indicators": indicators,
+        "needs_review": any(indicator.get("level") == "review" for indicator in indicators),
+        "review_reasons": [indicator.get("label") for indicator in indicators if indicator.get("level") == "review"],
         "collected_at": now_iso(),
     }
 
@@ -1730,6 +1761,16 @@ tr:hover td {{ background: #f8fbff; }}
     margin: 12px 0;
 }}
 .process-controls input, .process-controls select {{ margin-top: 5px; }}
+.process-controls input[type="checkbox"] {{ width: auto; margin-right: 6px; }}
+.verification-list {{
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-soft);
+    padding: 10px;
+    margin: 10px 0;
+}}
+.verification-list ul {{ margin: 6px 0 0 20px; padding: 0; }}
+.verification-list li {{ margin: 4px 0; }}
 .process-summary-grid {{
     display: grid;
     grid-template-columns: repeat(4, minmax(110px, 1fr));
@@ -1984,6 +2025,7 @@ summary {{ cursor: pointer; padding: 6px; }}
                 <div class="actions">
                     <button id="refreshProcesses" class="primary">Refresh processes</button>
                     <button id="downloadProcessReport">Download grouped report</button>
+                    <button id="downloadVerificationReport">Download verification report</button>
                 </div>
                 <div class="process-controls">
                     <label>Search
@@ -1997,9 +2039,14 @@ summary {{ cursor: pointer; padding: 6px; }}
                             <option value="publisher">Publisher</option>
                             <option value="memory">Largest memory consumed</option>
                             <option value="uncategorized">Uncategorized only</option>
+                            <option value="needsReview">Needs review</option>
                         </select>
                     </label>
-                    <div class="muted">Grouped locally from current process data.</div>
+                    <label>Review reason
+                        <select id="processReviewFilter"><option value="">All reasons</option></select>
+                    </label>
+                    <label><input id="needsReviewOnly" type="checkbox"> Needs review only</label>
+                    <div class="muted">Grouped locally from current process data. Review flags are not malware verdicts.</div>
                 </div>
                 <div class="process-panel-body">
                     <div id="processSummary" class="process-summary-grid"></div>
@@ -2658,6 +2705,18 @@ function isUncategorizedProcess(process) {{
     return !publisherForProcess(process);
 }}
 
+function reviewReasonsForProcess(process) {{
+    const reasons = new Set(asArray(process.review_reasons).filter(Boolean));
+    asArray(process.risk_indicators).forEach(indicator => {{
+        if (indicator.level === 'review' && indicator.label) reasons.add(indicator.label);
+    }});
+    return Array.from(reasons);
+}}
+
+function needsReview(process) {{
+    return Boolean(process.needs_review) || reviewReasonsForProcess(process).length > 0;
+}}
+
 function memoryGroupLabel(process) {{
     const bytes = Number(process.memory_bytes) || 0;
     if (bytes >= 1024 * 1024 * 1024) return 'Very high memory: 1 GB and above';
@@ -2676,12 +2735,16 @@ function getVisibleProcesses() {{
     const query = $('processFilter').value.toLowerCase().trim();
     const publisherFilter = $('processPublisherFilter').value;
     const groupBy = $('processGroupBy').value;
+    const reviewReason = $('processReviewFilter').value;
+    const needsOnly = $('needsReviewOnly').checked || groupBy === 'needsReview';
     return state.processes
         .filter(process => processMatchesQuery(process, query))
         .filter(process => !publisherFilter || publisherLabel(process) === publisherFilter)
+        .filter(process => !needsOnly || needsReview(process))
+        .filter(process => !reviewReason || reviewReasonsForProcess(process).includes(reviewReason))
         .filter(process => groupBy !== 'uncategorized' || isUncategorizedProcess(process))
         .sort((a, b) => {{
-            if (groupBy === 'memory' || groupBy === 'uncategorized') return (Number(b.memory_bytes) || 0) - (Number(a.memory_bytes) || 0);
+            if (groupBy === 'memory' || groupBy === 'uncategorized' || groupBy === 'needsReview') return (Number(b.memory_bytes) || 0) - (Number(a.memory_bytes) || 0);
             return publisherLabel(a).localeCompare(publisherLabel(b)) || String(a.friendly_name || '').localeCompare(String(b.friendly_name || ''));
         }});
 }}
@@ -2689,7 +2752,9 @@ function getVisibleProcesses() {{
 function groupProcesses(processes, mode) {{
     const groups = new Map();
     processes.forEach(process => {{
-        const key = mode === 'memory' ? memoryGroupLabel(process) : publisherLabel(process);
+        const key = mode === 'memory' ? memoryGroupLabel(process)
+            : mode === 'needsReview' ? (reviewReasonsForProcess(process)[0] || 'Needs review')
+            : publisherLabel(process);
         if (!groups.has(key)) groups.set(key, {{ name: key, totalMemory: 0, processes: [] }});
         const group = groups.get(key);
         group.totalMemory += Number(process.memory_bytes) || 0;
@@ -2712,14 +2777,25 @@ function updatePublisherFilterOptions() {{
     if (publishers.includes(current)) $('processPublisherFilter').value = current;
 }}
 
+function updateReviewFilterOptions() {{
+    const current = $('processReviewFilter').value;
+    const reasons = Array.from(new Set(state.processes.flatMap(reviewReasonsForProcess))).sort((a, b) => a.localeCompare(b));
+    $('processReviewFilter').innerHTML = '<option value="">All reasons</option>' + reasons.map(reason =>
+        `<option value="${{esc(reason)}}">${{esc(reason)}}</option>`
+    ).join('');
+    if (reasons.includes(current)) $('processReviewFilter').value = current;
+}}
+
 function renderProcessSummary(processes) {{
     const totalMemory = processes.reduce((sum, process) => sum + (Number(process.memory_bytes) || 0), 0);
     const publisherCount = new Set(processes.map(publisherLabel)).size;
     const uncategorizedCount = processes.filter(isUncategorizedProcess).length;
+    const reviewCount = processes.filter(needsReview).length;
     $('processSummary').innerHTML = [
         metric('Shown', processes.length),
         metric('Publishers', publisherCount),
         metric('Memory', formatBytes(totalMemory)),
+        metric('Needs Review', reviewCount),
         metric('Uncategorized', uncategorizedCount)
     ].join('');
 }}
@@ -2819,6 +2895,91 @@ function downloadProcessReport() {{
     ]);
 }}
 
+function buildVerificationReportHtml() {{
+    const visible = getVisibleProcesses();
+    const reviewItems = visible.filter(needsReview).sort((a, b) =>
+        reviewReasonsForProcess(b).length - reviewReasonsForProcess(a).length || (Number(b.memory_bytes) || 0) - (Number(a.memory_bytes) || 0)
+    );
+    const generated = new Date().toLocaleString();
+    const reasonGroups = groupProcesses(reviewItems, 'needsReview');
+    const groupHtml = reasonGroups.map(group => `
+        <details open>
+            <summary><strong>${{esc(group.name)}}</strong> - ${{group.processes.length}} processes, ${{esc(formatBytes(group.totalMemory))}}</summary>
+            <ul>
+                ${{group.processes.map(process => `<li><strong>${{esc(process.friendly_name || process.name || 'Unknown process')}}</strong> - PID ${{esc(process.pid)}} - ${{esc(process.memory || formatBytes(process.memory_bytes))}}<br><code>${{esc(process.executable_path || 'Path unavailable')}}</code></li>`).join('')}}
+            </ul>
+        </details>
+    `).join('');
+    const rows = reviewItems.map(process => `
+        <tr>
+            <td><strong>${{esc(process.friendly_name || process.name || 'Unknown process')}}</strong><br>PID ${{esc(process.pid)}}</td>
+            <td>${{esc(publisherLabel(process))}}</td>
+            <td>${{esc(process.memory || formatBytes(process.memory_bytes))}}</td>
+            <td>${{reviewReasonsForProcess(process).map(reason => `<span class="reason">${{esc(reason)}}</span>`).join(' ')}}</td>
+            <td><code>${{esc(process.executable_path || 'Path unavailable')}}</code></td>
+        </tr>
+    `).join('');
+
+    return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Process Verification Report</title>
+<style>
+body {{ font-family: Segoe UI, Arial, sans-serif; margin: 28px; color: #17202a; }}
+table {{ width: 100%; border-collapse: collapse; margin-top: 12px; }}
+th, td {{ text-align: left; vertical-align: top; border-bottom: 1px solid #d7dee8; padding: 9px; }}
+code {{ overflow-wrap: anywhere; word-break: break-word; }}
+details {{ margin: 10px 0; padding: 10px; border: 1px solid #d7dee8; border-radius: 8px; }}
+.muted {{ color: #5d6b7a; }}
+.reason {{ display: inline-block; background: #fff2d8; color: #8a4b00; border-radius: 999px; padding: 3px 7px; margin: 2px; font-size: 12px; }}
+</style>
+</head>
+<body>
+<h1>Process Verification Report</h1>
+<p class="muted">Generated locally: ${{esc(generated)}}. This report highlights review reasons only. It does not prove whether a program is safe or harmful.</p>
+<p><strong>Visible processes:</strong> ${{visible.length}} | <strong>Needs review:</strong> ${{reviewItems.length}} | <strong>Total loaded snapshot:</strong> ${{state.processes.length}}</p>
+<h2>Needs Review Summary</h2>
+${{groupHtml || '<p>No needs-review entries matched the current filters.</p>'}}
+<h2>Needs Review Details</h2>
+<table>
+<thead><tr><th>Program</th><th>Publisher</th><th>Memory</th><th>Review Reasons</th><th>Path</th></tr></thead>
+<tbody>${{rows || '<tr><td colspan="5">No needs-review entries matched the current filters.</td></tr>'}}</tbody>
+</table>
+<h2>Safe Next Steps</h2>
+<ul>
+<li>Open process details in the dashboard to verify signature status and SHA-256 when available.</li>
+<li>Use official uninstallers or app settings for cleanup. Do not delete files directly from system folders.</li>
+<li>Run Microsoft Defender or your trusted security tool for malware decisions.</li>
+</ul>
+</body>
+</html>`;
+}}
+
+function downloadVerificationReport() {{
+    if (!state.processes.length) {{
+        showActionAlert('warning', 'No Verification Report Available', 'Refresh processes before downloading a verification report.', [
+            'The report is generated from the currently loaded local process snapshot.'
+        ]);
+        return;
+    }}
+    const html = buildVerificationReportHtml();
+    const blob = new Blob([html], {{ type: 'text/html' }});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    link.href = url;
+    link.download = `process-verification-report-${{stamp}}.html`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showActionAlert('success', 'Verification Report Downloaded', 'A local HTML report was generated for processes that need review.', [
+        `Needs-review entries in current view: ${{getVisibleProcesses().filter(needsReview).length}}`,
+        'This is not a malware verdict. Use signature details and trusted security tools for final decisions.'
+    ]);
+}}
+
 async function refreshProcesses() {{
     $('processRows').innerHTML = '<tr><td colspan="4">Loading processes...</td></tr>';
     $('processSummary').innerHTML = '';
@@ -2831,6 +2992,7 @@ async function refreshProcesses() {{
         const data = await api('/api/processes');
         state.processes = data.processes || [];
         updatePublisherFilterOptions();
+        updateReviewFilterOptions();
         renderProcesses();
         showActionAlert('success', 'Process List Refreshed', 'Running programs were loaded from this computer.', [
             `Processes shown: ${{state.processes.length}}`,
@@ -2864,14 +3026,26 @@ async function showProcessDetail(pid) {{
     try {{
         const data = await api('/api/processes/' + encodeURIComponent(pid));
         const p = data.process;
-        const indicators = p.risk_indicators.map(i => `<span class="pill ${{esc(i.level)}}">${{esc(i.label)}}</span>`).join('');
+        const indicators = asArray(p.risk_indicators).map(i => `<span class="pill ${{esc(i.level)}}">${{esc(i.label)}}</span>`).join('');
+        const reasons = reviewReasonsForProcess(p);
+        const verificationHtml = `
+            <div class="verification-list">
+                <strong>${{reasons.length ? 'Needs Review' : 'No review flags from local rules'}}</strong>
+                <ul>
+                    ${{reasons.length ? reasons.map(reason => `<li>${{esc(reason)}}</li>`).join('') : '<li>No local review reason was found in this snapshot.</li>'}}
+                </ul>
+                <p class="muted">This is a local review checklist, not a malware verdict.</p>
+            </div>
+        `;
         $('processDetail').innerHTML = `
             <h3>${{esc(p.friendly_name)}} <span class="muted">PID ${{esc(p.pid)}}</span></h3>
             <p>${{indicators}}</p>
+            ${{verificationHtml}}
             <p><strong>Path</strong><br><code>${{esc(p.executable_path || 'Unavailable')}}</code></p>
             <p><strong>Command line</strong><br><code>${{esc(p.command_line || 'Unavailable')}}</code></p>
             <p><strong>Parent PID</strong><br>${{esc(p.parent_pid || 'Unavailable')}}</p>
             <p><strong>Memory</strong><br>${{esc(p.memory)}}</p>
+            <p><strong>Publisher metadata</strong><br>Publisher: ${{esc(p.publisher || 'Unavailable')}}<br>Product: ${{esc(p.product_name || 'Unavailable')}}</p>
             <p><strong>Signature</strong><br>Status: ${{esc(p.signature.status)}}<br>Publisher: ${{esc(p.signature.publisher || 'Unavailable')}}<br>Error: ${{esc(p.signature.error || 'None')}}</p>
             <p><strong>SHA-256</strong><br><code>${{esc(p.sha256 || p.hash_error || 'Unavailable')}}</code></p>
             <p class="muted">Collected at ${{esc(p.collected_at)}}. This is a local indicator review, not a final safety verdict.</p>
@@ -2938,10 +3112,13 @@ $('cancelScan').addEventListener('click', cancelScan);
 $('refreshHistory').addEventListener('click', refreshHistory);
 $('refreshProcesses').addEventListener('click', refreshProcesses);
 $('downloadProcessReport').addEventListener('click', downloadProcessReport);
+$('downloadVerificationReport').addEventListener('click', downloadVerificationReport);
 $('exitApp').addEventListener('click', exitApp);
 $('processFilter').addEventListener('input', renderProcesses);
 $('processPublisherFilter').addEventListener('change', renderProcesses);
 $('processGroupBy').addEventListener('change', renderProcesses);
+$('processReviewFilter').addEventListener('change', renderProcesses);
+$('needsReviewOnly').addEventListener('change', renderProcesses);
 $('folderFilter').addEventListener('input', () => filterTable('folderFilter', 'topFolders'));
 $('typeFilter').addEventListener('input', () => filterTable('typeFilter', 'fileTypes'));
 $('fileFilter').addEventListener('input', () => filterTable('fileFilter', 'biggestFiles'));
@@ -2977,7 +3154,7 @@ loadInitial();
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
-    server_version = "DiskUsageDashboard/1.9"
+    server_version = "DiskUsageDashboard/1.10"
 
     def log_message(self, format, *args):
         return
