@@ -19,8 +19,8 @@ from urllib.parse import parse_qs, urlparse
 
 sys.setrecursionlimit(10000)
 
-APP_VERSION = "1.7.0"
-DOC_VERSION = "1.7"
+APP_VERSION = "1.9.0"
+DOC_VERSION = "1.9"
 APP_DIR = Path(__file__).resolve().parent
 RECORDS_DIR = APP_DIR / "scan_records"
 REPORTS_DIR = APP_DIR / "generated_reports"
@@ -951,15 +951,16 @@ def ensure_version_metadata():
     metadata = {
         "app_version": APP_VERSION,
         "documentation_version": DOC_VERSION,
-        "last_updated": "2026-06-17",
+        "last_updated": "2026-06-18",
         "revision_notes": (
-            "Added Results copy buttons so users can copy folder directories "
-            "from largest-folder and biggest-file rows."
+            "Added process grouping, publisher filtering, memory grouping, "
+            "tree summaries, and downloadable grouped process reports."
         ),
         "affected_areas": [
             "browser_dashboard",
-            "dashboard_results",
-            "clipboard_actions",
+            "process_review",
+            "process_grouping",
+            "process_report_download",
             "documentation_versioning"
         ],
         "compatibility_notes": "Default run starts the browser app. Use --scan-once for legacy one-shot HTML report generation."
@@ -1063,13 +1064,18 @@ def scan_record_path(scan_id: str) -> Path:
 def load_scan_records():
     ensure_app_dirs()
     records = []
-    for path in sorted(RECORDS_DIR.glob("*.json"), reverse=True):
+    for path in RECORDS_DIR.glob("*.json"):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             records.append(data)
         except Exception:
             continue
-    return records
+
+    return sorted(
+        records,
+        key=lambda item: item.get("started_at") or item.get("completed_at") or "",
+        reverse=True
+    )
 
 
 def build_scan_result_payload(root, root_node, scanner: DiskScanner):
@@ -1269,10 +1275,20 @@ def process_risk_indicators(process):
 def get_process_snapshot():
     command = """
 Get-CimInstance Win32_Process |
-Select-Object ProcessId,Name,ExecutablePath,CommandLine,ParentProcessId,CreationDate,WorkingSetSize |
+Select-Object ProcessId,Name,ExecutablePath,CommandLine,ParentProcessId,CreationDate,WorkingSetSize,
+@{Name='CompanyName';Expression={
+    if ($_.ExecutablePath -and (Test-Path -LiteralPath $_.ExecutablePath)) {
+        try { [System.Diagnostics.FileVersionInfo]::GetVersionInfo($_.ExecutablePath).CompanyName } catch { $null }
+    } else { $null }
+}},
+@{Name='ProductName';Expression={
+    if ($_.ExecutablePath -and (Test-Path -LiteralPath $_.ExecutablePath)) {
+        try { [System.Diagnostics.FileVersionInfo]::GetVersionInfo($_.ExecutablePath).ProductName } catch { $null }
+    } else { $null }
+}} |
 ConvertTo-Json -Depth 4
 """
-    raw_processes = run_powershell_json(command, timeout_seconds=25)
+    raw_processes = run_powershell_json(command, timeout_seconds=35)
     name_by_pid = {int(item.get("ProcessId")): item.get("Name") for item in raw_processes if item.get("ProcessId") is not None}
     rows = []
 
@@ -1293,6 +1309,8 @@ ConvertTo-Json -Depth 4
             "memory_bytes": memory_bytes,
             "memory": format_size(memory_bytes),
             "started_at": item.get("CreationDate"),
+            "publisher": item.get("CompanyName"),
+            "product_name": item.get("ProductName"),
             "risk_indicators": process_risk_indicators(item),
         })
 
@@ -1704,6 +1722,55 @@ tr:hover td {{ background: #f8fbff; }}
     word-break: break-word;
 }}
 .small-action {{ white-space: nowrap; }}
+.process-controls {{
+    display: grid;
+    grid-template-columns: minmax(180px, 1.6fr) minmax(150px, 1fr) minmax(170px, 1fr) auto;
+    gap: 10px;
+    align-items: end;
+    margin: 12px 0;
+}}
+.process-controls input, .process-controls select {{ margin-top: 5px; }}
+.process-summary-grid {{
+    display: grid;
+    grid-template-columns: repeat(4, minmax(110px, 1fr));
+    gap: 8px;
+    margin: 0 0 10px;
+}}
+.process-summary-grid .metric {{ padding: 9px; }}
+.process-summary-grid .metric .value {{ font-size: 15px; }}
+.process-group-tree {{
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-soft);
+    padding: 8px;
+    margin-bottom: 10px;
+    max-height: 280px;
+    overflow: auto;
+}}
+.process-group-tree details {{
+    margin-left: 0;
+    border-bottom: 1px solid var(--line);
+}}
+.process-group-tree details:last-child {{ border-bottom: 0; }}
+.process-group-tree summary {{
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: center;
+}}
+.process-group-title {{ font-weight: 700; }}
+.process-group-meta {{ color: var(--muted); font-size: 12px; }}
+.process-group-children {{ margin: 4px 0 8px 18px; }}
+.process-child {{
+    padding: 6px 0;
+    border-top: 1px dashed var(--line);
+}}
+.process-child code {{
+    display: block;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}}
 .process-layout {{
     --process-list-width: 58%;
     display: grid;
@@ -1796,6 +1863,7 @@ summary {{ cursor: pointer; padding: 6px; }}
 .category-item {{ border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: #fff; }}
 @media (max-width: 980px) {{
     .layout, .form-grid, .grid, .manual-grid, .category-list {{ grid-template-columns: 1fr; }}
+    .process-controls, .process-summary-grid {{ grid-template-columns: 1fr; }}
     .process-layout {{ display: block; }}
     .process-panel {{
         height: 58vh;
@@ -1894,6 +1962,7 @@ summary {{ cursor: pointer; padding: 6px; }}
     <section id="tab-results" class="tab-panel hidden">
         <section class="section">
             <h2>Scan Results</h2>
+            <div id="resultRecordInfo" class="status-line">No scan record loaded yet.</div>
             <div id="resultSummary" class="grid"></div>
         </section>
         <section class="section">
@@ -1912,9 +1981,31 @@ summary {{ cursor: pointer; padding: 6px; }}
             <section class="section process-panel">
                 <h2>Running Programs</h2>
                 <p>These are risk indicators, not final malware decisions.</p>
-                <div class="actions"><button id="refreshProcesses" class="primary">Refresh processes</button></div>
-                <input id="processFilter" placeholder="Search programs, paths, or PID..." style="margin:12px 0">
-                <div class="process-panel-body"><div class="table-wrap"><table class="process-table"><thead><tr><th>Program</th><th>Memory</th><th>Indicators</th><th>Action</th></tr></thead><tbody id="processRows"></tbody></table></div></div>
+                <div class="actions">
+                    <button id="refreshProcesses" class="primary">Refresh processes</button>
+                    <button id="downloadProcessReport">Download grouped report</button>
+                </div>
+                <div class="process-controls">
+                    <label>Search
+                        <input id="processFilter" placeholder="Program, publisher, path, PID...">
+                    </label>
+                    <label>Publisher
+                        <select id="processPublisherFilter"><option value="">All publishers</option></select>
+                    </label>
+                    <label>Group by
+                        <select id="processGroupBy">
+                            <option value="publisher">Publisher</option>
+                            <option value="memory">Largest memory consumed</option>
+                            <option value="uncategorized">Uncategorized only</option>
+                        </select>
+                    </label>
+                    <div class="muted">Grouped locally from current process data.</div>
+                </div>
+                <div class="process-panel-body">
+                    <div id="processSummary" class="process-summary-grid"></div>
+                    <div id="processGroupTree" class="process-group-tree"><p class="muted">Refresh processes to see grouped results.</p></div>
+                    <div class="table-wrap"><table class="process-table"><thead><tr><th>Program</th><th>Memory</th><th>Indicators</th><th>Action</th></tr></thead><tbody id="processRows"></tbody></table></div>
+                </div>
             </section>
             <button id="processSplitter" class="process-splitter" type="button" aria-label="Drag to resize process list and process details panels" title="Drag to resize panels"></button>
             <section class="section detail-panel process-panel">
@@ -2299,6 +2390,31 @@ function metric(label, value) {{
     return `<div class="metric"><div class="label">${{esc(label)}}</div><div class="value">${{esc(value)}}</div></div>`;
 }}
 
+function asArray(value) {{
+    return Array.isArray(value) ? value : [];
+}}
+
+function valueOrUnavailable(value) {{
+    return value === undefined || value === null || value === '' ? 'Unavailable' : value;
+}}
+
+function renderResultError(record, error) {{
+    state.currentRecord = record || null;
+    $('resultRecordInfo').innerHTML = `
+        <strong>History record could not be displayed.</strong>
+        <p>${{esc(error.message || error)}}</p>
+        <p class="muted">Scan ID: ${{esc(record?.scan_id || 'Unavailable')}}</p>
+    `;
+    $('resultSummary').innerHTML = '';
+    $('scanHealth').className = 'health-panel error';
+    $('scanHealth').innerHTML = '<h3>Result Display Failed</h3><p>The saved record was loaded, but the dashboard could not render it.</p>';
+    $('topFolders').innerHTML = '<tr><td colspan="5">No folder data shown because the record could not be rendered.</td></tr>';
+    $('fileTypes').innerHTML = '<tr><td colspan="3">No file type data shown because the record could not be rendered.</td></tr>';
+    $('biggestFiles').innerHTML = '<tr><td colspan="5">No file data shown because the record could not be rendered.</td></tr>';
+    $('treeView').innerHTML = '<p class="muted">No tree data shown.</p>';
+    $('skippedPaths').innerHTML = '<p class="muted">No skipped paths shown.</p>';
+}}
+
 function renderScanHealth(result) {{
     const health = result.scan_health || {{
         level: 'info',
@@ -2323,28 +2439,37 @@ function renderScanHealth(result) {{
 
 function renderResult(record) {{
     state.currentRecord = record;
-    if (!record || !record.result) return;
-    const summary = record.result.summary;
+    if (!record || !record.result) throw new Error('The selected history record has no result data.');
+    const result = record.result || {{}};
+    const summary = result.summary || {{}};
+    $('resultRecordInfo').innerHTML = `
+        <strong>Loaded Scan Record</strong>
+        <p><strong>Path:</strong> <code>${{esc(valueOrUnavailable(record.root))}}</code></p>
+        <p class="muted">Started: ${{esc(valueOrUnavailable(record.started_at))}} | Completed: ${{esc(valueOrUnavailable(record.completed_at))}} | Scan ID: ${{esc(valueOrUnavailable(record.scan_id))}}</p>
+    `;
     $('resultSummary').innerHTML = [
-        metric('Total Size', summary.total_size),
-        metric('Folders', summary.folders_scanned),
-        metric('Files', summary.files_scanned),
-        metric('Skipped', summary.skipped_count),
-        metric('Status', record.status)
+        metric('Total Size', valueOrUnavailable(summary.total_size)),
+        metric('Folders', valueOrUnavailable(summary.folders_scanned)),
+        metric('Files', valueOrUnavailable(summary.files_scanned)),
+        metric('Skipped', valueOrUnavailable(summary.skipped_count)),
+        metric('Status', valueOrUnavailable(record.status))
     ].join('');
-    renderScanHealth(record.result);
-    $('topFolders').innerHTML = record.result.top_folders.map((row, index) =>
+    renderScanHealth(result);
+    const topFolders = asArray(result.top_folders);
+    const fileTypes = asArray(result.file_types);
+    const biggestFiles = asArray(result.biggest_files);
+    $('topFolders').innerHTML = topFolders.map((row, index) =>
         `<tr><td>${{index + 1}}</td><td>${{esc(row.size)}}</td><td>${{esc(row.file_count)}}</td><td><code>${{esc(row.path)}}</code></td><td><button class="copy-button" data-copy-path="${{esc(row.path)}}" data-copy-label="largest folder">Copy directory</button></td></tr>`
     ).join('') || '<tr><td colspan="5">No folder data.</td></tr>';
-    $('fileTypes').innerHTML = record.result.file_types.map(row =>
+    $('fileTypes').innerHTML = fileTypes.map(row =>
         `<tr><td><code>${{esc(row.extension)}}</code></td><td>${{esc(row.size)}}</td><td>${{esc(row.count)}}</td></tr>`
     ).join('') || '<tr><td colspan="3">No file type data.</td></tr>';
-    $('biggestFiles').innerHTML = record.result.biggest_files.map((row, index) =>
+    $('biggestFiles').innerHTML = biggestFiles.map((row, index) =>
         `<tr><td>${{index + 1}}</td><td>${{esc(row.size)}}</td><td>${{esc(row.modified)}}</td><td><code>${{esc(row.path)}}</code></td><td><button class="copy-button" data-copy-path="${{esc(directoryFromPath(row.path))}}" data-copy-label="file folder">Copy directory</button></td></tr>`
     ).join('') || '<tr><td colspan="5">No file data.</td></tr>';
-    $('treeView').innerHTML = record.result.tree_html || '<p class="muted">No tree data.</p>';
-    const skippedDetails = record.result.skipped_details || [];
-    const skippedFallback = record.result.skipped || [];
+    $('treeView').innerHTML = result.tree_html || '<p class="muted">No tree data.</p>';
+    const skippedDetails = asArray(result.skipped_details);
+    const skippedFallback = asArray(result.skipped);
     $('skippedPaths').innerHTML = skippedDetails.length
         ? `<ul>${{skippedDetails.map(item => `<li><strong>${{esc(item.category_label || 'Skipped')}}</strong><br><code>${{esc(item.path)}}</code><br><span class="muted">${{esc(item.explanation || item.error)}}</span></li>`).join('')}}</ul>`
         : skippedFallback.length
@@ -2489,30 +2614,226 @@ async function refreshHistory(showNotice = true) {{
 async function openHistory(scanId) {{
     try {{
         const record = await api('/api/scans/' + encodeURIComponent(scanId));
-        renderResult(record);
-        showActionAlert('info', 'History Record Opened', 'Loaded a saved scan record into the results view.', [
-            `Scan ID: ${{scanId}}`,
-            `Status: ${{record.status}}`,
-            `Path: ${{record.root}}`
-        ]);
         showTab('results');
+        try {{
+            renderResult(record);
+            showActionAlert('info', 'History Record Opened', 'Loaded a saved scan record into the results view.', [
+                `Scan ID: ${{scanId}}`,
+                `Status: ${{record.status}}`,
+                `Path: ${{record.root}}`
+            ]);
+        }} catch (renderError) {{
+            renderResultError(record, renderError);
+            showActionAlert('error', 'History Record Display Failed', renderError.message, [
+                `Scan ID: ${{scanId}}`,
+                'The saved record was found, but one or more result sections could not be displayed.'
+            ]);
+        }}
     }} catch (error) {{
         showActionAlert('error', 'History Record Failed', error.message, [`Scan ID: ${{scanId}}`]);
     }}
 }}
 
+function formatBytes(bytes) {{
+    const value = Number(bytes) || 0;
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let size = value;
+    let unitIndex = 0;
+    while (size >= 1024 && unitIndex < units.length - 1) {{
+        size = size / 1024;
+        unitIndex += 1;
+    }}
+    return `${{size >= 10 || unitIndex === 0 ? size.toFixed(0) : size.toFixed(2)}} ${{units[unitIndex]}}`;
+}}
+
+function publisherForProcess(process) {{
+    return (process.publisher || process.company_name || '').trim();
+}}
+
+function publisherLabel(process) {{
+    return publisherForProcess(process) || 'Uncategorized / publisher unavailable';
+}}
+
+function isUncategorizedProcess(process) {{
+    return !publisherForProcess(process);
+}}
+
+function memoryGroupLabel(process) {{
+    const bytes = Number(process.memory_bytes) || 0;
+    if (bytes >= 1024 * 1024 * 1024) return 'Very high memory: 1 GB and above';
+    if (bytes >= 250 * 1024 * 1024) return 'High memory: 250 MB to 1 GB';
+    if (bytes >= 50 * 1024 * 1024) return 'Medium memory: 50 MB to 250 MB';
+    if (bytes > 0) return 'Low memory: below 50 MB';
+    return 'Memory unavailable';
+}}
+
+function processMatchesQuery(process, query) {{
+    if (!query) return true;
+    return JSON.stringify(process).toLowerCase().includes(query);
+}}
+
+function getVisibleProcesses() {{
+    const query = $('processFilter').value.toLowerCase().trim();
+    const publisherFilter = $('processPublisherFilter').value;
+    const groupBy = $('processGroupBy').value;
+    return state.processes
+        .filter(process => processMatchesQuery(process, query))
+        .filter(process => !publisherFilter || publisherLabel(process) === publisherFilter)
+        .filter(process => groupBy !== 'uncategorized' || isUncategorizedProcess(process))
+        .sort((a, b) => {{
+            if (groupBy === 'memory' || groupBy === 'uncategorized') return (Number(b.memory_bytes) || 0) - (Number(a.memory_bytes) || 0);
+            return publisherLabel(a).localeCompare(publisherLabel(b)) || String(a.friendly_name || '').localeCompare(String(b.friendly_name || ''));
+        }});
+}}
+
+function groupProcesses(processes, mode) {{
+    const groups = new Map();
+    processes.forEach(process => {{
+        const key = mode === 'memory' ? memoryGroupLabel(process) : publisherLabel(process);
+        if (!groups.has(key)) groups.set(key, {{ name: key, totalMemory: 0, processes: [] }});
+        const group = groups.get(key);
+        group.totalMemory += Number(process.memory_bytes) || 0;
+        group.processes.push(process);
+    }});
+    return Array.from(groups.values())
+        .map(group => {{
+            group.processes.sort((a, b) => (Number(b.memory_bytes) || 0) - (Number(a.memory_bytes) || 0));
+            return group;
+        }})
+        .sort((a, b) => b.totalMemory - a.totalMemory || a.name.localeCompare(b.name));
+}}
+
+function updatePublisherFilterOptions() {{
+    const current = $('processPublisherFilter').value;
+    const publishers = Array.from(new Set(state.processes.map(publisherLabel))).sort((a, b) => a.localeCompare(b));
+    $('processPublisherFilter').innerHTML = '<option value="">All publishers</option>' + publishers.map(name =>
+        `<option value="${{esc(name)}}">${{esc(name)}}</option>`
+    ).join('');
+    if (publishers.includes(current)) $('processPublisherFilter').value = current;
+}}
+
+function renderProcessSummary(processes) {{
+    const totalMemory = processes.reduce((sum, process) => sum + (Number(process.memory_bytes) || 0), 0);
+    const publisherCount = new Set(processes.map(publisherLabel)).size;
+    const uncategorizedCount = processes.filter(isUncategorizedProcess).length;
+    $('processSummary').innerHTML = [
+        metric('Shown', processes.length),
+        metric('Publishers', publisherCount),
+        metric('Memory', formatBytes(totalMemory)),
+        metric('Uncategorized', uncategorizedCount)
+    ].join('');
+}}
+
+function renderProcessGroupTree(processes) {{
+    const mode = $('processGroupBy').value;
+    const groups = groupProcesses(processes, mode === 'uncategorized' ? 'publisher' : mode);
+    $('processGroupTree').innerHTML = groups.map((group, index) => {{
+        const children = group.processes.map(process => {{
+            const indicators = asArray(process.risk_indicators).map(item => item.label).join(', ') || 'No indicators';
+            return `
+                <div class="process-child">
+                    <strong>${{esc(process.friendly_name || process.name || 'Unknown process')}}</strong>
+                    <span class="muted">PID ${{esc(process.pid)}} | ${{esc(process.memory || formatBytes(process.memory_bytes))}}</span>
+                    <code>${{esc(process.executable_path || 'Path unavailable')}}</code>
+                    <span class="muted">${{esc(indicators)}}</span>
+                </div>
+            `;
+        }}).join('');
+        return `
+            <details ${{index < 3 ? 'open' : ''}}>
+                <summary>
+                    <span class="process-group-title">${{esc(group.name)}}</span>
+                    <span class="process-group-meta">${{group.processes.length}} processes | ${{esc(formatBytes(group.totalMemory))}}</span>
+                </summary>
+                <div class="process-group-children">${{children}}</div>
+            </details>
+        `;
+    }}).join('') || '<p class="muted">No process groups match the current filters.</p>';
+}}
+
+function buildProcessReportHtml() {{
+    const visible = getVisibleProcesses();
+    const groupMode = $('processGroupBy').value;
+    const groups = groupProcesses(visible, groupMode === 'uncategorized' ? 'publisher' : groupMode);
+    const uncategorized = state.processes.filter(isUncategorizedProcess).sort((a, b) => (Number(b.memory_bytes) || 0) - (Number(a.memory_bytes) || 0));
+    const generated = new Date().toLocaleString();
+    const groupHtml = groups.map(group => `
+        <details open>
+            <summary><strong>${{esc(group.name)}}</strong> - ${{group.processes.length}} processes, ${{esc(formatBytes(group.totalMemory))}}</summary>
+            <ul>
+                ${{group.processes.map(process => `<li><strong>${{esc(process.friendly_name || process.name || 'Unknown process')}}</strong> - PID ${{esc(process.pid)}} - ${{esc(process.memory || formatBytes(process.memory_bytes))}}<br><code>${{esc(process.executable_path || 'Path unavailable')}}</code></li>`).join('')}}
+            </ul>
+        </details>
+    `).join('');
+    const uncategorizedHtml = uncategorized.length
+        ? `<ul>${{uncategorized.map(process => `<li><strong>${{esc(process.friendly_name || process.name || 'Unknown process')}}</strong> - PID ${{esc(process.pid)}} - ${{esc(process.memory || formatBytes(process.memory_bytes))}}<br><code>${{esc(process.executable_path || 'Path unavailable')}}</code></li>`).join('')}}</ul>`
+        : '<p>No uncategorized running background programs were found in the current snapshot.</p>';
+
+    return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Grouped Running Programs Report</title>
+<style>
+body {{ font-family: Segoe UI, Arial, sans-serif; margin: 28px; color: #17202a; }}
+code {{ overflow-wrap: anywhere; word-break: break-word; }}
+details {{ margin: 10px 0; padding: 10px; border: 1px solid #d7dee8; border-radius: 8px; }}
+summary {{ cursor: pointer; }}
+.muted {{ color: #5d6b7a; }}
+</style>
+</head>
+<body>
+<h1>Grouped Running Programs Report</h1>
+<p class="muted">Generated locally: ${{esc(generated)}}. This report is informational only and does not prove whether a program is safe or harmful.</p>
+<p><strong>Grouping:</strong> ${{esc(groupMode)}} | <strong>Shown processes:</strong> ${{visible.length}} | <strong>Total loaded snapshot:</strong> ${{state.processes.length}}</p>
+<h2>Grouped Tree</h2>
+${{groupHtml || '<p>No processes matched the current filters.</p>'}}
+<h2>Uncategorized Running Background Programs</h2>
+<p class="muted">These entries have no publisher/company value in the local process snapshot.</p>
+${{uncategorizedHtml}}
+</body>
+</html>`;
+}}
+
+function downloadProcessReport() {{
+    if (!state.processes.length) {{
+        showActionAlert('warning', 'No Process Report Available', 'Refresh processes before downloading a grouped report.', [
+            'The report is generated from the currently loaded local process snapshot.'
+        ]);
+        return;
+    }}
+    const html = buildProcessReportHtml();
+    const blob = new Blob([html], {{ type: 'text/html' }});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    link.href = url;
+    link.download = `running-programs-grouped-report-${{stamp}}.html`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showActionAlert('success', 'Grouped Process Report Downloaded', 'A local HTML report was generated from the current process snapshot.', [
+        `Processes in current view: ${{getVisibleProcesses().length}}`,
+        'Reports may include local program paths. Keep them private unless reviewed.'
+    ]);
+}}
+
 async function refreshProcesses() {{
     $('processRows').innerHTML = '<tr><td colspan="4">Loading processes...</td></tr>';
+    $('processSummary').innerHTML = '';
+    $('processGroupTree').innerHTML = '<p class="muted">Loading grouped process view...</p>';
     showActionAlert('info', 'Refreshing Process List', 'The app is reading local Windows process metadata.', [
         'This does not stop or modify programs.',
         'Risk indicators are not final malware verdicts.'
     ]);
     try {{
         const data = await api('/api/processes');
-        state.processes = data.processes;
+        state.processes = data.processes || [];
+        updatePublisherFilterOptions();
         renderProcesses();
         showActionAlert('success', 'Process List Refreshed', 'Running programs were loaded from this computer.', [
-            `Processes shown: ${{data.processes.length}}`,
+            `Processes shown: ${{state.processes.length}}`,
             `Collected at: ${{data.collected_at}}`
         ]);
     }} catch (error) {{
@@ -2522,11 +2843,12 @@ async function refreshProcesses() {{
 }}
 
 function renderProcesses() {{
-    const query = $('processFilter').value.toLowerCase();
-    const rows = state.processes.filter(p => JSON.stringify(p).toLowerCase().includes(query));
+    const rows = getVisibleProcesses();
+    renderProcessSummary(rows);
+    renderProcessGroupTree(rows);
     $('processRows').innerHTML = rows.map(p => {{
-        const indicators = p.risk_indicators.map(i => `<span class="pill ${{esc(i.level)}}">${{esc(i.label)}}</span>`).join('');
-        return `<tr class="process-row" tabindex="0" data-pid="${{esc(p.pid)}}" title="Open technical details for this process"><td class="process-name-cell"><strong>${{esc(p.friendly_name)}}</strong><br><span class="muted">PID ${{esc(p.pid)}} | Parent: ${{esc(p.parent_name || p.parent_pid || 'Unavailable')}}</span><br><code class="path-text">${{esc(p.executable_path || 'Path unavailable')}}</code></td><td>${{esc(p.memory)}}</td><td>${{indicators}}</td><td><button class="small-action" data-pid="${{esc(p.pid)}}">Details</button></td></tr>`;
+        const indicators = asArray(p.risk_indicators).map(i => `<span class="pill ${{esc(i.level)}}">${{esc(i.label)}}</span>`).join('');
+        return `<tr class="process-row" tabindex="0" data-pid="${{esc(p.pid)}}" title="Open technical details for this process"><td class="process-name-cell"><strong>${{esc(p.friendly_name)}}</strong><br><span class="muted">PID ${{esc(p.pid)}} | Parent: ${{esc(p.parent_name || p.parent_pid || 'Unavailable')}} | Publisher: ${{esc(publisherLabel(p))}}</span><br><code class="path-text">${{esc(p.executable_path || 'Path unavailable')}}</code></td><td>${{esc(p.memory)}}</td><td>${{indicators}}</td><td><button class="small-action" data-pid="${{esc(p.pid)}}">Details</button></td></tr>`;
     }}).join('') || '<tr><td colspan="4">No matching processes.</td></tr>';
 }}
 
@@ -2615,8 +2937,11 @@ $('startScan').addEventListener('click', startScan);
 $('cancelScan').addEventListener('click', cancelScan);
 $('refreshHistory').addEventListener('click', refreshHistory);
 $('refreshProcesses').addEventListener('click', refreshProcesses);
+$('downloadProcessReport').addEventListener('click', downloadProcessReport);
 $('exitApp').addEventListener('click', exitApp);
 $('processFilter').addEventListener('input', renderProcesses);
+$('processPublisherFilter').addEventListener('change', renderProcesses);
+$('processGroupBy').addEventListener('change', renderProcesses);
 $('folderFilter').addEventListener('input', () => filterTable('folderFilter', 'topFolders'));
 $('typeFilter').addEventListener('input', () => filterTable('typeFilter', 'fileTypes'));
 $('fileFilter').addEventListener('input', () => filterTable('fileFilter', 'biggestFiles'));
@@ -2652,7 +2977,7 @@ loadInitial();
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
-    server_version = "DiskUsageDashboard/1.7"
+    server_version = "DiskUsageDashboard/1.9"
 
     def log_message(self, format, *args):
         return

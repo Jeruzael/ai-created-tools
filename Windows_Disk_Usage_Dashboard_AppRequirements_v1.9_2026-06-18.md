@@ -2,12 +2,12 @@
 
 - Document: App Requirements
 - Client/Project: Windows Disk Usage Dashboard
-- Version: v1.7
-- Date: 2026-06-17
+- Version: v1.9
+- Date: 2026-06-18
 - Prepared by: Codex / Project Team
 - Prepared for: Windows users, support users, and technical reviewers
 - Status: Revised
-- Revision notes: Added Results copy buttons so users can copy directory paths from largest-folder and biggest-file rows.
+- Revision notes: Added Process grouping by publisher and memory, grouped tree summaries, publisher filtering, and downloadable grouped process reports.
 
 ## Revision History
 
@@ -21,6 +21,8 @@
 | v1.5 | 2026-06-17 | Revised | Improved process row selection, wrapped long process paths, and expanded manual explanations for scan settings and Windows link-like folders. |
 | v1.6 | 2026-06-17 | Revised | Added scrollable, draggable process review panes for Running Programs and Process Details. |
 | v1.7 | 2026-06-17 | Revised | Added copy-directory actions in Results for largest folders and biggest files. |
+| v1.8 | 2026-06-17 | Revised | Fixed History record opening, added visible loaded-record context, and hardened Results rendering for older records. |
+| v1.9 | 2026-06-18 | Revised | Added Process grouping/filtering and downloadable grouped running-program reports. |
 
 ## Implementation Status
 
@@ -87,6 +89,24 @@ Implemented in v1.7:
 - Add a Copy directory button to each Biggest Files row that copies the containing folder.
 - Show a success or failure action alert after copy attempts in the browser dashboard.
 - Keep legacy one-shot reports consistent by adding copy buttons to their folder and file tables.
+
+Implemented in v1.8:
+
+- Sort History records by actual scan start/completion time.
+- Show the loaded scan path, scan ID, start time, and completion time in Results.
+- Switch to the Results tab before rendering a selected History record.
+- Harden Results rendering so missing newer fields in older records do not block the History open flow.
+- Show a visible Results error panel if a saved record is found but cannot be displayed.
+
+Implemented in v1.9:
+
+- Add publisher metadata to the lightweight process snapshot when Windows file metadata is available.
+- Add Process filters for search and publisher.
+- Add Process grouping modes for publisher, largest memory consumed, and uncategorized entries.
+- Render grouped running programs in a collapsible tree structure.
+- Add Process summary metrics for visible count, publisher count, memory total, and uncategorized count.
+- Add a downloadable local HTML grouped process report.
+- Include an uncategorized running background programs section in the downloaded report.
 
 ## 1. Purpose
 
@@ -225,6 +245,12 @@ The scan results screen must show:
 
 Tables must support search and sorting.
 
+When a History record is opened, Results must clearly show which saved scan is loaded, including root path, scan ID, start time, and completion time.
+
+Opening a History record must switch the user to Results after the record is found.
+
+Older saved records must still render safely when newer optional fields are missing.
+
 Top Biggest Folders rows must include a copy action that copies the folder path.
 
 Biggest Files rows must include a copy action that copies the file's containing directory, not just the file name.
@@ -251,6 +277,27 @@ Long program locations and command/path text must wrap within the process panel 
 The Running Programs pane and Process Details pane must be independently scrollable so long process lists and long technical details do not push the whole page out of view.
 
 The user must be able to drag the divider between the Running Programs pane and Process Details pane to resize both panels. The divider should also support keyboard resizing for accessibility.
+
+The Process screen must support:
+
+- Searching by program, publisher, path, or PID.
+- Filtering by publisher/company metadata when available.
+- Grouping by publisher.
+- Grouping by largest memory consumed.
+- Viewing uncategorized processes where publisher/company metadata is unavailable.
+- A collapsible tree-style grouped summary.
+- Summary metrics for visible process count, publisher count, memory total, and uncategorized process count.
+- Downloading a local grouped process report.
+
+The grouped process report must include:
+
+- Generation date/time.
+- Grouping mode.
+- Count of processes shown in the current view.
+- Grouped tree of running programs.
+- Separate uncategorized running background programs section.
+- Local paths where available.
+- Reminder that the report is informational only and not a malware verdict.
 
 The screen must not label a process as definitely safe, malware, virus, or malicious. It may show caution indicators such as unsigned executable, unusual location, missing publisher, high resource use, inaccessible path, or recently started.
 
@@ -781,8 +828,21 @@ The app must handle:
 - Confirm file copy buttons copy the containing directory path.
 - Confirm copy success and failure states update the action alert panel.
 - Confirm scan history creates a dated record.
+- Confirm history records are ordered by scan time.
+- Confirm opening a history record switches to Results.
+- Confirm Results shows the selected history record path, scan ID, start time, and completion time.
+- Confirm older history records without newer optional fields still render.
+- Confirm a malformed saved record shows a visible Results error instead of silently staying on History.
 - Confirm cancelled scans are recorded correctly.
 - Confirm process list loads.
+- Confirm process publisher filter is populated after refresh.
+- Confirm process search filters by program, publisher, path, or PID.
+- Confirm process grouping by publisher renders a collapsible tree.
+- Confirm process grouping by largest memory consumed sorts groups by memory.
+- Confirm uncategorized process view shows only entries without publisher/company metadata.
+- Confirm process summary metrics update when filters change.
+- Confirm grouped process report downloads as a local HTML file.
+- Confirm downloaded process report includes grouped tree and uncategorized entries.
 - Confirm process detail panel shows available metadata.
 - Confirm process details open when clicking a process row.
 - Confirm process details open when pressing Enter or Space on a focused process row.
@@ -840,6 +900,13 @@ The app must handle:
 - [ ] Results include copy-directory buttons for biggest files.
 - [ ] Copy-directory actions update the alert panel and do not modify scan data.
 - [ ] User can view running processes in a non-technical list.
+- [ ] User can filter processes by publisher and search text.
+- [ ] User can group processes by publisher.
+- [ ] User can group processes by largest memory consumed.
+- [ ] User can view uncategorized running background programs.
+- [ ] Process groups render as a collapsible tree.
+- [ ] User can download a grouped process report.
+- [ ] Downloaded process report includes uncategorized running background programs.
 - [ ] User can open a technical detail panel for each process.
 - [ ] User can open process details by selecting a row or using the Details button.
 - [ ] Long process paths wrap so other process table columns remain visible.
@@ -849,6 +916,9 @@ The app must handle:
 - [ ] Resizing process panes updates the action alert panel.
 - [ ] Process safety is shown as risk indicators, not definitive malware claims.
 - [ ] Every scan creates a local dated record with settings, acknowledgement status, and results.
+- [ ] Opening a history record visibly loads that record in Results.
+- [ ] Results identifies the selected history record by path, scan ID, and timestamps.
+- [ ] Older saved records remain viewable when optional newer fields are missing.
 - [ ] Documentation and revision metadata update when app behavior changes.
 - [ ] Tool remains read-only toward scanned files and running processes.
 - [ ] Tool does not upload local scan or process data.
