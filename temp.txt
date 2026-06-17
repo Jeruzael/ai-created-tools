@@ -1,36 +1,37 @@
-Implemented v1.10.
+Implemented the v1.11 Process/report usability update and documented it.
 
-  Added to the Process section:
+  Changed:
 
-  - Needs review only filter.
-  - Review reason filter.
-  - New Needs review grouping mode.
-  - Local review reasons for:
-      - publisher metadata unavailable
-      - program path unavailable/inaccessible
-      - running from Temp or Downloads
-      - Windows folder with non-Microsoft publisher
-      - shell/developer command runners
+  - windows/DiskUsageHtmlReport.py:22
+      - Updated app/docs version to 1.11.0 / 1.11.
+      - Moved Publisher explanation into an accessible hover/focus tooltip.
+      - Added compact 5-column Process summary grid for desktop, with mobile wrapping preserved.
+      - Added Verify link and in-page Verification Guide.
+      - Added digital signature and SHA-256 beginner instructions.
+      - Added the same Verification Guide to downloaded grouped and verification reports.
+      - Updated server header to DiskUsageDashboard/1.11.
 
-  - Verification checklist in the selected process detail panel.
-  - Publisher/product metadata in process details where available.
-  - Download verification report as a local HTML report with Needs Review groups and safe next steps.
+  - windows/Windows_Disk_Usage_Dashboard_AppRequirements_v1.11_2026-06-18.md:1
+      - Documented v1.11 requirements, revision history, checklist, and acceptance criteria.
 
-  Updated docs:
+  - README.md:1, windows/README.md:1, windows/dashboard_version.json:1
+      - Updated version and user-facing notes.
 
-  - README.md:5
-  - windows/README.md:3
-  - windows/dashboard_version.json:2
-  - windows/Windows_Disk_Usage_Dashboard_AppRequirements_v1.10_2026-06-18.md:5
+  Verification passed:
 
-  Verified:
+  - python -m py_compile windows\DiskUsageHtmlReport.py
+  - Restarted dashboard server: http://127.0.0.1:8765/, PID 4624
+  - API reports app_version: 1.11.0, documentation_version: 1.11
+  - Confirmed served UI contains tooltip, Verify link, Verification Guide, signature/hash commands, and Back to top.
+  - Confirmed old visible Publisher note is no longer taking layout space.
+  - Process API returned live data: 302 processes, 57 needs-review entries.
+  - Legacy CLI mode still works and generated runtime\disk_usage_html_report_test\legacy-v111-scan-once.html.
 
-  - python -m py_compile windows\DiskUsageHtmlReport.py passed.
-  - Live /api/processes returned 300 processes, 57 flagged as Needs Review.
-  - Served dashboard contains v1.10 controls and report generator.
-  - Browser-script check passed for Needs Review filtering, review reason options, grouped tree rendering, and
-    verification report HTML.
+  Manual browser check:
 
-  - Legacy --scan-once report generation still works.
-
-  Dashboard is running at http://127.0.0.1:8765/ with PID 30804.
+  1. Open http://127.0.0.1:8765/.
+  2. Go to Processes.
+  3. Hover or tab-focus the i beside Publisher.
+  4. Confirm five summary boxes stay on one row at normal desktop width.
+  5. Click Verify and confirm it scrolls to Verification Guide.
+  6. Download grouped/verification reports and confirm the guide appears there too.

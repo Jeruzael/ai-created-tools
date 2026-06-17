@@ -2,12 +2,12 @@
 
 - Document: App Requirements
 - Client/Project: Windows Disk Usage Dashboard
-- Version: v1.10
+- Version: v1.11
 - Date: 2026-06-18
 - Prepared by: Codex / Project Team
 - Prepared for: Windows users, support users, and technical reviewers
 - Status: Revised
-- Revision notes: Added Needs Review filtering, process verification summaries, review-reason filters, and downloadable process verification reports.
+- Revision notes: Improved Process report usability with a publisher tooltip, compact summary cards, Verify navigation, and beginner-friendly verification guide content.
 
 ## Revision History
 
@@ -24,6 +24,7 @@
 | v1.8 | 2026-06-17 | Revised | Fixed History record opening, added visible loaded-record context, and hardened Results rendering for older records. |
 | v1.9 | 2026-06-18 | Revised | Added Process grouping/filtering and downloadable grouped running-program reports. |
 | v1.10 | 2026-06-18 | Revised | Added Needs Review filtering, process verification summaries, and downloadable verification reports. |
+| v1.11 | 2026-06-18 | Revised | Added publisher tooltip, compact Process summary cards, Verify navigation, and Verification Guide instructions for signatures and SHA-256. |
 
 ## Implementation Status
 
@@ -119,6 +120,16 @@ Implemented in v1.10:
 - Add publisher/product metadata to process details when available.
 - Add a downloadable local HTML process verification report.
 - Keep all verification language as review guidance, not a malware verdict.
+
+Implemented in v1.11:
+
+- Move the permanent Publisher explanation into an accessible hover/focus tooltip.
+- Keep the exact tooltip reminder that grouping is local and review flags are not malware verdicts.
+- Compact the five Process summary metrics so they fit in one row on normal desktop widths.
+- Add a Verify link in the Process actions area.
+- Add an in-page Verification Guide with beginner-friendly digital signature and SHA-256 instructions.
+- Add Back to top navigation from the Verification Guide.
+- Include the Verification Guide and Verify anchor in downloaded grouped and verification reports.
 
 ## 1. Purpose
 
@@ -303,6 +314,9 @@ The Process screen must support:
 - Summary metrics for visible process count, publisher count, memory total, and uncategorized process count.
 - Downloading a local grouped process report.
 - Downloading a local process verification report.
+- Publisher filter explanation must appear as an accessible tooltip instead of permanent visible helper text.
+- The five Process summary metrics must fit on one row on normal desktop widths and wrap cleanly on narrow screens.
+- Verify navigation must move the user to the Verification Guide in the Process page and in downloaded process reports.
 
 Needs Review must flag local review reasons such as:
 
@@ -331,6 +345,18 @@ The process verification report must include:
 - Program name, PID, publisher, memory, review reasons, and path.
 - Safe next steps that recommend signature/hash review and trusted security tools.
 - Clear wording that it is not a malware verdict.
+
+The Verification Guide must include:
+
+- Intro text explaining that the report helps decide what to review but does not prove safety or maliciousness.
+- Beginner-friendly Windows steps for checking digital signatures from file Properties.
+- PowerShell example: `Get-AuthenticodeSignature "C:\Path\To\File.exe"`.
+- Explanation of `Valid`, `NotSigned`, `UnknownError`, `HashMismatch`, and `NotTrusted`.
+- Beginner-friendly SHA-256 hash instructions.
+- PowerShell example: `Get-FileHash "C:\Path\To\File.exe" -Algorithm SHA256`.
+- Privacy warning against uploading private files or unknown executables to public websites unless the user understands the risk.
+- What to do next guidance that avoids direct file deletion.
+- Back to top navigation.
 
 The screen must not label a process as definitely safe, malware, virus, or malicious. It may show caution indicators such as unsigned executable, unusual location, missing publisher, high resource use, inaccessible path, or recently started.
 
@@ -881,6 +907,13 @@ The app must handle:
 - Confirm downloaded process report includes grouped tree and uncategorized entries.
 - Confirm process verification report downloads as a local HTML file.
 - Confirm downloaded verification report includes needs-review reasons and safe next steps.
+- Confirm Publisher helper text is not permanently visible in the Process control layout.
+- Confirm Publisher tooltip appears on hover and keyboard focus.
+- Confirm five Process summary metrics fit in one row on normal desktop width.
+- Confirm Process summary metrics wrap cleanly on narrow widths.
+- Confirm Verify link moves to the Verification Guide.
+- Confirm Verification Guide includes digital signature and SHA-256 instructions.
+- Confirm downloaded grouped and verification reports include Verify navigation and the Verification Guide.
 - Confirm process detail panel shows available metadata.
 - Confirm process details open when clicking a process row.
 - Confirm process details open when pressing Enter or Space on a focused process row.
@@ -949,6 +982,11 @@ The app must handle:
 - [ ] Downloaded process report includes uncategorized running background programs.
 - [ ] User can download a process verification report.
 - [ ] Downloaded verification report includes needs-review groups and safe next steps.
+- [ ] Publisher explanation is available through an accessible tooltip, not permanent layout text.
+- [ ] Five Process summary cards fit on one row on normal desktop width.
+- [ ] Verify navigation opens the Verification Guide.
+- [ ] Verification Guide explains digital signature and SHA-256 checks in beginner-friendly language.
+- [ ] Downloaded process reports include the Verification Guide.
 - [ ] User can open a technical detail panel for each process.
 - [ ] User can open process details by selecting a row or using the Details button.
 - [ ] Long process paths wrap so other process table columns remain visible.

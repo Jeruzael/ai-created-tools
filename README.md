@@ -1,6 +1,6 @@
 # Windows Disk Usage Dashboard
 
-Version: `1.10.0`
+Version: `1.11.0`
 
 This folder contains a local Windows browser dashboard for disk usage review, scan history, process review, and safe cleanup guidance.
 
@@ -55,7 +55,7 @@ This is usually faster and safer than scanning the full `C:\` drive.
 - `Scan`: choose a drive or folder and start a scan.
 - `Results`: review biggest folders, file types, biggest files, tree view, and skipped paths. Use Copy directory buttons to copy folder paths for manual review.
 - `Scan Health`: inside Results, explains whether any skipped paths may have been caused by locked files, running apps, permissions, changing paths, or reparse points.
-- `Processes`: review running programs and local technical indicators. Filter to Needs Review, filter by review reason or publisher, group by publisher or memory use, view grouped trees, download grouped/verification reports, and select a process row or Details button to open the technical panel. Drag the divider between Running Programs and Process Details to resize both panes.
+- `Processes`: review running programs and local technical indicators. Filter to Needs Review, filter by review reason or publisher, group by publisher or memory use, view grouped trees, use the Verify guide for signature/hash checks, download grouped/verification reports, and select a process row or Details button to open the technical panel. Drag the divider between Running Programs and Process Details to resize both panes.
 - `History`: open previous scan records. Opened records switch to Results and show the loaded scan path, scan ID, and timestamps.
 - `Manual`: read safe usage guidance, scan setting explanations, use cases, cleanup workflow, and do's/don'ts.
 - `About`: view version and local privacy notes.

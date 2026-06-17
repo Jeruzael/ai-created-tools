@@ -19,8 +19,8 @@ from urllib.parse import parse_qs, urlparse
 
 sys.setrecursionlimit(10000)
 
-APP_VERSION = "1.10.0"
-DOC_VERSION = "1.10"
+APP_VERSION = "1.11.0"
+DOC_VERSION = "1.11"
 APP_DIR = Path(__file__).resolve().parent
 RECORDS_DIR = APP_DIR / "scan_records"
 REPORTS_DIR = APP_DIR / "generated_reports"
@@ -953,14 +953,14 @@ def ensure_version_metadata():
         "documentation_version": DOC_VERSION,
         "last_updated": "2026-06-18",
         "revision_notes": (
-            "Added Needs Review filtering, review reasons, verification summaries, "
-            "and downloadable process verification reports."
+            "Improved Process report usability with publisher tooltip, compact "
+            "summary metrics, and a beginner-friendly verification guide."
         ),
         "affected_areas": [
             "browser_dashboard",
             "process_review",
-            "process_verification",
-            "process_report_download",
+            "process_report_ui",
+            "verification_guide",
             "documentation_versioning"
         ],
         "compatibility_notes": "Default run starts the browser app. Use --scan-once for legacy one-shot HTML report generation."
@@ -1644,6 +1644,7 @@ def build_dashboard_html():
     --bad: #b42318;
 }}
 * {{ box-sizing: border-box; }}
+html {{ scroll-behavior: smooth; }}
 body {{
     margin: 0;
     font-family: Segoe UI, Arial, sans-serif;
@@ -1678,6 +1679,16 @@ button {{
 button.primary {{ background: var(--accent); border-color: var(--accent); color: #fff; }}
 button.danger {{ color: var(--bad); }}
 button:disabled {{ opacity: .55; cursor: not-allowed; }}
+.button-link {{
+    display: inline-block;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--text);
+    padding: 9px 12px;
+    border-radius: 6px;
+    text-decoration: none;
+}}
+.button-link:hover, .button-link:focus {{ border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 1px; }}
 .copy-button {{ white-space: nowrap; }}
 input, select {{
     width: 100%;
@@ -1762,6 +1773,47 @@ tr:hover td {{ background: #f8fbff; }}
 }}
 .process-controls input, .process-controls select {{ margin-top: 5px; }}
 .process-controls input[type="checkbox"] {{ width: auto; margin-right: 6px; }}
+.tooltip-wrap {{
+    display: inline-block;
+    position: relative;
+    margin-left: 5px;
+}}
+.info-icon {{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 17px;
+    height: 17px;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: var(--panel-soft);
+    color: var(--accent-strong);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: help;
+}}
+.info-icon:focus {{ outline: 2px solid var(--accent); outline-offset: 2px; }}
+.tooltip-text {{
+    display: none;
+    position: absolute;
+    left: 0;
+    top: 23px;
+    z-index: 5;
+    width: min(320px, 78vw);
+    padding: 9px 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #17202a;
+    color: #fff;
+    box-shadow: 0 8px 22px rgba(23, 32, 42, .18);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.4;
+}}
+.tooltip-wrap:hover .tooltip-text,
+.tooltip-wrap:focus-within .tooltip-text {{
+    display: block;
+}}
 .verification-list {{
     border: 1px solid var(--line);
     border-radius: 8px;
@@ -1773,12 +1825,26 @@ tr:hover td {{ background: #f8fbff; }}
 .verification-list li {{ margin: 4px 0; }}
 .process-summary-grid {{
     display: grid;
-    grid-template-columns: repeat(4, minmax(110px, 1fr));
-    gap: 8px;
+    grid-template-columns: repeat(5, minmax(82px, 1fr));
+    gap: 6px;
     margin: 0 0 10px;
 }}
-.process-summary-grid .metric {{ padding: 9px; }}
-.process-summary-grid .metric .value {{ font-size: 15px; }}
+.process-summary-grid .metric {{ padding: 8px; }}
+.process-summary-grid .metric .label {{ font-size: 11px; }}
+.process-summary-grid .metric .value {{ font-size: 14px; }}
+.verification-guide {{
+    margin-top: 16px;
+}}
+.verification-guide h3 {{ margin-top: 16px; }}
+.verification-guide ol, .verification-guide ul {{ margin: 8px 0 0 22px; padding: 0; }}
+.verification-guide li {{ margin: 6px 0; line-height: 1.45; }}
+.verification-guide pre {{
+    overflow: auto;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-soft);
+    padding: 10px;
+}}
 .process-group-tree {{
     border: 1px solid var(--line);
     border-radius: 8px;
@@ -2018,6 +2084,7 @@ summary {{ cursor: pointer; padding: 6px; }}
     </section>
 
     <section id="tab-processes" class="tab-panel hidden">
+        <div id="processTop"></div>
         <div id="processLayout" class="process-layout">
             <section class="section process-panel">
                 <h2>Running Programs</h2>
@@ -2026,12 +2093,17 @@ summary {{ cursor: pointer; padding: 6px; }}
                     <button id="refreshProcesses" class="primary">Refresh processes</button>
                     <button id="downloadProcessReport">Download grouped report</button>
                     <button id="downloadVerificationReport">Download verification report</button>
+                    <a class="button-link" href="#verification-panel">Verify</a>
                 </div>
                 <div class="process-controls">
                     <label>Search
                         <input id="processFilter" placeholder="Program, publisher, path, PID...">
                     </label>
                     <label>Publisher
+                        <span class="tooltip-wrap">
+                            <span class="info-icon" tabindex="0" role="button" aria-label="Publisher grouping note" aria-describedby="publisherTooltip">i</span>
+                            <span id="publisherTooltip" class="tooltip-text" role="tooltip">Grouped locally from current process data. Review flags are not malware verdicts.</span>
+                        </span>
                         <select id="processPublisherFilter"><option value="">All publishers</option></select>
                     </label>
                     <label>Group by
@@ -2046,7 +2118,6 @@ summary {{ cursor: pointer; padding: 6px; }}
                         <select id="processReviewFilter"><option value="">All reasons</option></select>
                     </label>
                     <label><input id="needsReviewOnly" type="checkbox"> Needs review only</label>
-                    <div class="muted">Grouped locally from current process data. Review flags are not malware verdicts.</div>
                 </div>
                 <div class="process-panel-body">
                     <div id="processSummary" class="process-summary-grid"></div>
@@ -2060,6 +2131,51 @@ summary {{ cursor: pointer; padding: 6px; }}
                 <div id="processDetail" class="muted process-detail-scroll">Select any process row or use the Details button to see technical details.</div>
             </section>
         </div>
+        <section id="verification-panel" class="section verification-guide">
+            <h2>Verification Guide</h2>
+            <p>This report can help you decide what to review, but it does not prove that a program is safe or malicious. Use the steps below to verify a file locally on your PC before making any decision.</p>
+
+            <h3>Check the digital signature</h3>
+            <p>A digital signature helps confirm who published a file. A valid signature from a known publisher is a good sign, but it does not guarantee the file is safe. An unsigned file is not automatically dangerous, but it deserves more caution.</p>
+            <ol>
+                <li>Find the file path shown in the report.</li>
+                <li>Right-click the file.</li>
+                <li>Choose Properties.</li>
+                <li>Open the Digital Signatures tab if it exists.</li>
+                <li>Select the signature and click Details.</li>
+                <li>Check whether Windows says the signature is valid.</li>
+                <li>Compare the signer or publisher name with what you expected.</li>
+            </ol>
+            <p>Advanced PowerShell option:</p>
+            <pre><code>Get-AuthenticodeSignature "C:\Path\To\File.exe"</code></pre>
+            <ul>
+                <li><strong>Status: Valid</strong> means Windows recognizes the signature as valid.</li>
+                <li><strong>Status: NotSigned</strong> means the file has no digital signature.</li>
+                <li><strong>Status: UnknownError, HashMismatch, or NotTrusted</strong> means the file needs extra review.</li>
+            </ul>
+
+            <h3>Check the SHA-256 hash</h3>
+            <p>SHA-256 is a unique fingerprint of a file. If the file changes, the hash changes. This helps confirm whether a file matches a known official copy.</p>
+            <ol>
+                <li>Copy the file path from the report.</li>
+                <li>Open PowerShell.</li>
+                <li>Run the command below.</li>
+                <li>Copy the SHA256 result.</li>
+                <li>Compare it with the hash from the official vendor, trusted download page, or internal records.</li>
+                <li>If the hash does not match, do not assume immediately, but treat the file as suspicious and investigate further.</li>
+            </ol>
+            <pre><code>Get-FileHash "C:\Path\To\File.exe" -Algorithm SHA256</code></pre>
+            <p class="notice">Do not upload private company files, personal files, or unknown executables to public websites unless you understand the privacy risk. Prefer official vendor pages, internal security tools, or local verification first.</p>
+
+            <h3>What to do next</h3>
+            <ul>
+                <li>If the signature is valid and the publisher is expected, mark it as reviewed.</li>
+                <li>If the file is unsigned but located in a trusted app folder, inspect it carefully before deciding.</li>
+                <li>If the publisher is unknown, the path looks strange, or the hash does not match the official source, do not delete it immediately. Research it first or ask someone technical.</li>
+                <li>Use official uninstallers, Windows Settings, or vendor tools instead of deleting program files manually.</li>
+            </ul>
+            <p><a class="button-link" href="#processTop">Back to top</a></p>
+        </section>
     </section>
 
     <section id="tab-history" class="tab-panel hidden">
@@ -2827,6 +2943,51 @@ function renderProcessGroupTree(processes) {{
     }}).join('') || '<p class="muted">No process groups match the current filters.</p>';
 }}
 
+function verificationGuideReportHtml() {{
+    return `
+<section id="verification-panel">
+<h2>Verification Guide</h2>
+<p>This report can help you decide what to review, but it does not prove that a program is safe or malicious. Use the steps below to verify a file locally on your PC before making any decision.</p>
+<h3>Check the digital signature</h3>
+<p>A digital signature helps confirm who published a file. A valid signature from a known publisher is a good sign, but it does not guarantee the file is safe. An unsigned file is not automatically dangerous, but it deserves more caution.</p>
+<ol>
+<li>Find the file path shown in the report.</li>
+<li>Right-click the file.</li>
+<li>Choose Properties.</li>
+<li>Open the Digital Signatures tab if it exists.</li>
+<li>Select the signature and click Details.</li>
+<li>Check whether Windows says the signature is valid.</li>
+<li>Compare the signer or publisher name with what you expected.</li>
+</ol>
+<p>Advanced PowerShell option:</p>
+<pre><code>Get-AuthenticodeSignature "C:\\Path\\To\\File.exe"</code></pre>
+<ul>
+<li><strong>Status: Valid</strong> means Windows recognizes the signature as valid.</li>
+<li><strong>Status: NotSigned</strong> means the file has no digital signature.</li>
+<li><strong>Status: UnknownError, HashMismatch, or NotTrusted</strong> means the file needs extra review.</li>
+</ul>
+<h3>Check the SHA-256 hash</h3>
+<p>SHA-256 is a unique fingerprint of a file. If the file changes, the hash changes. This helps confirm whether a file matches a known official copy.</p>
+<ol>
+<li>Copy the file path from the report.</li>
+<li>Open PowerShell.</li>
+<li>Run: <code>Get-FileHash "C:\\Path\\To\\File.exe" -Algorithm SHA256</code></li>
+<li>Copy the SHA256 result.</li>
+<li>Compare it with the hash from the official vendor, trusted download page, or internal records.</li>
+<li>If the hash does not match, do not assume immediately, but treat the file as suspicious and investigate further.</li>
+</ol>
+<p><strong>Safety note:</strong> Do not upload private company files, personal files, or unknown executables to public websites unless you understand the privacy risk. Prefer official vendor pages, internal security tools, or local verification first.</p>
+<h3>What to do next</h3>
+<ul>
+<li>If the signature is valid and the publisher is expected, mark it as reviewed.</li>
+<li>If the file is unsigned but located in a trusted app folder, inspect it carefully before deciding.</li>
+<li>If the publisher is unknown, the path looks strange, or the hash does not match the official source, do not delete it immediately. Research it first or ask someone technical.</li>
+<li>Use official uninstallers, Windows Settings, or vendor tools instead of deleting program files manually.</li>
+</ul>
+<p><a href="#top">Back to top</a></p>
+</section>`;
+}}
+
 function buildProcessReportHtml() {{
     const visible = getVisibleProcesses();
     const groupMode = $('processGroupBy').value;
@@ -2856,17 +3017,20 @@ code {{ overflow-wrap: anywhere; word-break: break-word; }}
 details {{ margin: 10px 0; padding: 10px; border: 1px solid #d7dee8; border-radius: 8px; }}
 summary {{ cursor: pointer; }}
 .muted {{ color: #5d6b7a; }}
+pre {{ overflow: auto; background: #f3f6fa; border: 1px solid #d7dee8; border-radius: 8px; padding: 10px; }}
 </style>
 </head>
 <body>
-<h1>Grouped Running Programs Report</h1>
+<h1 id="top">Grouped Running Programs Report</h1>
 <p class="muted">Generated locally: ${{esc(generated)}}. This report is informational only and does not prove whether a program is safe or harmful.</p>
+<p><a href="#verification-panel">Verify</a></p>
 <p><strong>Grouping:</strong> ${{esc(groupMode)}} | <strong>Shown processes:</strong> ${{visible.length}} | <strong>Total loaded snapshot:</strong> ${{state.processes.length}}</p>
 <h2>Grouped Tree</h2>
 ${{groupHtml || '<p>No processes matched the current filters.</p>'}}
 <h2>Uncategorized Running Background Programs</h2>
 <p class="muted">These entries have no publisher/company value in the local process snapshot.</p>
 ${{uncategorizedHtml}}
+${{verificationGuideReportHtml()}}
 </body>
 </html>`;
 }}
@@ -2933,11 +3097,13 @@ code {{ overflow-wrap: anywhere; word-break: break-word; }}
 details {{ margin: 10px 0; padding: 10px; border: 1px solid #d7dee8; border-radius: 8px; }}
 .muted {{ color: #5d6b7a; }}
 .reason {{ display: inline-block; background: #fff2d8; color: #8a4b00; border-radius: 999px; padding: 3px 7px; margin: 2px; font-size: 12px; }}
+pre {{ overflow: auto; background: #f3f6fa; border: 1px solid #d7dee8; border-radius: 8px; padding: 10px; }}
 </style>
 </head>
 <body>
-<h1>Process Verification Report</h1>
+<h1 id="top">Process Verification Report</h1>
 <p class="muted">Generated locally: ${{esc(generated)}}. This report highlights review reasons only. It does not prove whether a program is safe or harmful.</p>
+<p><a href="#verification-panel">Verify</a></p>
 <p><strong>Visible processes:</strong> ${{visible.length}} | <strong>Needs review:</strong> ${{reviewItems.length}} | <strong>Total loaded snapshot:</strong> ${{state.processes.length}}</p>
 <h2>Needs Review Summary</h2>
 ${{groupHtml || '<p>No needs-review entries matched the current filters.</p>'}}
@@ -2952,6 +3118,7 @@ ${{groupHtml || '<p>No needs-review entries matched the current filters.</p>'}}
 <li>Use official uninstallers or app settings for cleanup. Do not delete files directly from system folders.</li>
 <li>Run Microsoft Defender or your trusted security tool for malware decisions.</li>
 </ul>
+${{verificationGuideReportHtml()}}
 </body>
 </html>`;
 }}
@@ -3154,7 +3321,7 @@ loadInitial();
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
-    server_version = "DiskUsageDashboard/1.10"
+    server_version = "DiskUsageDashboard/1.11"
 
     def log_message(self, format, *args):
         return

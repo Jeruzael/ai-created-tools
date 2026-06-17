@@ -1,13 +1,13 @@
 {
-  "app_version": "1.10.0",
-  "documentation_version": "1.10",
+  "app_version": "1.11.0",
+  "documentation_version": "1.11",
   "last_updated": "2026-06-18",
-  "revision_notes": "Added Needs Review filtering, review reasons, verification summaries, and downloadable process verification reports.",
+  "revision_notes": "Improved Process report usability with publisher tooltip, compact summary metrics, and a beginner-friendly verification guide.",
   "affected_areas": [
     "browser_dashboard",
     "process_review",
-    "process_verification",
-    "process_report_download",
+    "process_report_ui",
+    "verification_guide",
     "documentation_versioning"
   ],
   "compatibility_notes": "Default run starts the browser app. Use --scan-once for legacy one-shot HTML report generation."
