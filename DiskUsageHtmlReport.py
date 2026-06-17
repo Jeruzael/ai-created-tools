@@ -19,8 +19,8 @@ from urllib.parse import parse_qs, urlparse
 
 sys.setrecursionlimit(10000)
 
-APP_VERSION = "1.4.0"
-DOC_VERSION = "1.4"
+APP_VERSION = "1.5.0"
+DOC_VERSION = "1.5"
 APP_DIR = Path(__file__).resolve().parent
 RECORDS_DIR = APP_DIR / "scan_records"
 REPORTS_DIR = APP_DIR / "generated_reports"
@@ -902,15 +902,14 @@ def ensure_version_metadata():
         "documentation_version": DOC_VERSION,
         "last_updated": "2026-06-17",
         "revision_notes": (
-            "Added scan health summaries, skipped-path categories, and clearer notices "
-            "for locked, in-use, permission-limited, changed, and skipped paths."
+            "Improved process row selection, wrapped long process paths, and expanded "
+            "the manual with scan-setting and reparse-point explanations."
         ),
         "affected_areas": [
             "browser_dashboard",
-            "scan_health",
-            "skip_reason_classification",
-            "scan_records",
-            "dashboard_results",
+            "process_review",
+            "process_detail_panel",
+            "manual_user_guide",
             "documentation_versioning"
         ],
         "compatibility_notes": "Default run starts the browser app. Use --scan-once for legacy one-shot HTML report generation."
@@ -1632,6 +1631,28 @@ table {{ width: 100%; border-collapse: collapse; min-width: 760px; }}
 th, td {{ text-align: left; padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }}
 th {{ background: #eef3f8; position: sticky; top: 0; z-index: 1; }}
 tr:hover td {{ background: #f8fbff; }}
+.process-table {{
+    min-width: 720px;
+    table-layout: fixed;
+}}
+.process-table th:nth-child(1), .process-table td:nth-child(1) {{ width: 46%; }}
+.process-table th:nth-child(2), .process-table td:nth-child(2) {{ width: 95px; }}
+.process-table th:nth-child(3), .process-table td:nth-child(3) {{ width: 30%; }}
+.process-table th:nth-child(4), .process-table td:nth-child(4) {{ width: 90px; }}
+.process-row {{ cursor: pointer; }}
+.process-row:focus {{ outline: 2px solid var(--accent); outline-offset: -2px; }}
+.process-row:hover td, .process-row:focus td {{ background: #f0f7ff; }}
+.process-row.selected td {{ background: #e8f3ff; }}
+.process-name-cell, .path-text {{
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}}
+.process-table code {{
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}}
+.small-action {{ white-space: nowrap; }}
 .pill {{ display: inline-block; padding: 3px 7px; border-radius: 999px; background: #e9eef5; margin: 2px 3px 2px 0; font-size: 12px; }}
 .pill.review {{ background: #fff2d8; color: var(--warn); }}
 .pill.info {{ background: #e8f3ff; color: var(--accent-strong); }}
@@ -1774,11 +1795,11 @@ summary {{ cursor: pointer; padding: 6px; }}
                 <p>These are risk indicators, not final malware decisions.</p>
                 <div class="actions"><button id="refreshProcesses" class="primary">Refresh processes</button></div>
                 <input id="processFilter" placeholder="Search programs, paths, or PID..." style="margin:12px 0">
-                <div class="table-wrap"><table><thead><tr><th>Program</th><th>Memory</th><th>Indicators</th><th>Action</th></tr></thead><tbody id="processRows"></tbody></table></div>
+                <div class="table-wrap"><table class="process-table"><thead><tr><th>Program</th><th>Memory</th><th>Indicators</th><th>Action</th></tr></thead><tbody id="processRows"></tbody></table></div>
             </section>
             <section class="section detail-panel">
                 <h2>Process Details</h2>
-                <div id="processDetail" class="muted">Select a process to see technical details.</div>
+                <div id="processDetail" class="muted">Select any process row or use the Details button to see technical details.</div>
             </section>
         </div>
     </section>
@@ -1823,6 +1844,35 @@ summary {{ cursor: pointer; padding: 6px; }}
                         <li>Open History to compare previous scans.</li>
                         <li>Use Exit App when no scan is running to stop the local server.</li>
                     </ol>
+                </div>
+                <div class="manual-section full">
+                    <h3>Scan Settings Explained</h3>
+                    <p>These settings control how much detail the dashboard collects and displays. Higher values can show more detail, but they can also make scans and browser rendering slower.</p>
+                    <ul>
+                        <li><strong>Top items:</strong> the maximum number of biggest folders, file types, and files shown in the results tables. Example: use <code>100</code> for a quick cleanup review, or <code>300</code> when investigating a large project folder.</li>
+                        <li><strong>Tree depth:</strong> how many folder levels the Large Folder Tree expands. Example: <code>3</code> shows a simple overview like Users, Downloads, and Videos; <code>8</code> is useful for deep project folders.</li>
+                        <li><strong>Children per folder:</strong> the maximum number of subfolders shown under each folder in the tree. Example: <code>30</code> keeps the tree compact; <code>100</code> helps when a folder contains many important subfolders.</li>
+                        <li><strong>Min tree size MB:</strong> hides folders smaller than this size from the tree. Example: <code>100</code> focuses on large storage users, <code>500</code> makes full-drive scans easier to read, and <code>0</code> shows very small folders too.</li>
+                    </ul>
+                </div>
+                <div class="manual-section full">
+                    <h3>Scan Setting Examples And Use Cases</h3>
+                    <ul>
+                        <li><strong>Quick personal cleanup:</strong> scan <code>C:\\Users</code> with top items <code>100</code>, tree depth <code>3</code>, children per folder <code>30</code>, and min tree size <code>100 MB</code>.</li>
+                        <li><strong>Full C drive review:</strong> keep the default settings or raise min tree size to <code>500 MB</code> so Windows, app, and user folders are easier to compare. Leave reparse points unchecked unless you have a technical reason.</li>
+                        <li><strong>Deep project investigation:</strong> scan the specific project folder, then use top items <code>300</code>, tree depth <code>8</code>, children per folder <code>100</code>, and min tree size <code>0</code> or <code>25 MB</code>.</li>
+                        <li><strong>After cleanup:</strong> rerun the same folder scan with the same settings so the new history record can be compared with the previous result.</li>
+                    </ul>
+                </div>
+                <div class="manual-section full">
+                    <h3>Reparse Points, Junctions, And Symlinks</h3>
+                    <p>Windows can create folder entries that point somewhere else instead of storing files directly inside that folder. These are commonly called reparse points, junctions, or symlinks.</p>
+                    <ul>
+                        <li><strong>Reparse point:</strong> the general Windows feature for special filesystem links and redirects.</li>
+                        <li><strong>Junction:</strong> a Windows directory link that redirects one folder path to another folder path. Example: a compatibility folder may point from one system location to another.</li>
+                        <li><strong>Symlink:</strong> a symbolic link created by a user, app, developer tool, backup tool, or package manager. Example: a project folder may link to shared assets on <code>D:\\SharedAssets</code>.</li>
+                    </ul>
+                    <p>The dashboard skips these by default to avoid scanning the same files twice, following loops, or showing misleading totals. Include them only when a technical user intentionally wants to follow linked folders and understands that totals may include redirected data.</p>
                 </div>
                 <div class="manual-section">
                     <h3>Common Use Cases</h3>
@@ -2230,11 +2280,14 @@ function renderProcesses() {{
     const rows = state.processes.filter(p => JSON.stringify(p).toLowerCase().includes(query));
     $('processRows').innerHTML = rows.map(p => {{
         const indicators = p.risk_indicators.map(i => `<span class="pill ${{esc(i.level)}}">${{esc(i.label)}}</span>`).join('');
-        return `<tr><td><strong>${{esc(p.friendly_name)}}</strong><br><span class="muted">PID ${{esc(p.pid)}} | Parent: ${{esc(p.parent_name || p.parent_pid || 'Unavailable')}}</span><br><code>${{esc(p.executable_path || 'Path unavailable')}}</code></td><td>${{esc(p.memory)}}</td><td>${{indicators}}</td><td><button data-pid="${{esc(p.pid)}}">Details</button></td></tr>`;
+        return `<tr class="process-row" tabindex="0" data-pid="${{esc(p.pid)}}" title="Open technical details for this process"><td class="process-name-cell"><strong>${{esc(p.friendly_name)}}</strong><br><span class="muted">PID ${{esc(p.pid)}} | Parent: ${{esc(p.parent_name || p.parent_pid || 'Unavailable')}}</span><br><code class="path-text">${{esc(p.executable_path || 'Path unavailable')}}</code></td><td>${{esc(p.memory)}}</td><td>${{indicators}}</td><td><button class="small-action" data-pid="${{esc(p.pid)}}">Details</button></td></tr>`;
     }}).join('') || '<tr><td colspan="4">No matching processes.</td></tr>';
 }}
 
 async function showProcessDetail(pid) {{
+    document.querySelectorAll('#processRows tr[data-pid]').forEach(row => {{
+        row.classList.toggle('selected', row.dataset.pid === String(pid));
+    }});
     $('processDetail').textContent = 'Loading details...';
     showActionAlert('info', 'Opening Process Details', 'The app is loading local technical details for one process.', [
         `PID: ${{pid}}`,
@@ -2326,8 +2379,16 @@ $('historyRows').addEventListener('click', event => {{
     if (scanId) openHistory(scanId);
 }});
 $('processRows').addEventListener('click', event => {{
-    const pid = event.target.dataset.pid;
+    const row = event.target.closest('tr[data-pid]');
+    const pid = event.target.dataset.pid || (row ? row.dataset.pid : null);
     if (pid) showProcessDetail(pid);
+}});
+$('processRows').addEventListener('keydown', event => {{
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const row = event.target.closest('tr[data-pid]');
+    if (!row) return;
+    event.preventDefault();
+    showProcessDetail(row.dataset.pid);
 }});
 loadInitial();
 </script>
@@ -2336,7 +2397,7 @@ loadInitial();
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
-    server_version = "DiskUsageDashboard/1.4"
+    server_version = "DiskUsageDashboard/1.5"
 
     def log_message(self, format, *args):
         return

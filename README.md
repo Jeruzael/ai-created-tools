@@ -1,6 +1,6 @@
 # Windows Disk Usage Dashboard
 
-Version: `1.4.0`
+Version: `1.5.0`
 
 This folder contains a local Windows browser dashboard for disk usage review, scan history, process review, and safe cleanup guidance.
 
@@ -55,9 +55,9 @@ This is usually faster and safer than scanning the full `C:\` drive.
 - `Scan`: choose a drive or folder and start a scan.
 - `Results`: review biggest folders, file types, biggest files, tree view, and skipped paths.
 - `Scan Health`: inside Results, explains whether any skipped paths may have been caused by locked files, running apps, permissions, changing paths, or reparse points.
-- `Processes`: review running programs and local technical indicators.
+- `Processes`: review running programs and local technical indicators. Select a process row or use the Details button to open the technical panel.
 - `History`: open previous scan records.
-- `Manual`: read safe usage guidance, use cases, cleanup workflow, and do's/don'ts.
+- `Manual`: read safe usage guidance, scan setting explanations, use cases, cleanup workflow, and do's/don'ts.
 - `About`: view version and local privacy notes.
 
 ## Exit The App
@@ -91,6 +91,16 @@ Use `--force` only when you intentionally want to overwrite an existing output f
 If a game, editor, backup tool, or app is active while scanning, some files may be locked or changing. The scan should continue where possible and show a Scan Health message after completion.
 
 If Scan Health reports locked or in-use files, close heavy apps or games and scan again if those skipped paths matter.
+
+## Manual Topics
+
+The built-in Manual explains:
+
+- `Top items`: how many largest results are shown in each results table.
+- `Tree depth`: how many folder levels are expanded in the large folder tree.
+- `Children per folder`: how many subfolders can appear under each tree folder.
+- `Min tree size MB`: the smallest folder size shown in the tree.
+- Reparse points, junctions, and symlinks: Windows link-like folders that are skipped by default to avoid loops or duplicate counts.
 
 ## Verify
 

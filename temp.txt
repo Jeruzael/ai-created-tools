@@ -1,39 +1,30 @@
-Implemented the scan-block/stop explanation upgrade as v1.4.
+Implemented v1.5 updates.
 
-  Open the updated dashboard here:
+  Changed windows/DiskUsageHtmlReport.py:22:
+
+  - Long process executable paths now wrap inside the Running Programs table.
+  - Process rows are now clickable/selectable, keyboard accessible with Enter/Space, and visually highlighted.
+  - The Details button still works.
+  - Manual now explains Top items, Tree depth, Children per folder, Min tree size MB, plus reparse points, junctions,
+    symlinks, examples, and use cases.
+
+  Documentation updated:
+
+  - README.md:5
+  - windows/README.md:3
+  - windows/Windows_Disk_Usage_Dashboard_AppRequirements_v1.5_2026-06-17.md:5
+  - windows/dashboard_version.json:2
+
+  Verified:
+
+  - python -m py_compile windows\DiskUsageHtmlReport.py
+  - Served dashboard HTML contains the new process-row behavior and manual sections.
+  - /api/processes loaded 303 processes.
+  - /api/processes/26520 returned technical details successfully.
+  - Legacy --scan-once report generation still works.
+
+  The updated v1.5 dashboard is running at:
 
   http://127.0.0.1:8765/
 
-  Running v1.4 server PID: 5752
-
-  What changed:
-
-  - Added Scan Health panel in Results.
-  - Skipped paths are now categorized as:
-      - locked or in use
-      - permission denied
-      - path disappeared
-      - reparse point skipped
-      - already scanned target
-      - other scan issue
-
-  - Scan records now store scan_health, skip_categories, and structured skipped_details.
-  - Completion alerts now include Scan Health details.
-  - If a game/app/editor causes files to be locked or changing, the dashboard now explains that files may be in use
-    and suggests closing heavy apps/games before rescanning.
-
-  - Updated version metadata to 1.4.0.
-  - Updated requirements doc to windows/Windows_Disk_Usage_Dashboard_AppRequirements_v1.4_2026-06-17.md.
-  - Updated both README files with Scan Health notes.
-
-  Verification passed:
-
-  - Python compile check.
-  - Skip reason classification checks.
-  - Generated dashboard contains Scan Health UI.
-  - Browser API scan creates scan_health, skip_categories, and skipped_details.
-  - Legacy --scan-once still works.
-  - Safety scan found no destructive file/process APIs; only UI classList.remove('hidden').
-
-  So yes: after this update, if scanning is affected by a running game/app, the user gets a clearer reason and next
-  step instead of only raw skipped paths.
+  Process PID: 26520.

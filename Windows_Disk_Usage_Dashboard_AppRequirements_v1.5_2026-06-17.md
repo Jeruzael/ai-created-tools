@@ -2,12 +2,12 @@
 
 - Document: App Requirements
 - Client/Project: Windows Disk Usage Dashboard
-- Version: v1.4
+- Version: v1.5
 - Date: 2026-06-17
 - Prepared by: Codex / Project Team
 - Prepared for: Windows users, support users, and technical reviewers
 - Status: Revised
-- Revision notes: Added scan health summaries and skipped-path reason categories so users understand when scans are affected by locked files, running apps, permissions, changing paths, or reparse points.
+- Revision notes: Improved process list usability and expanded the built-in manual with scan-setting, example-use-case, reparse-point, junction, and symlink explanations.
 
 ## Revision History
 
@@ -18,6 +18,7 @@
 | v1.2 | 2026-06-17 | Revised | Implemented shutdown and action-alert requirements. |
 | v1.3 | 2026-06-17 | Revised | Added built-in Manual/User Guide requirements and implementation status. |
 | v1.4 | 2026-06-17 | Revised | Added scan health summaries and skipped-path reason categories. |
+| v1.5 | 2026-06-17 | Revised | Improved process row selection, wrapped long process paths, and expanded manual explanations for scan settings and Windows link-like folders. |
 
 ## Implementation Status
 
@@ -62,6 +63,14 @@ Implemented in v1.4:
 - Store scan health and skip categories in scan records.
 - Include scan health in completion alerts.
 
+Implemented in v1.5:
+
+- Wrap long process executable paths in the Running Programs table so memory, indicators, and action controls remain visible.
+- Allow process details to open by selecting the process row, pressing Enter/Space on a focused process row, or using the Details button.
+- Keep selected process rows visually highlighted while technical details are shown.
+- Expand the manual with definitions and examples for top items, tree depth, children per folder, and minimum tree size.
+- Expand the manual with explanations and examples for reparse points, junctions, and symlinks.
+
 ## 1. Purpose
 
 The Windows Disk Usage Dashboard will become a local browser-based utility for reviewing disk usage and running background programs. The goal is to make storage and process review understandable for non-technical users while still giving technical users enough detail to investigate suspicious or unfamiliar programs.
@@ -95,6 +104,7 @@ The app should reduce guesswork during disk cleanup and process review. It shoul
 - Disk usage dashboard with summary, largest folders, file type totals, biggest files, folder tree, skipped paths, and errors.
 - Running process review in a user-friendly view.
 - Technical process detail panel.
+- Selectable process rows with wrapped executable path text.
 - Scan history and local scan records.
 - Safety notice with do's and don'ts before scanning.
 - Formal app exit button and local server shutdown flow.
@@ -209,6 +219,10 @@ Each process row should show, where available:
 - Startup or user context.
 - Plain-language risk indicators.
 
+Process rows must be directly selectable with mouse click and keyboard interaction. The app must also keep a visible Details button for users who prefer an explicit action.
+
+Long program locations and command/path text must wrap within the process panel so other columns remain readable and accessible.
+
 The screen must not label a process as definitely safe, malware, virus, or malicious. It may show caution indicators such as unsigned executable, unusual location, missing publisher, high resource use, inaccessible path, or recently started.
 
 ### 7.5 Process Detail Panel
@@ -292,6 +306,8 @@ The manual must include:
 - Recommended first scan, especially `C:\Users`.
 - How to use the dashboard: scan setup, scan status, results, process review, history, and exit.
 - Common use cases for storage review and process review.
+- Plain-language definitions and examples for scan settings: top items, tree depth, children per folder, and minimum tree size.
+- Plain-language definitions and examples for reparse points, junctions, and symlinks.
 - Expanded do's and don'ts based on `windows/temp.txt`.
 - Examples of good cleanup candidates.
 - Examples of folders that require extra care.
@@ -609,6 +625,9 @@ Required manual sections:
 - Recommended first scan.
 - How to use the dashboard.
 - Common use cases.
+- Scan settings explained.
+- Scan setting examples and use cases.
+- Reparse points, junctions, and symlinks.
 - What you can safely review first.
 - Important do rules.
 - Important don't rules.
@@ -731,6 +750,10 @@ The app must handle:
 - Confirm cancelled scans are recorded correctly.
 - Confirm process list loads.
 - Confirm process detail panel shows available metadata.
+- Confirm process details open when clicking a process row.
+- Confirm process details open when pressing Enter or Space on a focused process row.
+- Confirm the Details button still opens the same technical detail panel.
+- Confirm long process directory/path text wraps and does not hide memory, indicators, or action controls.
 - Confirm exited or inaccessible processes show partial-data messages.
 - Confirm the app does not delete, move, rename, kill, quarantine, or upload anything.
 - Confirm documentation version metadata updates when behavior changes.
@@ -750,6 +773,8 @@ The app must handle:
 - Confirm manual includes recommended first scan: `C:\Users`.
 - Confirm manual includes expanded do's and don'ts from `windows/temp.txt`.
 - Confirm manual includes cleanup workflow and use cases.
+- Confirm manual explains top items, tree depth, children per folder, and minimum tree size with examples.
+- Confirm manual explains reparse points, junctions, and symlinks with examples and safe defaults.
 - Confirm manual includes Unity, Blender/3D, and developer cleanup notes.
 - Confirm manual includes process review caution.
 - Confirm manual includes report privacy reminders and final safety rule.
@@ -774,6 +799,8 @@ The app must handle:
 - [ ] Disk usage results include summary, largest folders, file types, biggest files, tree view, skipped paths, and errors.
 - [ ] User can view running processes in a non-technical list.
 - [ ] User can open a technical detail panel for each process.
+- [ ] User can open process details by selecting a row or using the Details button.
+- [ ] Long process paths wrap so other process table columns remain visible.
 - [ ] Process safety is shown as risk indicators, not definitive malware claims.
 - [ ] Every scan creates a local dated record with settings, acknowledgement status, and results.
 - [ ] Documentation and revision metadata update when app behavior changes.
@@ -796,6 +823,8 @@ The app must handle:
 - [ ] Manual explains what the tool does and does not do.
 - [ ] Manual explains how to use scans, results, process review, history, and exit.
 - [ ] Manual includes practical use cases.
+- [ ] Manual explains top items, tree depth, children per folder, and minimum tree size.
+- [ ] Manual explains reparse points, junctions, and symlinks.
 - [ ] Manual includes expanded do's from `windows/temp.txt`.
 - [ ] Manual includes expanded don'ts from `windows/temp.txt`.
 - [ ] Manual includes cleanup workflow and review examples.

@@ -1,14 +1,13 @@
 {
-  "app_version": "1.4.0",
-  "documentation_version": "1.4",
+  "app_version": "1.5.0",
+  "documentation_version": "1.5",
   "last_updated": "2026-06-17",
-  "revision_notes": "Added scan health summaries, skipped-path categories, and clearer notices for locked, in-use, permission-limited, changed, and skipped paths.",
+  "revision_notes": "Improved process row selection, wrapped long process paths, and expanded the manual with scan-setting and reparse-point explanations.",
   "affected_areas": [
     "browser_dashboard",
-    "scan_health",
-    "skip_reason_classification",
-    "scan_records",
-    "dashboard_results",
+    "process_review",
+    "process_detail_panel",
+    "manual_user_guide",
     "documentation_versioning"
   ],
   "compatibility_notes": "Default run starts the browser app. Use --scan-once for legacy one-shot HTML report generation."
