@@ -7,9 +7,11 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -25,8 +27,8 @@ except ImportError:  # pragma: no cover - non-Windows fallback
 
 sys.setrecursionlimit(10000)
 
-APP_VERSION = "1.15.0"
-DOC_VERSION = "1.15"
+APP_VERSION = "1.16.0"
+DOC_VERSION = "1.16"
 APP_DIR = Path(__file__).resolve().parent
 RECORDS_DIR = APP_DIR / "scan_records"
 REPORTS_DIR = APP_DIR / "generated_reports"
@@ -961,8 +963,8 @@ def ensure_version_metadata():
         "documentation_version": DOC_VERSION,
         "last_updated": "2026-06-18",
         "revision_notes": (
-            "Added read-only scheduled task review, scoped services summary, "
-            "and autoruns-style command/name review indicators."
+            "Added read-only file verification for referenced files with "
+            "existence, Authenticode signature status, SHA-256, and timestamps."
         ),
         "affected_areas": [
             "browser_dashboard",
@@ -1133,7 +1135,7 @@ def security_check_steps():
             "id": "file_verification",
             "label": "Checking file signatures and SHA-256 hashes",
             "status": "Waiting",
-            "detail": "File verification is planned for a later slice and is not run yet.",
+            "detail": "Waiting to verify referenced files for existence, signature status, SHA-256, and timestamps.",
         },
         {
             "id": "record",
@@ -1156,13 +1158,18 @@ def security_check_summary(status="not_run", findings=None, skipped_items=None):
     severity_counts = defaultdict(int)
     for finding in findings:
         severity_counts[finding.get("severity") or "Info"] += 1
+    unsigned_files = len([
+        finding for finding in findings
+        if finding.get("category") == "File Verification"
+        and (finding.get("evidence") or {}).get("signature_status") == "NotSigned"
+    ])
     return {
         "overall_status": label,
         "high_review": severity_counts.get("High Review", 0),
         "medium_review": severity_counts.get("Medium Review", 0),
         "low_review": severity_counts.get("Low Review", 0),
         "info": severity_counts.get("Info", 0),
-        "unsigned_files": 0,
+        "unsigned_files": unsigned_files,
         "baseline_changes": "Future",
         "findings_total": len(findings),
         "skipped_count": len(skipped_items),
@@ -1358,6 +1365,266 @@ def as_list(value):
     if value in (None, ""):
         return []
     return value if isinstance(value, list) else [value]
+
+
+VERIFIABLE_EXTENSIONS = {
+    ".exe",
+    ".dll",
+    ".sys",
+    ".msi",
+    ".ps1",
+    ".bat",
+    ".cmd",
+    ".vbs",
+    ".js",
+    ".jar",
+    ".lnk",
+}
+
+
+def has_drive_or_unc(path):
+    return bool(re.match(r"^[A-Za-z]:\\", path or "")) or str(path or "").startswith("\\\\")
+
+
+def normalize_candidate_path(raw_value):
+    if raw_value in (None, ""):
+        return ""
+    text = str(raw_value).strip()
+    if not text or text.startswith("http://") or text.startswith("https://"):
+        return ""
+    text = os.path.expandvars(text).strip().strip("'\"")
+    path = extracted_command_path(text) if ".exe" in text.lower() or " " in text else text
+    path = os.path.expandvars(path).strip().strip("'\"")
+    if not path:
+        return ""
+    if has_drive_or_unc(path):
+        return os.path.normpath(path)
+    resolved = shutil.which(path)
+    return os.path.normpath(resolved) if resolved else ""
+
+
+def add_verification_candidate(candidates, raw_value, source_finding, source_field):
+    path = normalize_candidate_path(raw_value)
+    if not path:
+        return
+    extension = os.path.splitext(path)[1].lower()
+    if extension and extension not in VERIFIABLE_EXTENSIONS:
+        return
+    key = os.path.normcase(path)
+    item = candidates.setdefault(key, {
+        "path": path,
+        "source_categories": set(),
+        "source_titles": set(),
+        "source_fields": set(),
+    })
+    item["source_categories"].add(source_finding.get("category") or "Unknown")
+    item["source_titles"].add(source_finding.get("title") or "Untitled")
+    item["source_fields"].add(source_field)
+
+
+def referenced_file_candidates(findings, max_candidates=500):
+    candidates = {}
+    for finding in findings:
+        evidence = finding.get("evidence") or {}
+        for field in ("value_data", "file_path", "path_name", "value"):
+            add_verification_candidate(candidates, evidence.get(field), finding, field)
+        for command in as_list(evidence.get("action_commands")):
+            add_verification_candidate(candidates, command, finding, "action_commands")
+        for action in as_list(evidence.get("actions")):
+            if isinstance(action, dict):
+                command = " ".join(str(action.get(part) or "") for part in ("Execute", "Arguments")).strip()
+                add_verification_candidate(candidates, command, finding, "actions")
+
+    rows = list(candidates.values())[:max_candidates]
+    for row in rows:
+        row["source_categories"] = sorted(row["source_categories"])
+        row["source_titles"] = sorted(row["source_titles"])[:10]
+        row["source_fields"] = sorted(row["source_fields"])
+    return rows
+
+
+def file_sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def authenticode_signatures(paths):
+    if not paths:
+        return {}
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False, dir=str(APP_DIR)) as handle:
+            json.dump(paths, handle)
+            temp_path = handle.name
+        temp_literal = json.dumps(temp_path)
+        command = f"""
+$paths = Get-Content -Raw -LiteralPath {temp_literal} | ConvertFrom-Json
+$items = foreach ($path in $paths) {{
+    try {{
+        $sig = Get-AuthenticodeSignature -LiteralPath $path -ErrorAction Stop
+        [PSCustomObject]@{{
+            Path = $path
+            SignatureStatus = [string]$sig.Status
+            StatusMessage = $sig.StatusMessage
+            SignerSubject = if ($sig.SignerCertificate) {{ $sig.SignerCertificate.Subject }} else {{ $null }}
+            SignerIssuer = if ($sig.SignerCertificate) {{ $sig.SignerCertificate.Issuer }} else {{ $null }}
+            SignerNotBefore = if ($sig.SignerCertificate) {{ [string]$sig.SignerCertificate.NotBefore }} else {{ $null }}
+            SignerNotAfter = if ($sig.SignerCertificate) {{ [string]$sig.SignerCertificate.NotAfter }} else {{ $null }}
+        }}
+    }} catch {{
+        [PSCustomObject]@{{
+            Path = $path
+            SignatureStatus = "Unavailable"
+            StatusMessage = $_.Exception.Message
+            SignerSubject = $null
+            SignerIssuer = $null
+            SignerNotBefore = $null
+            SignerNotAfter = $null
+        }}
+    }}
+}}
+$items | ConvertTo-Json -Depth 5 -Compress
+"""
+        rows = run_powershell_json(command, timeout_seconds=90)
+        return {os.path.normcase(row.get("Path") or ""): row for row in rows}
+    finally:
+        if temp_path:
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+
+
+def collect_file_verification(findings, cancel_event=None):
+    verification_findings = []
+    skipped = []
+    candidates = referenced_file_candidates(findings)
+    existing_paths = []
+    existing_candidates = []
+
+    for candidate in candidates:
+        if cancel_event and cancel_event.is_set():
+            raise ScanCancelled("Security Check cancelled by user.")
+        path = candidate["path"]
+        if not os.path.exists(path):
+            verification_findings.append(security_finding(
+                category="File Verification",
+                title=f"File Missing: {path}",
+                severity="Low Review",
+                score=35,
+                status="File Missing",
+                review_reasons=["Referenced file path was not found"],
+                explanation=(
+                    "A startup item, scheduled task, service, policy, or command referenced a file path that was not found. "
+                    "This can happen after software is uninstalled or moved, but it should be reviewed if the source is unfamiliar."
+                ),
+                evidence={
+                    "path": path,
+                    "exists": False,
+                    "source_categories": candidate["source_categories"],
+                    "source_titles": candidate["source_titles"],
+                    "source_fields": candidate["source_fields"],
+                },
+                next_steps=[
+                    "Check the source item that references this missing path.",
+                    "Do not delete registry values, tasks, or services blindly; confirm the owning software first.",
+                ],
+            ))
+            continue
+        if not os.path.isfile(path):
+            skipped.append(security_skip("File Verification", f"Referenced path is not a regular file: {path}", "Skipped"))
+            continue
+        existing_paths.append(path)
+        existing_candidates.append(candidate)
+
+    signatures = {}
+    try:
+        signatures = authenticode_signatures(existing_paths)
+    except Exception as ex:
+        skipped.append(security_skip("File Verification", "Authenticode signature collection was unavailable.", "Unavailable", str(ex)))
+
+    for candidate in existing_candidates:
+        if cancel_event and cancel_event.is_set():
+            raise ScanCancelled("Security Check cancelled by user.")
+        path = candidate["path"]
+        evidence = {
+            "path": path,
+            "exists": True,
+            "source_categories": candidate["source_categories"],
+            "source_titles": candidate["source_titles"],
+            "source_fields": candidate["source_fields"],
+        }
+        severity = "Info"
+        score = 5
+        status = "Verified"
+        reasons = ["Referenced file exists"]
+        try:
+            stat_result = os.stat(path)
+            evidence.update({
+                "size_bytes": stat_result.st_size,
+                "created_at": dt.datetime.fromtimestamp(stat_result.st_ctime).isoformat(timespec="seconds"),
+                "modified_at": dt.datetime.fromtimestamp(stat_result.st_mtime).isoformat(timespec="seconds"),
+                "sha256": file_sha256(path),
+            })
+            reasons.append("SHA-256 hash collected")
+        except Exception as ex:
+            evidence["hash_status"] = "Unavailable"
+            evidence["hash_error"] = str(ex)
+            skipped.append(security_skip("File Verification", f"Could not hash referenced file: {path}", "Unavailable", str(ex)))
+
+        signature = signatures.get(os.path.normcase(path), {})
+        signature_status = signature.get("SignatureStatus") or ("Unavailable" if signatures else "Unavailable")
+        evidence.update({
+            "signature_status": signature_status,
+            "signature_status_message": signature.get("StatusMessage"),
+            "signer_subject": signature.get("SignerSubject"),
+            "signer_issuer": signature.get("SignerIssuer"),
+            "signer_not_before": signature.get("SignerNotBefore"),
+            "signer_not_after": signature.get("SignerNotAfter"),
+        })
+        if signature_status == "Valid":
+            reasons.append("Authenticode signature is valid")
+        elif signature_status in ("NotSigned", "UnknownError", "HashMismatch", "NotTrusted"):
+            severity = "Low Review"
+            score = 40
+            status = "Needs Review"
+            reasons.append(f"Signature status is {signature_status}")
+        else:
+            reasons.append("Signature status unavailable")
+
+        verification_findings.append(security_finding(
+            category="File Verification",
+            title=os.path.basename(path) or path,
+            severity=severity,
+            score=score,
+            status=status,
+            review_reasons=reasons,
+            explanation=(
+                "This referenced file was checked locally for existence, signature status, SHA-256 hash, and timestamps. "
+                "Unsigned or unavailable signatures are review signals only, not malware verdicts."
+            ),
+            evidence=evidence,
+            next_steps=[
+                "Use the Verification Guide to compare the signer and SHA-256 with official vendor information when needed.",
+                "Unsigned files are not automatically harmful, but unfamiliar unsigned autorun files deserve review.",
+            ],
+        ))
+
+    if not candidates:
+        verification_findings.append(security_finding(
+            category="File Verification",
+            title="No referenced files found for verification",
+            severity="Info",
+            score=0,
+            status="No Obvious Issue",
+            review_reasons=["No file-like references were extracted from the collected findings"],
+            explanation="The Standard Review did not expose file paths suitable for signature or hash verification.",
+            evidence={"source": "Standard Review findings"},
+        ))
+    return verification_findings, skipped
 
 
 def registry_value_to_text(value):
@@ -2541,9 +2808,18 @@ class DashboardApp:
                 f"Collected {len(findings)} review item(s); skipped {len(skipped_items)} source(s).",
             )
 
-            self._set_security_step(active, "file_verification", "Skipped", "File signature and SHA-256 verification are not connected until a later implementation slice.")
-            if wait_or_cancel(0.2):
-                raise ScanCancelled("Security Check cancelled by user.")
+            self._set_security_step(active, "file_verification", "Running", "Verifying referenced files in read-only mode.")
+            verification_findings, verification_skips = collect_file_verification(active["findings"], active["cancel_event"])
+            with self.lock:
+                active["findings"].extend(verification_findings)
+                active["skipped_items"].extend(verification_skips)
+                active["summary"] = security_check_summary("running", active["findings"], active["skipped_items"])
+            self._set_security_step(
+                active,
+                "file_verification",
+                "Complete",
+                f"Verified {len(verification_findings)} referenced file item(s); skipped {len(verification_skips)} verification issue(s).",
+            )
 
             with self.lock:
                 active["skipped_items"].append({
@@ -3335,8 +3611,8 @@ summary {{ cursor: pointer; padding: 6px; }}
     <section id="tab-security" class="tab-panel hidden">
         <section class="action-alert info">
             <h2>Before You Run a Security Check</h2>
-            <p>This local review area reads Windows security-related indicators such as startup entries, browser policies, proxy settings, DNS settings, Defender exclusions, scheduled tasks, and services summary.</p>
-            <p>It is designed as a local read-only review workflow. Findings mean review this, not this is malware. File signatures, hashes, and reports are later slices.</p>
+            <p>This local review area reads Windows security-related indicators such as startup entries, browser policies, proxy settings, DNS settings, Defender exclusions, scheduled tasks, services summary, and referenced file verification.</p>
+            <p>It is designed as a local read-only review workflow. Findings mean review this, not this is malware. Event logs, Sysmon data, baselines, allowlists, and downloadable security reports are later slices.</p>
         </section>
 
         <div class="security-layout">
@@ -3351,7 +3627,7 @@ summary {{ cursor: pointer; padding: 6px; }}
                         <label class="security-mode">
                             <input type="radio" name="securityMode" value="standard" checked>
                             <strong>Standard Review</strong>
-                            <span class="muted">Startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, services summary, and command/name review indicators.</span>
+                            <span class="muted">Startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, services summary, command/name indicators, and referenced file verification.</span>
                         </label>
                         <label class="security-mode">
                             <input type="radio" name="securityMode" value="advanced" disabled>
@@ -3402,7 +3678,7 @@ summary {{ cursor: pointer; padding: 6px; }}
 
                 <section class="section">
                     <h2>Findings Review</h2>
-                    <p class="muted">Run a Security Check to review startup entries, browser policies, proxy and DNS settings, and Defender exclusions. Findings are review items with evidence, not malware verdicts.</p>
+                    <p class="muted">Run a Security Check to review startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, services summary, and referenced file verification. Findings are review items with evidence, not malware verdicts.</p>
                     <div class="form-grid">
                         <label>Search
                             <input id="securityFindingFilter" placeholder="Finding, category, setting, path, registry key...">
@@ -3448,13 +3724,13 @@ summary {{ cursor: pointer; padding: 6px; }}
                 <div class="category-item"><strong>Microsoft Defender Exclusions</strong><p>Excluded paths, processes, extensions, and IP addresses.</p><span class="security-badge">ready</span></div>
                 <div class="category-item"><strong>Scheduled Tasks Review</strong><p>Task actions, triggers, authors, last run, next run, and command review indicators.</p><span class="security-badge">ready</span></div>
                 <div class="category-item"><strong>Windows Services Summary</strong><p>Scoped automatic-service summary and individual service command/name review items.</p><span class="security-badge">ready</span></div>
-                <div class="category-item"><strong>File Verification</strong><p>File existence, Authenticode signatures, publishers, and SHA-256 hashes.</p><span class="security-badge future">future collector</span></div>
+                <div class="category-item"><strong>File Verification</strong><p>File existence, Authenticode signatures, publishers, SHA-256 hashes, and timestamps.</p><span class="security-badge">ready</span></div>
             </div>
         </section>
 
         <section class="section">
             <h2>Reports</h2>
-            <p>Report downloads will be enabled in the reporting slice. Security Check lifecycle records are already saved locally after each completed or cancelled run.</p>
+            <p>Report downloads will be enabled in the reporting slice. Security Check records already include verification evidence locally after each completed or cancelled run. Use the existing <a href="#verification-panel">Verification Guide</a> for signature and SHA-256 review guidance.</p>
             <div class="actions">
                 <button id="downloadSecurityFullReport" disabled>Download Full Security Report</button>
                 <button id="downloadSecurityFindingsReport" disabled>Download Findings Only</button>
@@ -3771,7 +4047,7 @@ function showTab(name) {{
         ]);
     }} else if (name === 'security') {{
         showActionAlert('info', 'Security Check Opened', 'This tab runs a local read-only Standard Review of selected Windows security indicators.', [
-            'It reviews startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, and services summary.',
+            'It reviews startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, services summary, and referenced file verification.',
             'Findings are review items, not malware verdicts.',
             'Registry backups require explicit opt-in.'
         ]);
@@ -3792,8 +4068,8 @@ function selectedSecurityMode() {{
 function renderSecurityProgress(steps = []) {{
     const rows = steps.length ? steps : [
         {{ label: 'Preparing local review', status: 'Waiting', detail: 'Waiting to start.' }},
-        {{ label: 'Reading standard security locations', status: 'Waiting', detail: 'Collectors are planned for the next slice.' }},
-        {{ label: 'Checking file signatures and SHA-256 hashes', status: 'Waiting', detail: 'File verification is planned for a later slice.' }},
+        {{ label: 'Reading standard security locations', status: 'Waiting', detail: 'Waiting to read local review sources.' }},
+        {{ label: 'Checking file signatures and SHA-256 hashes', status: 'Waiting', detail: 'Waiting to verify referenced files.' }},
         {{ label: 'Saving local security check record', status: 'Waiting', detail: 'No lifecycle record has been saved yet.' }}
     ];
     $('securityProgress').innerHTML = rows.map(step => `
@@ -3811,6 +4087,7 @@ function renderSecuritySummary(summary = {{}}) {{
         metric('High Review', summary.high_review || 0),
         metric('Medium Review', summary.medium_review || 0),
         metric('Low Review', summary.low_review || 0),
+        metric('Unsigned Files', summary.unsigned_files || 0),
         metric('Skipped Sources', summary.skipped_count || 0)
     ].join('');
 }}
@@ -3849,7 +4126,8 @@ function renderSecurityCategoryBlocks(status) {{
         ['DNS Settings', 'Network adapter DNS server settings.'],
         ['Microsoft Defender Exclusions', 'Defender excluded paths, processes, extensions, and IP addresses.'],
         ['Scheduled Task', 'Scheduled task actions, triggers, authors, last run, next run, and command indicators.'],
-        ['Windows Service', 'Scoped services summary and automatic service command/name indicators.']
+        ['Windows Service', 'Scoped services summary and automatic service command/name indicators.'],
+        ['File Verification', 'Referenced file existence, Authenticode signature status, SHA-256 hashes, and timestamps.']
     ];
     $('securityCategoryBlocks').innerHTML = categories.map(([name, description]) => {{
         const matches = findings.filter(finding => finding.category === name);
@@ -3863,13 +4141,12 @@ function renderSecurityCategoryBlocks(status) {{
             if (evidence.registry_root) groups.add(evidence.registry_root);
             if (evidence.task_path) groups.add(evidence.task_path);
             if (evidence.start_mode) groups.add(evidence.start_mode);
+            if (evidence.signature_status) groups.add(evidence.signature_status);
         }});
         const groupText = groups.size ? `<p class="muted">Groups: ${{esc(Array.from(groups).join(', '))}}</p>` : '';
         const skippedText = categorySkipped.length ? `<p class="muted">Skipped: ${{esc(categorySkipped.length)}}</p>` : '';
         return `<div class="category-item"><strong>${{esc(name)}}: ${{matches.length}}</strong><p>${{esc(description)}}</p>${{groupText}}${{skippedText}}</div>`;
-    }}).join('') + `
-        <div class="category-item"><strong>File Verification</strong><p>File existence, Authenticode signatures, publishers, and SHA-256 hashes.</p><span class="security-badge future">future collector</span></div>
-    `;
+    }}).join('');
 }}
 
 function renderSecurityFindings(status) {{
@@ -3972,7 +4249,7 @@ async function startSecurityCheck() {{
     showActionAlert('info', 'Security Check Starting', 'The dashboard is asking the local server to start a read-only lifecycle job.', [
         `Mode: ${{payload.mode}}`,
         `Registry backup opt-in: ${{payload.registryBackup ? 'yes' : 'no'}}`,
-        'This run reads startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, and services summary without changing settings.'
+        'This run reads startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, services summary, and referenced files without changing settings.'
     ]);
     try {{
         const status = await api('/api/security-checks', {{ method: 'POST', body: JSON.stringify(payload) }});
@@ -3985,7 +4262,7 @@ async function startSecurityCheck() {{
         showTab('security');
         showActionAlert('success', 'Security Check Started', 'Lifecycle progress is now visible in the Security Check tab.', [
             `Check ID: ${{status.check_id}}`,
-            'File signatures, event logs, and report downloads are still planned for later slices.'
+            'Signature status and SHA-256 are collected for referenced files when available. Event logs and report downloads are later slices.'
         ]);
     }} catch (error) {{
         showActionAlert('error', 'Security Check Failed To Start', error.message, [
@@ -4922,7 +5199,7 @@ pollSecurityStatus();
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
-    server_version = "DiskUsageDashboard/1.15"
+    server_version = "DiskUsageDashboard/1.16"
 
     def log_message(self, format, *args):
         return

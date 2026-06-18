@@ -5,7 +5,7 @@
 - Status: Draft with initial scope decisions
 - Source: `windows/temp.txt`
 - Current app version baseline: v1.11.0
-- Latest implemented app version: v1.15.0
+- Latest implemented app version: v1.16.0
 - Prepared by: Codex
 
 ## 1. Request Understanding
@@ -334,6 +334,8 @@ Acceptance criteria:
 
 ### Slice 5: File Verification
 
+Status: **Implemented in v1.16**
+
 Complexity: **L**
 
 Goal:
@@ -351,12 +353,12 @@ Includes:
 
 Acceptance criteria:
 
-- [ ] Existing referenced files show signature status.
-- [ ] Existing referenced files show SHA-256 hash.
-- [ ] Missing files are marked `File Missing`.
-- [ ] Unsigned files are marked as review signals, not malware.
-- [ ] Signature and hash collection failures are shown as unavailable rather than crashing the check.
-- [ ] The UI reuses or links to the existing Verification Guide.
+- [x] Existing referenced files show signature status.
+- [x] Existing referenced files show SHA-256 hash.
+- [x] Missing files are marked `File Missing`.
+- [x] Unsigned files are marked as review signals, not malware.
+- [x] Signature and hash collection failures are shown as unavailable rather than crashing the check.
+- [x] The UI reuses or links to the existing Verification Guide.
 
 ### Slice 6: Risk Scoring And Plain-Language Explanations
 

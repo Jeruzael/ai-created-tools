@@ -1,8 +1,8 @@
 {
-  "app_version": "1.15.0",
-  "documentation_version": "1.15",
+  "app_version": "1.16.0",
+  "documentation_version": "1.16",
   "last_updated": "2026-06-18",
-  "revision_notes": "Added read-only scheduled task review, scoped services summary, and autoruns-style command/name review indicators.",
+  "revision_notes": "Added read-only file verification for referenced files with existence, Authenticode signature status, SHA-256, and timestamps.",
   "affected_areas": [
     "browser_dashboard",
     "security_check_ui",

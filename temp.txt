@@ -1,43 +1,37 @@
-Implemented the next slice: Security Check v1.15, Slice 4 Standard Review Collector Set B.
+ Implemented the next slice: Security Check v1.16, Slice 5 File Verification.
 
   What changed:
 
-  - Added read-only scheduled task collection.
-  - Added scoped Windows services summary.
-  - Added autoruns-style command/name review indicators for:
-      - encoded/hidden PowerShell patterns
-      - script/command host utilities like mshta, wscript, regsvr32, rundll32
-      - shell-launched commands
-      - web URLs
-      - user-writable/temp locations
-      - Windows-like executable names outside expected Windows system folders
+  - Added read-only file verification after Standard Review collectors.
+  - Extracts referenced file paths from startup entries, scheduled tasks, services, Defender exclusions, and command
+    evidence.
 
-  - Applied those indicators to startup registry entries, Startup folder entries, scheduled task actions, and
-    automatic service commands.
+  - For existing files, records:
+      - existence
+      - Authenticode signature status
+      - signer details when available
+      - SHA-256 hash
+      - created/modified timestamps
+      - file size
 
-  - Updated Security Check UI category blocks and safety text.
-  - Updated docs and metadata to v1.15.
-
-  Key files updated:
-
-  - windows/DiskUsageHtmlReport.py
-  - README.md
-  - windows/README.md
-  - windows/dashboard_version.json
-  - windows/Windows_Disk_Usage_Dashboard_AppRequirements_v1.15_2026-06-18.md
-  - windows/Windows_Disk_Usage_Dashboard_Security_Check_Slices_v1.0_2026-06-18.md
+  - Missing referenced files are marked File Missing.
+  - Unsigned/problematic signatures are review signals, not malware verdicts.
+  - Signature/hash failures are recorded as unavailable/skipped details instead of crashing the check.
+  - Security Check summary now includes Unsigned Files.
+  - File Verification is now an active category in the UI and links users to the existing Verification Guide.
 
   Verification passed:
 
   - python -m py_compile windows\DiskUsageHtmlReport.py
-  - Fresh Security Check completed on v1.15 with 326 findings.
-  - Scheduled task collector returned 283 scheduled-task findings.
-  - Services summary returned successfully.
-  - No collector failed; only report downloads remain skipped as planned.
-  - API rejected Security Check start without acknowledgement: 400.
-  - Served browser JavaScript parsed successfully.
-  - Legacy --scan-once report generation still works.
+  - Fresh v1.16 Security Check completed with 421 findings.
+  - File Verification produced 95 findings.
+  - 88 referenced files had SHA-256 hashes.
+  - Signature statuses included Valid and NotSigned.
+  - Missing file behavior verified with File Missing.
+  - API still rejects Security Check start without acknowledgement: 400.
+  - Served browser JavaScript parses successfully.
+  - Legacy --scan-once still works.
 
-  The v1.15 server is currently running at:
+  The v1.16 server is running at:
 
   http://127.0.0.1:8765/
