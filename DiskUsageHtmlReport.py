@@ -27,8 +27,8 @@ except ImportError:  # pragma: no cover - non-Windows fallback
 
 sys.setrecursionlimit(10000)
 
-APP_VERSION = "1.22.0"
-DOC_VERSION = "1.22"
+APP_VERSION = "1.23.0"
+DOC_VERSION = "1.23"
 APP_DIR = Path(__file__).resolve().parent
 RECORDS_DIR = APP_DIR / "scan_records"
 REPORTS_DIR = APP_DIR / "generated_reports"
@@ -966,8 +966,9 @@ def ensure_version_metadata():
         "documentation_version": DOC_VERSION,
         "last_updated": "2026-06-18",
         "revision_notes": (
-            "Added a local known-safe allowlist with add, remove, view, "
-            "export, import, and score-adjustment behavior."
+            "Added a Security Check timeline view with chronological events "
+            "for runs, baselines, files, scheduled tasks, registry evidence, "
+            "Defender data, event logs, and related findings."
         ),
         "affected_areas": [
             "browser_dashboard",
@@ -978,6 +979,7 @@ def ensure_version_metadata():
             "security_check_reports",
             "security_check_baselines",
             "security_check_allowlist",
+            "security_check_timeline",
             "local_records",
             "safety_messaging",
             "documentation_versioning"
@@ -4814,6 +4816,21 @@ summary {{ cursor: pointer; padding: 6px; }}
                         <span class="security-badge">Safe next steps</span>
                     </div>
                 </section>
+
+                <section class="section">
+                    <h2>Timeline</h2>
+                    <p class="muted">Timeline rows are ordered evidence points from the current Security Check record and local baselines. Times are for review context only and do not prove cause or harm.</p>
+                    <div id="securityTimelineSummary" class="grid">
+                        <div class="metric"><div class="label">Timeline Rows</div><div class="value">0</div></div>
+                        <div class="metric"><div class="label">Missing Times</div><div class="value">0</div></div>
+                    </div>
+                    <div class="table-wrap" style="margin-top:12px">
+                        <table>
+                            <thead><tr><th>Date / Time</th><th>Event Type</th><th>Item</th><th>Summary</th><th>Severity</th><th>Action</th></tr></thead>
+                            <tbody id="securityTimelineRows"><tr><td colspan="6">No timeline loaded. Run or load a Security Check record.</td></tr></tbody>
+                        </table>
+                    </div>
+                </section>
             </div>
         </div>
 
@@ -5354,6 +5371,104 @@ function renderSecurityAllowlist(allowlist = null, status = null) {{
     `).join('') || '<tr><td colspan="5">No active allowlist entries. Add one from a selected finding after reviewing it.</td></tr>';
 }}
 
+function parseTimelineTime(value) {{
+    if (!value) return null;
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+}}
+
+function addTimelineRow(rows, timeValue, type, item, summary, severity = 'Info', findingId = null) {{
+    const parsed = parseTimelineTime(timeValue);
+    rows.push({{
+        time: timeValue || '',
+        sortTime: parsed ? parsed.getTime() : Number.POSITIVE_INFINITY,
+        missingTime: !parsed,
+        type,
+        item: item || 'Unavailable',
+        summary: summary || 'No summary available.',
+        severity: severity || 'Info',
+        findingId
+    }});
+}}
+
+function timelineSummaryForFinding(finding) {{
+    const reasons = asArray(finding.review_reasons).join('; ');
+    return reasons || finding.plain_explanation || finding.status || 'Review item collected.';
+}}
+
+function buildSecurityTimelineRows(status) {{
+    const rows = [];
+    if (!status || !status.check_id) return rows;
+
+    addTimelineRow(rows, status.started_at, 'Security Check Started', status.check_id, `Mode: ${{status.mode || 'standard'}}`, 'Info');
+    addTimelineRow(rows, status.completed_at, 'Security Check Completed', status.check_id, `Status: ${{status.status || 'Unavailable'}}`, status.status === 'failed' ? 'High Review' : 'Info');
+
+    const comparison = status.baseline_comparison || null;
+    if (comparison) {{
+        addTimelineRow(rows, comparison.baseline_created_at, 'Baseline Created', comparison.baseline_label || comparison.baseline_id, comparison.explanation || 'Baseline selected for comparison.', 'Info');
+        addTimelineRow(rows, comparison.compared_at, 'Baseline Compared', comparison.baseline_label || comparison.baseline_id, `New: ${{comparison.new || 0}}, changed: ${{comparison.changed || 0}}, removed: ${{comparison.removed || 0}}. These labels do not prove harm.`, 'Info');
+    }}
+
+    asArray(state.securityBaselines).forEach(baseline => {{
+        addTimelineRow(rows, baseline.created_at, 'Local Baseline Created', baseline.label || baseline.baseline_id, `Source check: ${{baseline.source_check_id || 'Unavailable'}}`, 'Info');
+    }});
+
+    asArray(status.findings).forEach(finding => {{
+        const evidence = finding.evidence || {{}};
+        const title = finding.title || 'Untitled finding';
+        const severity = finding.severity || 'Info';
+        if (finding.first_seen) {{
+            addTimelineRow(rows, finding.first_seen, 'Finding First Seen', title, timelineSummaryForFinding(finding), severity, finding.finding_id);
+        }}
+        if (evidence.created_at) {{
+            addTimelineRow(rows, evidence.created_at, 'File Created', evidence.path || evidence.file_path || title, 'File timestamp from local filesystem metadata. It does not prove cause or safety.', severity, finding.finding_id);
+        }}
+        if (evidence.modified_at) {{
+            addTimelineRow(rows, evidence.modified_at, 'File Modified', evidence.path || evidence.file_path || title, 'File timestamp from local filesystem metadata. It does not prove cause or safety.', severity, finding.finding_id);
+        }}
+        if (evidence.last_run_time) {{
+            addTimelineRow(rows, evidence.last_run_time, 'Scheduled Task Last Run', title, `Task state: ${{evidence.state || 'Unavailable'}}`, severity, finding.finding_id);
+        }}
+        if (evidence.next_run_time) {{
+            addTimelineRow(rows, evidence.next_run_time, 'Scheduled Task Next Run', title, 'Future scheduled task time reported by Windows.', severity, finding.finding_id);
+        }}
+        if (evidence.time_created) {{
+            addTimelineRow(rows, evidence.time_created, finding.category || 'Event Log Entry', title, evidence.summary || timelineSummaryForFinding(finding), severity, finding.finding_id);
+        }}
+        if (finding.category === 'Registry Startup' || evidence.registry_key) {{
+            addTimelineRow(rows, finding.first_seen || status.started_at, 'Registry Evidence Seen', title, `Registry evidence was present when this check ran. Key: ${{evidence.registry_key || 'Unavailable'}}`, severity, finding.finding_id);
+        }}
+        if (finding.category === 'Microsoft Defender Exclusions') {{
+            addTimelineRow(rows, finding.first_seen || status.started_at, 'Defender Exclusion Seen', title, 'Defender exclusion was reported by local read-only collection.', severity, finding.finding_id);
+        }}
+    }});
+
+    return rows.sort((a, b) => a.sortTime - b.sortTime || a.type.localeCompare(b.type));
+}}
+
+function renderSecurityTimeline(status) {{
+    const rows = buildSecurityTimelineRows(status);
+    const missing = rows.filter(row => row.missingTime).length;
+    $('securityTimelineSummary').innerHTML = [
+        metric('Timeline Rows', rows.length),
+        metric('Missing Times', missing),
+        metric('Evidence Only', 'No causation')
+    ].join('');
+    $('securityTimelineRows').innerHTML = rows.map(row => {{
+        const action = row.findingId
+            ? `<button type="button" data-timeline-finding="${{esc(row.findingId)}}">Details</button>`
+            : '<span class="muted">No linked finding</span>';
+        return `<tr>
+            <td>${{esc(row.time || 'Time unavailable')}}</td>
+            <td>${{esc(row.type)}}</td>
+            <td>${{esc(row.item)}}</td>
+            <td>${{esc(row.summary)}}</td>
+            <td>${{esc(row.severity)}}</td>
+            <td>${{action}}</td>
+        </tr>`;
+    }}).join('') || '<tr><td colspan="6">No timeline rows are available for this Security Check record.</td></tr>';
+}}
+
 async function refreshSecurityAllowlist(showAlert = true) {{
     try {{
         const data = await api('/api/security-allowlist');
@@ -5806,6 +5921,14 @@ function securityBaselineComparisonHtml(status) {{
 <tbody>${{currentRows.concat(removedRows).join('') || '<tr><td colspan="4">No baseline differences recorded.</td></tr>'}}</tbody></table>`;
 }}
 
+function securityTimelineHtml(status) {{
+    const rows = buildSecurityTimelineRows(status).map(row => `<tr><td>${{esc(row.time || 'Time unavailable')}}</td><td>${{esc(row.type)}}</td><td>${{esc(row.item)}}</td><td>${{esc(row.summary)}}</td><td>${{esc(row.severity)}}</td></tr>`).join('');
+    return `<h2>Timeline</h2>
+<p class="muted">Timeline rows are ordered evidence points only. They do not prove cause or harm.</p>
+<table><thead><tr><th>Date / Time</th><th>Event Type</th><th>Item</th><th>Summary</th><th>Severity</th></tr></thead>
+<tbody>${{rows || '<tr><td colspan="5">No timeline rows available.</td></tr>'}}</tbody></table>`;
+}}
+
 function securityStepsHtml(status) {{
     const rows = asArray(status.steps).map(step => `<tr><td>${{esc(step.label || step.id || 'Step')}}</td><td>${{esc(step.status || 'Unknown')}}</td><td>${{esc(step.detail || '')}}</td></tr>`).join('');
     return `<h2>Lifecycle Steps</h2>
@@ -5818,6 +5941,7 @@ function buildSecurityFullReportHtml(status) {{
     return securityReportShell('Security Check Full Report', `
 ${{securitySummaryHtml(status)}}
 ${{securityBaselineComparisonHtml(status)}}
+${{securityTimelineHtml(status)}}
 <h2>Findings</h2>
 ${{securityFindingRows(findings, true)}}
 ${{securitySkippedHtml(status)}}
@@ -5933,6 +6057,7 @@ function renderSecurityCheckStatus(status) {{
         setSecurityReportButtons(null);
         renderSecurityBaselineComparison(null);
         renderSecurityAllowlist(state.securityAllowlist, null);
+        renderSecurityTimeline(null);
         $('securityStatus').textContent = 'No Security Check running.';
         renderSecurityProgress();
         renderSecuritySummary();
@@ -5952,6 +6077,7 @@ function renderSecurityCheckStatus(status) {{
     renderSecurityCategoryBlocks(status);
     renderSecurityBaselineComparison(status);
     renderSecurityAllowlist(state.securityAllowlist, status);
+    renderSecurityTimeline(status);
     renderSecurityFindings(status);
     setSecurityReportButtons(status);
 }}
@@ -6889,6 +7015,12 @@ $('securityAllowlistRows').addEventListener('click', event => {{
 $('securityFindingDetail').addEventListener('click', event => {{
     const button = event.target.closest('[data-allowlist-finding]');
     if (button) addSelectedFindingToAllowlist(button.dataset.allowlistFinding);
+}});
+$('securityTimelineRows').addEventListener('click', event => {{
+    const button = event.target.closest('[data-timeline-finding]');
+    if (!button || !state.currentSecurityStatus) return;
+    renderSecurityFindingDetail(state.currentSecurityStatus, button.dataset.timelineFinding);
+    renderSecurityFindings(state.currentSecurityStatus);
 }});
 $('exitApp').addEventListener('click', exitApp);
 $('ackSecurityCheck').addEventListener('change', updateSecurityCheckStartState);

@@ -5,7 +5,7 @@
 - Status: Draft with initial scope decisions
 - Source: `windows/temp.txt`
 - Current app version baseline: v1.11.0
-- Latest implemented app version: v1.22.0
+- Latest implemented app version: v1.23.0
 - Prepared by: Codex
 
 ## 1. Request Understanding
@@ -541,6 +541,8 @@ Defer until scoring and evidence display are stable.
 
 ### Slice 12: Timeline View
 
+Status: **Implemented in v1.23**
+
 Complexity: **L**
 
 Goal:
@@ -558,10 +560,10 @@ Includes:
 
 Acceptance criteria:
 
-- [ ] Timeline shows chronological events.
-- [ ] Each row shows date/time, event type, item, summary, severity, and Details action.
-- [ ] Timeline gracefully handles missing timestamps.
-- [ ] Timeline does not claim causation unless evidence supports it.
+- [x] Timeline shows chronological events.
+- [x] Each row shows date/time, event type, item, summary, severity, and Details action.
+- [x] Timeline gracefully handles missing timestamps.
+- [x] Timeline does not claim causation unless evidence supports it.
 
 Recommendation:
 

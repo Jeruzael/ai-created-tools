@@ -1,6 +1,6 @@
 # Windows Disk Usage Dashboard
 
-Version: `1.22.0`
+Version: `1.23.0`
 
 This folder contains a local Windows browser dashboard for disk usage review, scan history, process review, local read-only security review workflows, and safe cleanup guidance.
 
@@ -58,7 +58,7 @@ This is usually faster and safer than scanning the full `C:\` drive.
 - `Results`: review biggest folders, file types, biggest files, tree view, and skipped paths. Use Copy directory buttons to copy folder paths for manual review.
 - `Scan Health`: inside Results, explains whether any skipped paths may have been caused by locked files, running apps, permissions, changing paths, or reparse points.
 - `Processes`: review running programs and local technical indicators. Filter to Needs Review, filter by review reason or publisher, group by publisher or memory use, view grouped trees, use the Verify guide for signature/hash checks, download grouped/verification reports, and select a process row or Details button to open the technical panel. Drag the divider between Running Programs and Process Details to resize both panes.
-- `Security Check`: run a local read-only Standard or Advanced Review. In v1.22 it records progress, supports cancellation, blocks exit while active, saves local records, shows scored review findings with expanded filters, keyboard-selectable rows, plain-language sections, and collapsible technical evidence for startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, services summary, command/name indicators, referenced file verification, WMI persistence, event log correlation, optional Sysmon data when already installed, deeper services/drivers, and Explorer autorun-style locations, downloads local reports from completed or cancelled records, compares later runs against explicit local baselines, and applies local known-safe allowlist matches.
+- `Security Check`: run a local read-only Standard or Advanced Review. In v1.23 it records progress, supports cancellation, blocks exit while active, saves local records, shows scored review findings with expanded filters, keyboard-selectable rows, plain-language sections, and collapsible technical evidence for startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, services summary, command/name indicators, referenced file verification, WMI persistence, event log correlation, optional Sysmon data when already installed, deeper services/drivers, and Explorer autorun-style locations, downloads local reports from completed or cancelled records, compares later runs against explicit local baselines, applies local known-safe allowlist matches, and shows a timeline of evidence timestamps.
 - `History`: open previous scan records. Opened records switch to Results and show the loaded scan path, scan ID, and timestamps.
 - `Manual`: read safe usage guidance, scan setting explanations, use cases, cleanup workflow, and do's/don'ts.
 - `About`: view version and local privacy notes.

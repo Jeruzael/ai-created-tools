@@ -1,8 +1,8 @@
 {
-  "app_version": "1.22.0",
-  "documentation_version": "1.22",
+  "app_version": "1.23.0",
+  "documentation_version": "1.23",
   "last_updated": "2026-06-18",
-  "revision_notes": "Added a local known-safe allowlist with add, remove, view, export, import, and score-adjustment behavior.",
+  "revision_notes": "Added a Security Check timeline view with chronological events for runs, baselines, files, scheduled tasks, registry evidence, Defender data, event logs, and related findings.",
   "affected_areas": [
     "browser_dashboard",
     "security_check_ui",
@@ -12,6 +12,7 @@
     "security_check_reports",
     "security_check_baselines",
     "security_check_allowlist",
+    "security_check_timeline",
     "local_records",
     "safety_messaging",
     "documentation_versioning"
