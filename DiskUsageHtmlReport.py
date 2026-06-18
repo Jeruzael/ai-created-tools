@@ -27,8 +27,8 @@ except ImportError:  # pragma: no cover - non-Windows fallback
 
 sys.setrecursionlimit(10000)
 
-APP_VERSION = "1.18.0"
-DOC_VERSION = "1.18"
+APP_VERSION = "1.19.0"
+DOC_VERSION = "1.19"
 APP_DIR = Path(__file__).resolve().parent
 RECORDS_DIR = APP_DIR / "scan_records"
 REPORTS_DIR = APP_DIR / "generated_reports"
@@ -963,15 +963,16 @@ def ensure_version_metadata():
         "documentation_version": DOC_VERSION,
         "last_updated": "2026-06-18",
         "revision_notes": (
-            "Improved the Security Check findings review UI with expanded "
-            "filters, keyboard-selectable rows, richer summaries, and "
-            "collapsible technical evidence."
+            "Enabled local Security Check report downloads for full reports, "
+            "findings-only reports, verification reports, and explicit "
+            "technical JSON exports."
         ),
         "affected_areas": [
             "browser_dashboard",
             "security_check_ui",
             "security_check_api",
             "security_check_collectors",
+            "security_check_reports",
             "local_records",
             "safety_messaging",
             "documentation_versioning"
@@ -2941,11 +2942,6 @@ class DashboardApp:
             )
 
             with self.lock:
-                active["skipped_items"].append({
-                    "category": "reports",
-                    "status": "Skipped",
-                    "message": "Security report downloads are planned for a later slice.",
-                })
                 active["findings"] = normalize_security_findings(active["findings"])
                 active["summary"] = security_check_summary("running", active["findings"], active["skipped_items"])
         except ScanCancelled as ex:
@@ -3756,7 +3752,7 @@ summary {{ cursor: pointer; padding: 6px; }}
         <section class="action-alert info">
             <h2>Before You Run a Security Check</h2>
             <p>This local review area reads Windows security-related indicators such as startup entries, browser policies, proxy settings, DNS settings, Defender exclusions, scheduled tasks, services summary, and referenced file verification.</p>
-            <p>It is designed as a local read-only review workflow. Findings mean review this, not this is malware. Event logs, Sysmon data, baselines, allowlists, and downloadable security reports are later slices.</p>
+            <p>It is designed as a local read-only review workflow. Findings mean review this, not this is malware. Reports are generated locally from completed or cancelled Security Check records. Event logs, Sysmon data, baselines, and allowlists are later slices.</p>
         </section>
 
         <div class="security-layout">
@@ -3803,7 +3799,7 @@ summary {{ cursor: pointer; padding: 6px; }}
                         <div class="security-step"><span>Preparing local review</span><span class="security-step-status">Waiting</span></div>
                         <div class="security-step"><span>Reading standard security locations</span><span class="security-step-status">Waiting</span></div>
                         <div class="security-step"><span>Checking file signatures and SHA-256 hashes</span><span class="security-step-status">Waiting</span></div>
-                        <div class="security-step"><span>Building local report</span><span class="security-step-status">Waiting</span></div>
+                        <div class="security-step"><span>Saving local security check record</span><span class="security-step-status">Waiting</span></div>
                     </div>
                 </section>
             </div>
@@ -3897,7 +3893,7 @@ summary {{ cursor: pointer; padding: 6px; }}
 
         <section class="section">
             <h2>Reports</h2>
-            <p>Report downloads will be enabled in the reporting slice. Security Check records already include verification evidence locally after each completed or cancelled run. Use the existing <a href="#verification-panel">Verification Guide</a> for signature and SHA-256 review guidance.</p>
+            <p>Download local reports from the current completed or cancelled Security Check record. Reports may include local paths, usernames, command lines, registry values, hashes, and installed software details, so review them before sharing.</p>
             <div class="actions">
                 <button id="downloadSecurityFullReport" disabled>Download Full Security Report</button>
                 <button id="downloadSecurityFindingsReport" disabled>Download Findings Only</button>
@@ -4445,10 +4441,237 @@ function renderSecurityFindingDetail(status, findingId) {{
     `;
 }}
 
+function securityReportReady(status) {{
+    return Boolean(status && status.check_id && !status.active && status.status !== 'running');
+}}
+
+function setSecurityReportButtons(status) {{
+    const ready = securityReportReady(status);
+    [
+        'downloadSecurityFullReport',
+        'downloadSecurityFindingsReport',
+        'downloadSecurityVerificationReport',
+        'downloadSecurityJsonReport'
+    ].forEach(id => {{
+        const button = $(id);
+        if (button) button.disabled = !ready;
+    }});
+}}
+
+function securityReportStamp(status) {{
+    return String(status?.completed_at || status?.started_at || new Date().toISOString())
+        .replace(/[^0-9A-Za-z]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'security-check';
+}}
+
+function evidenceHtml(evidence) {{
+    const entries = Object.entries(evidence || {{}});
+    if (!entries.length) return '<span class="muted">No technical evidence recorded.</span>';
+    return `<pre>${{esc(JSON.stringify(evidence, null, 2))}}</pre>`;
+}}
+
+function securityReportShell(title, bodyHtml) {{
+    const generated = new Date().toLocaleString();
+    return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>${{esc(title)}}</title>
+<style>
+body {{ font-family: Segoe UI, Arial, sans-serif; margin: 28px; color: #17202a; }}
+table {{ width: 100%; border-collapse: collapse; margin-top: 12px; }}
+th, td {{ text-align: left; vertical-align: top; border-bottom: 1px solid #d7dee8; padding: 9px; }}
+code, pre {{ overflow-wrap: anywhere; word-break: break-word; }}
+pre {{ white-space: pre-wrap; background: #f3f6fa; border: 1px solid #d7dee8; border-radius: 8px; padding: 10px; }}
+.muted {{ color: #5d6b7a; }}
+.notice {{ border-left: 5px solid #1769aa; background: #eef6ff; padding: 10px 12px; }}
+.warning {{ border-left-color: #9a5b00; background: #fff8e8; }}
+.badge {{ display: inline-block; background: #eef3f8; border: 1px solid #d7dee8; border-radius: 999px; padding: 3px 8px; margin: 2px; font-size: 12px; }}
+</style>
+</head>
+<body>
+<h1>${{esc(title)}}</h1>
+<p class="muted">Generated locally: ${{esc(generated)}}. This report is informational review evidence only and is not a malware verdict.</p>
+<div class="notice warning"><strong>Privacy reminder:</strong> this report may include local paths, usernames, command lines, registry values, hashes, and installed software details. Review it before sharing.</div>
+<div class="notice"><strong>Safety statement:</strong> the dashboard reports information only. Do not delete files, disable startup items, edit registry values, or change Defender/browser/DNS settings based only on this report.</div>
+${{bodyHtml}}
+</body>
+</html>`;
+}}
+
+function securitySummaryHtml(status) {{
+    const summary = status.summary || {{}};
+    return `
+<h2>Run Summary</h2>
+<p><strong>Check ID:</strong> <code>${{esc(status.check_id)}}</code><br>
+<strong>Status:</strong> ${{esc(status.status || 'Unavailable')}}<br>
+<strong>Mode:</strong> ${{esc(status.mode || 'standard')}}<br>
+<strong>Started:</strong> ${{esc(status.started_at || 'Unavailable')}}<br>
+<strong>Completed:</strong> ${{esc(status.completed_at || 'Unavailable')}}<br>
+<strong>App version:</strong> ${{esc(status.app_version || 'Unavailable')}}</p>
+<p>
+<span class="badge">Findings: ${{esc(summary.findings_total || 0)}}</span>
+<span class="badge">High Review: ${{esc(summary.high_review || 0)}}</span>
+<span class="badge">Medium Review: ${{esc(summary.medium_review || 0)}}</span>
+<span class="badge">Low Review: ${{esc(summary.low_review || 0)}}</span>
+<span class="badge">Info: ${{esc(summary.info || 0)}}</span>
+<span class="badge">Unsigned files: ${{esc(summary.unsigned_files || 0)}}</span>
+<span class="badge">Skipped: ${{esc(summary.skipped_count || 0)}}</span>
+</p>`;
+}}
+
+function securityFindingRows(findings, includeEvidence = false) {{
+    const evidenceHeader = includeEvidence ? '<th>Technical Evidence</th>' : '';
+    const evidenceCell = finding => includeEvidence ? `<td>${{evidenceHtml(finding.evidence || {{}})}}</td>` : '';
+    const rows = (findings || []).map(finding => {{
+        const reasons = asArray(finding.review_reasons).join('; ') || finding.status || 'Review item';
+        const nextSteps = asArray(finding.recommended_next_steps).join('; ') || 'Review evidence before making changes.';
+        return `<tr>
+<td>${{esc(finding.severity || 'Info')}}</td>
+<td>${{esc(finding.score ?? 0)}}</td>
+<td>${{esc(finding.category || 'Uncategorized')}}</td>
+<td><strong>${{esc(finding.title || 'Untitled')}}</strong><br><span class="muted">${{esc(finding.status || 'Found')}}</span></td>
+<td>${{esc(reasons)}}</td>
+<td>${{esc(nextSteps)}}</td>
+${{evidenceCell(finding)}}
+</tr>`;
+    }}).join('');
+    return `<table>
+<thead><tr><th>Severity</th><th>Score</th><th>Category</th><th>Item</th><th>Review Reasons</th><th>Safe Next Steps</th>${{evidenceHeader}}</tr></thead>
+<tbody>${{rows || `<tr><td colspan="${{includeEvidence ? 7 : 6}}">No findings recorded.</td></tr>`}}</tbody>
+</table>`;
+}}
+
+function securitySkippedHtml(status) {{
+    const skipped = asArray(status.skipped_items);
+    const rows = skipped.map(item => `<tr><td>${{esc(item.category || 'Skipped')}}</td><td>${{esc(item.status || 'Skipped')}}</td><td>${{esc(item.message || '')}}</td><td>${{esc(item.detail || '')}}</td></tr>`).join('');
+    return `<h2>Skipped Or Unavailable Sources</h2>
+<table><thead><tr><th>Category</th><th>Status</th><th>Message</th><th>Detail</th></tr></thead>
+<tbody>${{rows || '<tr><td colspan="4">No skipped source details recorded.</td></tr>'}}</tbody></table>`;
+}}
+
+function securityStepsHtml(status) {{
+    const rows = asArray(status.steps).map(step => `<tr><td>${{esc(step.label || step.id || 'Step')}}</td><td>${{esc(step.status || 'Unknown')}}</td><td>${{esc(step.detail || '')}}</td></tr>`).join('');
+    return `<h2>Lifecycle Steps</h2>
+<table><thead><tr><th>Step</th><th>Status</th><th>Detail</th></tr></thead>
+<tbody>${{rows || '<tr><td colspan="3">No lifecycle step details recorded.</td></tr>'}}</tbody></table>`;
+}}
+
+function buildSecurityFullReportHtml(status) {{
+    const findings = asArray(status.findings);
+    return securityReportShell('Security Check Full Report', `
+${{securitySummaryHtml(status)}}
+<h2>Findings</h2>
+${{securityFindingRows(findings, true)}}
+${{securitySkippedHtml(status)}}
+${{securityStepsHtml(status)}}
+<h2>Technical JSON</h2>
+<p class="muted">Use the dashboard's explicit Download Technical JSON button when raw structured data is needed.</p>
+`);
+}}
+
+function buildSecurityFindingsReportHtml(status) {{
+    return securityReportShell('Security Check Findings Only Report', `
+${{securitySummaryHtml(status)}}
+<h2>Findings</h2>
+${{securityFindingRows(asArray(status.findings), false)}}
+<h2>What To Do Next</h2>
+<ul>
+<li>Use the finding details and evidence to decide what needs human review.</li>
+<li>Use official vendor documentation, Microsoft Defender, or trusted security tools for final safety decisions.</li>
+<li>Do not remove startup entries, scheduled tasks, services, files, or registry values based only on this report.</li>
+</ul>
+`);
+}}
+
+function verificationRelevantFinding(finding) {{
+    const evidence = finding.evidence || {{}};
+    return finding.category === 'File Verification'
+        || Boolean(evidence.file_path)
+        || Boolean(evidence.sha256)
+        || Boolean(evidence.signature_status)
+        || Boolean(evidence.signer)
+        || Boolean(evidence.referenced_by);
+}}
+
+function buildSecurityVerificationReportHtml(status) {{
+    const findings = asArray(status.findings).filter(verificationRelevantFinding);
+    return securityReportShell('Security Check Verification Report', `
+${{securitySummaryHtml(status)}}
+<h2>File And Signature Verification Findings</h2>
+${{securityFindingRows(findings, true)}}
+<h2>Verification Guidance</h2>
+<ul>
+<li>Valid signatures and expected publishers are useful signals, but they do not prove a file is safe forever.</li>
+<li>Unsigned files are not automatically harmful. Review path, vendor, install source, and behavior.</li>
+<li>Compare SHA-256 values only with trusted vendor pages, internal records, or trusted security tooling.</li>
+</ul>
+`);
+}}
+
+function downloadSecurityBlob(filename, content, mimeType) {{
+    const blob = new Blob([content], {{ type: mimeType }});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+}}
+
+function downloadSecurityReport(kind) {{
+    const status = state.currentSecurityStatus;
+    if (!securityReportReady(status)) {{
+        showActionAlert('warning', 'Security Report Unavailable', 'Run or load a completed Security Check before downloading a report.', [
+            'Reports are generated locally from completed or cancelled Security Check records.'
+        ]);
+        return;
+    }}
+    const stamp = securityReportStamp(status);
+    const builders = {{
+        full: [buildSecurityFullReportHtml, `security-check-full-report-${{stamp}}.html`, 'Full Security Report Downloaded'],
+        findings: [buildSecurityFindingsReportHtml, `security-check-findings-report-${{stamp}}.html`, 'Findings Report Downloaded'],
+        verification: [buildSecurityVerificationReportHtml, `security-check-verification-report-${{stamp}}.html`, 'Verification Report Downloaded']
+    }};
+    const [builder, filename, title] = builders[kind];
+    downloadSecurityBlob(filename, builder(status), 'text/html');
+    showActionAlert('success', title, 'A local HTML report was generated from the current Security Check record.', [
+        `Check ID: ${{status.check_id}}`,
+        `Findings: ${{status.summary?.findings_total || asArray(status.findings).length}}`,
+        'Reports may include private local system details. Review before sharing.'
+    ]);
+}}
+
+function downloadSecurityJsonReport() {{
+    const status = state.currentSecurityStatus;
+    if (!securityReportReady(status)) {{
+        showActionAlert('warning', 'Technical JSON Unavailable', 'Run or load a completed Security Check before downloading technical JSON.', [
+            'Technical JSON is generated only when this button is clicked.'
+        ]);
+        return;
+    }}
+    const payload = {{
+        schema_version: 'security-report-download-v1',
+        generated_at: new Date().toISOString(),
+        source: 'Windows Disk Usage Dashboard local Security Check',
+        safety_statement: 'Review data only. Not a malware verdict. No remediation was performed.',
+        privacy_warning: 'May contain local paths, usernames, command lines, registry values, hashes, and installed software details.',
+        record: status
+    }};
+    downloadSecurityBlob(`security-check-technical-${{securityReportStamp(status)}}.json`, JSON.stringify(payload, null, 2), 'application/json');
+    showActionAlert('success', 'Technical JSON Downloaded', 'A local JSON export was generated only after the explicit download action.', [
+        `Check ID: ${{status.check_id}}`,
+        'Review JSON before sharing because it may contain private local system details.'
+    ]);
+}}
+
 function renderSecurityCheckStatus(status) {{
     if (!status || !status.check_id) {{
         state.currentSecurityStatus = null;
         state.selectedSecurityFindingId = null;
+        setSecurityReportButtons(null);
         $('securityStatus').textContent = 'No Security Check running.';
         renderSecurityProgress();
         renderSecuritySummary();
@@ -4467,6 +4690,7 @@ function renderSecurityCheckStatus(status) {{
     $('securityStatus').innerHTML = `Security Check <code>${{esc(status.check_id)}}</code><br>Status: <strong>${{esc(status.status)}}</strong> | Mode: ${{esc(status.mode || 'standard')}} | Registry backup opt-in: ${{options.registry_backup_opt_in ? 'yes' : 'no'}}`;
     renderSecurityCategoryBlocks(status);
     renderSecurityFindings(status);
+    setSecurityReportButtons(status);
 }}
 
 async function startSecurityCheck() {{
@@ -4491,7 +4715,7 @@ async function startSecurityCheck() {{
         showTab('security');
         showActionAlert('success', 'Security Check Started', 'Lifecycle progress is now visible in the Security Check tab.', [
             `Check ID: ${{status.check_id}}`,
-            'Signature status and SHA-256 are collected for referenced files when available. Event logs and report downloads are later slices.'
+            'Signature status and SHA-256 are collected for referenced files when available. Reports are available after the run completes.'
         ]);
     }} catch (error) {{
         showActionAlert('error', 'Security Check Failed To Start', error.message, [
@@ -4727,9 +4951,10 @@ async function loadInitial() {{
         $('driveSelect').innerHTML = info.drives.map(d => `<option value="${{esc(d.path)}}">${{esc(d.label)}}</option>`).join('');
         if (info.drives.length) $('rootPath').value = info.drives.find(d => d.path === 'C:\\\\')?.path || info.drives[0].path;
         if (info.latest_record) renderResult(info.latest_record);
-        if (info.active_security_check && info.active_security_check.check_id) {{
-            renderSecurityCheckStatus(info.active_security_check);
-            state.securityCheckActive = Boolean(info.active_security_check.active);
+        const latestSecurityStatus = info.active_security_check?.check_id ? info.active_security_check : info.latest_security_check;
+        if (latestSecurityStatus && latestSecurityStatus.check_id) {{
+            renderSecurityCheckStatus(latestSecurityStatus);
+            state.securityCheckActive = Boolean(latestSecurityStatus.active);
             setExitState(state.securityCheckActive, state.securityCheckActive ? 'Cancel or wait for the current Security Check to finish before exiting.' : '', 'security');
             $('cancelSecurityCheck').disabled = !state.securityCheckActive;
             updateSecurityCheckStartState();
@@ -5371,6 +5596,10 @@ $('refreshHistory').addEventListener('click', refreshHistory);
 $('refreshProcesses').addEventListener('click', refreshProcesses);
 $('downloadProcessReport').addEventListener('click', downloadProcessReport);
 $('downloadVerificationReport').addEventListener('click', downloadVerificationReport);
+$('downloadSecurityFullReport').addEventListener('click', () => downloadSecurityReport('full'));
+$('downloadSecurityFindingsReport').addEventListener('click', () => downloadSecurityReport('findings'));
+$('downloadSecurityVerificationReport').addEventListener('click', () => downloadSecurityReport('verification'));
+$('downloadSecurityJsonReport').addEventListener('click', downloadSecurityJsonReport);
 $('exitApp').addEventListener('click', exitApp);
 $('ackSecurityCheck').addEventListener('change', updateSecurityCheckStartState);
 $('startSecurityCheck').addEventListener('click', startSecurityCheck);
@@ -5446,7 +5675,7 @@ pollSecurityStatus();
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
-    server_version = "DiskUsageDashboard/1.18"
+    server_version = "DiskUsageDashboard/1.19"
 
     def log_message(self, format, *args):
         return

@@ -1,13 +1,14 @@
 {
-  "app_version": "1.18.0",
-  "documentation_version": "1.18",
+  "app_version": "1.19.0",
+  "documentation_version": "1.19",
   "last_updated": "2026-06-18",
-  "revision_notes": "Improved the Security Check findings review UI with expanded filters, keyboard-selectable rows, richer summaries, and collapsible technical evidence.",
+  "revision_notes": "Enabled local Security Check report downloads for full reports, findings-only reports, verification reports, and explicit technical JSON exports.",
   "affected_areas": [
     "browser_dashboard",
     "security_check_ui",
     "security_check_api",
     "security_check_collectors",
+    "security_check_reports",
     "local_records",
     "safety_messaging",
     "documentation_versioning"

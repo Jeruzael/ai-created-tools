@@ -5,7 +5,7 @@
 - Status: Draft with initial scope decisions
 - Source: `windows/temp.txt`
 - Current app version baseline: v1.11.0
-- Latest implemented app version: v1.18.0
+- Latest implemented app version: v1.19.0
 - Prepared by: Codex
 
 ## 1. Request Understanding
@@ -418,6 +418,8 @@ Acceptance criteria:
 
 ### Slice 8: Reports
 
+Status: **Implemented in v1.19**
+
 Complexity: **M/L**
 
 Goal:
@@ -436,13 +438,13 @@ Includes:
 
 Acceptance criteria:
 
-- [ ] HTML report includes safety statement and privacy reminder.
-- [ ] HTML report includes scan summary and findings.
-- [ ] Technical JSON is downloaded only when the user clicks `Download Technical JSON`.
-- [ ] Technical JSON report includes schema version and raw structured fields.
-- [ ] Reports do not claim malware detection.
-- [ ] Reports escape user/system-provided strings before rendering.
-- [ ] Reports remain local downloads.
+- [x] HTML report includes safety statement and privacy reminder.
+- [x] HTML report includes scan summary and findings.
+- [x] Technical JSON is downloaded only when the user clicks `Download Technical JSON`.
+- [x] Technical JSON report includes schema version and raw structured fields.
+- [x] Reports do not claim malware detection.
+- [x] Reports escape user/system-provided strings before rendering.
+- [x] Reports remain local downloads.
 
 ### Slice 9: Baseline Creation And Comparison
 

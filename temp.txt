@@ -1,38 +1,35 @@
-Implemented the next slice: Security Check v1.18, Slice 7 Findings Review UI and Detail Panel.
+Implemented Slice 8: Security Check reports, plus the .gitignore safety update.
 
-  What changed:
+  Changed:
 
-  - Added expanded Security Check filters:
-      - search
-      - severity
-      - category
-      - status
-      - signal type: unsigned files, command indicators, user-writable paths
-      - disabled baseline placeholder
+  - Added private/generated Security Check paths to .gitignore:16, including windows/security_check_records/.
+  - Bumped app/docs to v1.19.0 in windows/DiskUsageHtmlReport.py:30.
+  - Enabled Security Check report buttons for completed/cancelled checks:
+      - Full HTML report
+      - Findings-only HTML report
+      - Verification HTML report
+      - Explicit Technical JSON export
 
-  - Summary cards now include review status/category-oriented counts like Needs Review, No Obvious Issue, and
-    Categories.
+  - Reports are browser-generated local downloads from the current Security Check record and include privacy/safety
+    wording.
 
-  - Finding rows are now clickable and keyboard-accessible with Enter/Space.
-  - Selected finding rows are visually highlighted.
-  - Long paths, command lines, hashes, registry values, and evidence wrap better.
-  - Category blocks show calm empty states when no findings exist.
-  - Technical Evidence is now collapsible and separated from the plain-language explanation.
+  - Updated README docs, version metadata, and marked Slice 8 implemented in windows/
+    Windows_Disk_Usage_Dashboard_Security_Check_Slices_v1.0_2026-06-18.md:421.
 
   Verification passed:
 
-  - python -m py_compile windows\DiskUsageHtmlReport.py
-  - Served browser JavaScript parses successfully.
-  - API still rejects Security Check start without acknowledgement: 400.
-  - Fresh v1.18 Security Check completed with 421 findings.
-  - Filter-relevant data verified:
-      - statuses: File Missing, Found, Needs Review, No Obvious Issue, Verified
-      - command signal findings: 22
-      - unsigned files: 1
-      - user-writable path signals: 18
+  python -m py_compile .\windows\DiskUsageHtmlReport.py
+  python .\windows\DiskUsageHtmlReport.py --help
 
-  - Legacy --scan-once still works.
+  Also verified:
 
-  The v1.18 server is running at:
+  - dashboard HTML renders with App v1.19.0
+  - report UI is present
+  - embedded JS syntax check passed
 
-  http://127.0.0.1:8765/
+  The v1.19 dashboard is running here:
+
+  http://127.0.0.1:8766/
+
+  Note: there is also an older listener on 8765, so use 8766 for this updated run. The repo still has no commits yet
+  and all project files are untracked, which matches the previous onboarding state.
