@@ -1,38 +1,41 @@
- Implemented the first Security Check implementation slice: the v1.12 UI shell.
+Implemented Slice 2: Security Check job lifecycle.
 
   What changed:
 
-  - Added Security Check tab between Processes and History.
-  - Added safety notice and required acknowledgement before Start Security Check enables.
-  - Added Standard Review mode and disabled Advanced/future options.
-  - Added explicit registry-backup opt-in, off by default.
-  - Added placeholder progress steps, summary metrics, findings table, details panel, planned category blocks, and
-    disabled report buttons.
+  - Added backend lifecycle API:
+      - POST /api/security-checks
+      - GET /api/security-checks/active
+      - POST /api/security-checks/cancel
+      - GET /api/security-checks/{check_id}
 
-  - Clicking Start Security Check now shows a clear warning that collectors are not connected yet and that nothing
-    was read or modified.
+  - Added local lifecycle records under windows/security_check_records.
+  - Security Check now starts after acknowledgement, shows progress, can be cancelled, saves completed/cancelled
+    records, and blocks Exit App while running.
 
-  - Updated app/docs version to 1.12.0 / 1.12.
-  - Updated README, folder README, version JSON, requirements doc, and UI design context.
+  - Disk scans and Security Checks now block each other while one is active.
+  - Updated UI polling/rendering for Security Check status, steps, skipped collector notes, and local record details.
+  - Updated docs/version to v1.13.0 / v1.13.
 
   Key files:
 
   - windows/DiskUsageHtmlReport.py:22
+  - windows/Windows_Disk_Usage_Dashboard_AppRequirements_v1.13_2026-06-18.md:1
   - README.md:1
   - windows/README.md:1
   - windows/dashboard_version.json:1
-  - windows/Windows_Disk_Usage_Dashboard_AppRequirements_v1.12_2026-06-18.md:1
 
   Verification passed:
 
   - python -m py_compile windows\DiskUsageHtmlReport.py
-  - Restarted live server at http://127.0.0.1:8765/, PID 23580
-  - API reports app_version: 1.12.0
-  - Served HTML contains the Security Check tab, safety acknowledgement, disabled Start state, registry-backup opt-
-    in, disabled Technical JSON button, and v1.12 server header.
+  - Restarted server at http://127.0.0.1:8765/, PID 20420
+  - API reports app_version: 1.13.0
+  - Rejected Security Check start without acknowledgement.
+  - Started Security Check with acknowledgement.
+  - Confirmed shutdown is blocked while Security Check is running.
+  - Cancelled a running Security Check and confirmed a cancelled record was saved.
+  - Ran a completed Security Check lifecycle and confirmed local record saved.
+  - Served JS syntax check passed: script_parse=ok
+  - Legacy --scan-once still works.
 
-  - Legacy --scan-once still works and generated runtime\disk_usage_html_report_test\legacy-v112-scan-once.html.
-
-  Important limitation: this is Slice 1 only. No registry, Defender, scheduled task, browser policy, file
-  verification, WMI, event log, Sysmon, baseline, or allowlist collectors run yet. Next best implementation slice is
-  the Security Check job lifecycle.
+  Important limitation: this still does not collect registry, Defender, scheduled tasks, browser policies, files,
+  hashes, logs, WMI, or Sysmon. Next slice should be Standard Review Collector Set A.

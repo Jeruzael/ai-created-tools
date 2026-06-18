@@ -1,11 +1,13 @@
 {
-  "app_version": "1.12.0",
-  "documentation_version": "1.12",
+  "app_version": "1.13.0",
+  "documentation_version": "1.13",
   "last_updated": "2026-06-18",
-  "revision_notes": "Added the Security Check tab shell with safety acknowledgement, explicit registry-backup opt-in, placeholder review panels, and disabled future report actions.",
+  "revision_notes": "Added Security Check job lifecycle endpoints, local records, progress polling, cancellation, and exit blocking while checks run.",
   "affected_areas": [
     "browser_dashboard",
     "security_check_ui",
+    "security_check_api",
+    "local_records",
     "safety_messaging",
     "documentation_versioning"
   ],

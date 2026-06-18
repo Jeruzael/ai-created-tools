@@ -5,6 +5,7 @@
 - Status: Draft with initial scope decisions
 - Source: `windows/temp.txt`
 - Current app version baseline: v1.11.0
+- Latest implemented app version: v1.13.0
 - Prepared by: Codex
 
 ## 1. Request Understanding
@@ -250,6 +251,8 @@ Acceptance criteria:
 
 Complexity: **L**
 
+Status: **Implemented in v1.13**
+
 Goal:
 
 Implement local backend orchestration for a background security check job.
@@ -267,13 +270,13 @@ Includes:
 
 Acceptance criteria:
 
-- [ ] User can start a Security Check after acknowledgement.
-- [ ] UI shows progress steps with `Waiting`, `Running`, `Complete`, `Skipped`, `Needs Admin`, `Access Denied`, or `Error`.
-- [ ] User can cancel a running Security Check.
-- [ ] Exit App is disabled while Security Check is running.
-- [ ] A completed or cancelled check creates a local record.
-- [ ] Partial results are saved when possible.
-- [ ] Errors do not crash the dashboard server.
+- [x] User can start a Security Check after acknowledgement.
+- [x] UI shows progress steps with `Waiting`, `Running`, `Complete`, `Skipped`, or `Error`. `Needs Admin` and `Access Denied` remain reserved for collector slices.
+- [x] User can cancel a running Security Check.
+- [x] Exit App is disabled while Security Check is running.
+- [x] A completed or cancelled check creates a local record.
+- [x] Partial results are saved when possible.
+- [x] Errors do not crash the dashboard server.
 
 ### Slice 3: Standard Review Collector Set A
 

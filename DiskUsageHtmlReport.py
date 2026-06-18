@@ -19,11 +19,12 @@ from urllib.parse import parse_qs, urlparse
 
 sys.setrecursionlimit(10000)
 
-APP_VERSION = "1.12.0"
-DOC_VERSION = "1.12"
+APP_VERSION = "1.13.0"
+DOC_VERSION = "1.13"
 APP_DIR = Path(__file__).resolve().parent
 RECORDS_DIR = APP_DIR / "scan_records"
 REPORTS_DIR = APP_DIR / "generated_reports"
+SECURITY_RECORDS_DIR = APP_DIR / "security_check_records"
 VERSION_FILE = APP_DIR / "dashboard_version.json"
 
 
@@ -944,6 +945,7 @@ def now_iso() -> str:
 def ensure_app_dirs():
     RECORDS_DIR.mkdir(exist_ok=True)
     REPORTS_DIR.mkdir(exist_ok=True)
+    SECURITY_RECORDS_DIR.mkdir(exist_ok=True)
 
 
 def ensure_version_metadata():
@@ -953,13 +955,14 @@ def ensure_version_metadata():
         "documentation_version": DOC_VERSION,
         "last_updated": "2026-06-18",
         "revision_notes": (
-            "Added the Security Check tab shell with safety acknowledgement, "
-            "explicit registry-backup opt-in, placeholder review panels, and "
-            "disabled future report actions."
+            "Added Security Check job lifecycle endpoints, local records, "
+            "progress polling, cancellation, and exit blocking while checks run."
         ),
         "affected_areas": [
             "browser_dashboard",
             "security_check_ui",
+            "security_check_api",
+            "local_records",
             "safety_messaging",
             "documentation_versioning"
         ],
@@ -1061,6 +1064,10 @@ def scan_record_path(scan_id: str) -> Path:
     return RECORDS_DIR / f"{scan_id}.json"
 
 
+def security_check_record_path(check_id: str) -> Path:
+    return SECURITY_RECORDS_DIR / f"{check_id}.json"
+
+
 def load_scan_records():
     ensure_app_dirs()
     records = []
@@ -1076,6 +1083,78 @@ def load_scan_records():
         key=lambda item: item.get("started_at") or item.get("completed_at") or "",
         reverse=True
     )
+
+
+def load_security_check_records():
+    ensure_app_dirs()
+    records = []
+    for path in SECURITY_RECORDS_DIR.glob("*.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            records.append(data)
+        except Exception:
+            continue
+
+    return sorted(
+        records,
+        key=lambda item: item.get("started_at") or item.get("completed_at") or "",
+        reverse=True
+    )
+
+
+def security_check_steps():
+    return [
+        {
+            "id": "prepare",
+            "label": "Preparing local review",
+            "status": "Waiting",
+            "detail": "Waiting to prepare the local read-only security check lifecycle.",
+        },
+        {
+            "id": "registry_backup",
+            "label": "Recording registry backup opt-in",
+            "status": "Waiting",
+            "detail": "Registry backups require explicit opt-in and are not created in this lifecycle slice.",
+        },
+        {
+            "id": "standard_locations",
+            "label": "Reading standard security locations",
+            "status": "Waiting",
+            "detail": "Collectors for registry, startup, browser policy, proxy, DNS, Defender, and tasks are planned for the next slice.",
+        },
+        {
+            "id": "file_verification",
+            "label": "Checking file signatures and SHA-256 hashes",
+            "status": "Waiting",
+            "detail": "File verification is planned for a later slice and is not run yet.",
+        },
+        {
+            "id": "record",
+            "label": "Saving local security check record",
+            "status": "Waiting",
+            "detail": "A local lifecycle record will be saved under the app folder.",
+        },
+    ]
+
+
+def security_check_summary(status="not_run"):
+    label = {
+        "running": "Running",
+        "completed": "Completed",
+        "cancelled": "Cancelled",
+        "failed": "Failed",
+    }.get(status, "Not Run")
+    return {
+        "overall_status": label,
+        "high_review": 0,
+        "medium_review": 0,
+        "low_review": 0,
+        "info": 0,
+        "unsigned_files": 0,
+        "baseline_changes": "Future",
+        "findings_total": 0,
+        "collectors_connected": False,
+    }
 
 
 def build_scan_result_payload(root, root_node, scanner: DiskScanner):
@@ -1434,6 +1513,7 @@ class DashboardApp:
         self.lock = threading.Lock()
         self.active_scan = None
         self.active_scanner = None
+        self.active_security_check = None
         self.shutting_down = False
         self.version_metadata = ensure_version_metadata()
 
@@ -1441,6 +1521,8 @@ class DashboardApp:
         with self.lock:
             if self.active_scan and self.active_scan.get("status") == "running":
                 raise RuntimeError("A scan is already running.")
+            if self.active_security_check and self.active_security_check.get("status") == "running":
+                raise RuntimeError("Cancel or wait for the current Security Check to finish before starting a scan.")
 
         root = os.path.abspath(str(data.get("root", "")).strip())
         if not root:
@@ -1567,10 +1649,213 @@ class DashboardApp:
             self.active_scan["cancel_event"].set()
         return self.scan_status()
 
+    def start_security_check(self, data):
+        with self.lock:
+            if self.active_security_check and self.active_security_check.get("status") == "running":
+                raise RuntimeError("A Security Check is already running.")
+            if self.active_scan and self.active_scan.get("status") == "running":
+                raise RuntimeError("Cancel or wait for the current scan to finish before starting a Security Check.")
+
+        acknowledgement = bool(data.get("acknowledgeSafety", False))
+        if not acknowledgement:
+            raise ValueError("Security Check acknowledgement is required before starting.")
+
+        mode = str(data.get("mode", "standard")).strip().lower() or "standard"
+        if mode != "standard":
+            raise ValueError("Only Standard Review is available in this implementation slice.")
+
+        options = {
+            "registry_backup_opt_in": bool(data.get("registryBackup", False)),
+            "baseline_compare": False,
+            "wmi_check": False,
+            "event_log_correlation": False,
+            "sysmon_correlation": False,
+        }
+        check_id = uuid.uuid4().hex
+        cancel_event = threading.Event()
+        active = {
+            "check_id": check_id,
+            "schema_version": "security-check-lifecycle-v1",
+            "mode": mode,
+            "started_at": now_iso(),
+            "completed_at": None,
+            "duration_seconds": None,
+            "status": "running",
+            "safety_acknowledged": acknowledgement,
+            "options": options,
+            "summary": security_check_summary("running"),
+            "findings": [],
+            "skipped_items": [],
+            "errors": [],
+            "steps": security_check_steps(),
+            "record_path": str(security_check_record_path(check_id).resolve()),
+            "app_version": APP_VERSION,
+            "cancel_event": cancel_event,
+        }
+
+        thread = threading.Thread(target=self._run_security_check, args=(active,), daemon=True)
+
+        with self.lock:
+            self.active_security_check = active
+
+        thread.start()
+        return self.security_check_status()
+
+    def _set_security_step(self, active, step_id, status, detail=None):
+        with self.lock:
+            for step in active["steps"]:
+                if step["id"] == step_id:
+                    step["status"] = status
+                    if detail is not None:
+                        step["detail"] = detail
+                    break
+
+    def _security_cancelled(self, active):
+        return active["cancel_event"].is_set()
+
+    def _run_security_check(self, active):
+        started = time.time()
+        status = "completed"
+        error = None
+
+        def wait_or_cancel(seconds=0.35):
+            end = time.time() + seconds
+            while time.time() < end:
+                if self._security_cancelled(active):
+                    return True
+                time.sleep(0.05)
+            return self._security_cancelled(active)
+
+        try:
+            self._set_security_step(active, "prepare", "Running", "Preparing local lifecycle state. No security collectors are running yet.")
+            if wait_or_cancel():
+                raise ScanCancelled("Security Check cancelled by user.")
+            self._set_security_step(active, "prepare", "Complete", "Local lifecycle state prepared.")
+
+            self._set_security_step(active, "registry_backup", "Running", "Recording whether the user explicitly opted into future registry backups.")
+            if wait_or_cancel():
+                raise ScanCancelled("Security Check cancelled by user.")
+            backup_detail = (
+                "User opted into registry backups for a future collector slice. No backup file was created in this lifecycle slice."
+                if active["options"]["registry_backup_opt_in"]
+                else "User did not opt into registry backups."
+            )
+            self._set_security_step(active, "registry_backup", "Complete", backup_detail)
+
+            self._set_security_step(active, "standard_locations", "Skipped", "Standard Review collectors are not connected until the next implementation slice.")
+            if wait_or_cancel(0.2):
+                raise ScanCancelled("Security Check cancelled by user.")
+
+            self._set_security_step(active, "file_verification", "Skipped", "File signature and SHA-256 verification are not connected until a later implementation slice.")
+            if wait_or_cancel(0.2):
+                raise ScanCancelled("Security Check cancelled by user.")
+
+            active["skipped_items"] = [
+                {
+                    "category": "collectors",
+                    "status": "Skipped",
+                    "message": "Security collectors are not connected in this lifecycle slice.",
+                },
+                {
+                    "category": "reports",
+                    "status": "Skipped",
+                    "message": "Security report downloads are planned for a later slice.",
+                },
+            ]
+        except ScanCancelled as ex:
+            status = "cancelled"
+            error = str(ex)
+            active["errors"].append(error)
+            for step in active["steps"]:
+                if step["status"] == "Running":
+                    step["status"] = "Skipped"
+                    step["detail"] = "Cancelled before this step completed."
+                    break
+        except Exception as ex:
+            status = "failed"
+            error = str(ex)
+            active["errors"].append(error)
+            for step in active["steps"]:
+                if step["status"] == "Running":
+                    step["status"] = "Error"
+                    step["detail"] = error
+                    break
+
+        self._set_security_step(active, "record", "Running", "Saving local lifecycle record.")
+        completed_at = now_iso()
+        duration = int(time.time() - started)
+        record = {
+            "check_id": active["check_id"],
+            "schema_version": active["schema_version"],
+            "mode": active["mode"],
+            "started_at": active["started_at"],
+            "completed_at": completed_at,
+            "duration_seconds": duration,
+            "status": status,
+            "safety_acknowledged": active["safety_acknowledged"],
+            "options": active["options"],
+            "summary": security_check_summary(status),
+            "findings": active["findings"],
+            "skipped_items": active["skipped_items"],
+            "errors": active["errors"],
+            "steps": active["steps"],
+            "record_path": active["record_path"],
+            "app_version": APP_VERSION,
+            "error": error,
+        }
+
+        try:
+            security_check_record_path(active["check_id"]).write_text(json.dumps(record, indent=2), encoding="utf-8")
+            for step in record["steps"]:
+                if step["id"] == "record":
+                    step["status"] = "Complete"
+                    step["detail"] = "Local lifecycle record saved."
+                    break
+            security_check_record_path(active["check_id"]).write_text(json.dumps(record, indent=2), encoding="utf-8")
+        except Exception as ex:
+            record["status"] = "failed"
+            record["error"] = f"{record.get('error') or ''} Record write failed: {ex}".strip()
+            record["errors"].append(str(ex))
+            for step in record["steps"]:
+                if step["id"] == "record":
+                    step["status"] = "Error"
+                    step["detail"] = str(ex)
+                    break
+
+        with self.lock:
+            self.active_security_check = record
+
+    def cancel_security_check(self):
+        with self.lock:
+            if not self.active_security_check or self.active_security_check.get("status") != "running":
+                raise RuntimeError("No active Security Check is running.")
+            self.active_security_check["cancel_event"].set()
+        return self.security_check_status()
+
+    def security_check_status(self):
+        with self.lock:
+            active = self.active_security_check
+
+            if not active:
+                return {"active": False, "shutting_down": self.shutting_down}
+
+            payload = {key: value for key, value in active.items() if key != "cancel_event"}
+            payload["active"] = active.get("status") == "running"
+            payload["shutting_down"] = self.shutting_down
+            return payload
+
+    def security_check_record(self, check_id):
+        path = security_check_record_path(check_id)
+        if not path.exists():
+            raise FileNotFoundError("Security Check record was not found.")
+        return json.loads(path.read_text(encoding="utf-8"))
+
     def request_shutdown(self):
         with self.lock:
             if self.active_scan and self.active_scan.get("status") == "running":
                 raise RuntimeError("Cancel or wait for the current scan to finish before exiting.")
+            if self.active_security_check and self.active_security_check.get("status") == "running":
+                raise RuntimeError("Cancel or wait for the current Security Check to finish before exiting.")
             if self.shutting_down:
                 return {
                     "status": "already_shutting_down",
@@ -2293,7 +2578,8 @@ summary {{ cursor: pointer; padding: 6px; }}
 
                 <section class="section">
                     <h2>Security Check Progress</h2>
-                    <p class="muted">Collectors are not connected yet. This shell reserves the final workflow and safety states.</p>
+                    <div id="securityStatus" class="status-line">No Security Check running.</div>
+                    <p class="muted">This lifecycle slice records progress and saves a local Security Check record. Real collectors are still planned for the next slices.</p>
                     <div id="securityProgress" class="security-progress">
                         <div class="security-step"><span>Preparing local review</span><span class="security-step-status">Waiting</span></div>
                         <div class="security-step"><span>Reading standard security locations</span><span class="security-step-status">Waiting</span></div>
@@ -2368,7 +2654,7 @@ summary {{ cursor: pointer; padding: 6px; }}
 
         <section class="section">
             <h2>Reports</h2>
-            <p>Report downloads will be enabled after security check records exist. Reports may contain local paths, usernames, installed software, command lines, hashes, and configuration details.</p>
+            <p>Report downloads will be enabled in the reporting slice. Security Check lifecycle records are already saved locally after each completed or cancelled run.</p>
             <div class="actions">
                 <button id="downloadSecurityFullReport" disabled>Download Full Security Report</button>
                 <button id="downloadSecurityFindingsReport" disabled>Download Findings Only</button>
@@ -2569,7 +2855,7 @@ summary {{ cursor: pointer; padding: 6px; }}
     </section>
 </main>
 <script>
-const state = {{ currentRecord: null, processes: [], lastScanStatusKey: null, isShuttingDown: false }};
+const state = {{ currentRecord: null, processes: [], lastScanStatusKey: null, lastSecurityStatusKey: null, scanActive: false, securityCheckActive: false, isShuttingDown: false }};
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));
 
@@ -2647,14 +2933,22 @@ function showActionAlert(type, title, message, details = []) {{
     $('actionAlert').innerHTML = `<h2>${{esc(title)}}</h2><p>${{esc(message)}}</p>${{detailHtml}}`;
 }}
 
-function setExitState(scanActive, reason = '') {{
-    const disabled = Boolean(scanActive || state.isShuttingDown);
+function setExitState(workActive, reason = '', workType = 'scan') {{
+    if (workType === 'security') {{
+        state.securityCheckActive = Boolean(workActive);
+    }} else {{
+        state.scanActive = Boolean(workActive);
+    }}
+
+    const disabled = Boolean(state.scanActive || state.securityCheckActive || state.isShuttingDown);
     $('exitApp').disabled = disabled;
 
     if (state.isShuttingDown) {{
         $('exitHelp').innerHTML = 'Dashboard server is shutting down.<br>You may close this tab.';
-    }} else if (scanActive) {{
+    }} else if (state.scanActive) {{
         $('exitHelp').innerHTML = 'Cancel or wait for the current scan to finish before exiting.';
+    }} else if (state.securityCheckActive) {{
+        $('exitHelp').innerHTML = 'Cancel or wait for the current Security Check to finish before exiting.';
     }} else {{
         $('exitHelp').innerHTML = 'Server: 127.0.0.1 only<br>Reports stay on this computer.';
     }}
@@ -2688,16 +2982,151 @@ function updateSecurityCheckStartState() {{
     const acknowledged = $('ackSecurityCheck')?.checked;
     const button = $('startSecurityCheck');
     if (!button) return;
-    button.disabled = !acknowledged;
+    button.disabled = !acknowledged || state.securityCheckActive || state.scanActive;
 }}
 
-function startSecurityCheckShell() {{
-    const registryBackup = $('securityRegistryBackup')?.checked;
-    showActionAlert('warning', 'Security Check Not Started Yet', 'The Security Check interface is ready, but collectors will be implemented in the next backend slices.', [
-        'No registry keys, files, scheduled tasks, Defender settings, browser policies, or event logs were read.',
-        `Registry backup opt-in: ${{registryBackup ? 'enabled for future run' : 'not enabled'}}`,
-        'This app still does not delete files, edit registry values, stop programs, quarantine files, upload data, or make malware verdicts.'
+function selectedSecurityMode() {{
+    return document.querySelector('input[name="securityMode"]:checked')?.value || 'standard';
+}}
+
+function renderSecurityProgress(steps = []) {{
+    const rows = steps.length ? steps : [
+        {{ label: 'Preparing local review', status: 'Waiting', detail: 'Waiting to start.' }},
+        {{ label: 'Reading standard security locations', status: 'Waiting', detail: 'Collectors are planned for the next slice.' }},
+        {{ label: 'Checking file signatures and SHA-256 hashes', status: 'Waiting', detail: 'File verification is planned for a later slice.' }},
+        {{ label: 'Saving local security check record', status: 'Waiting', detail: 'No lifecycle record has been saved yet.' }}
+    ];
+    $('securityProgress').innerHTML = rows.map(step => `
+        <div class="security-step">
+            <span><strong>${{esc(step.label)}}</strong><br><span class="muted">${{esc(step.detail || '')}}</span></span>
+            <span class="security-step-status">${{esc(step.status || 'Waiting')}}</span>
+        </div>
+    `).join('');
+}}
+
+function renderSecuritySummary(summary = {{}}) {{
+    $('securitySummary').innerHTML = [
+        metric('Overall Status', summary.overall_status || 'Not Run'),
+        metric('High Review', summary.high_review || 0),
+        metric('Medium Review', summary.medium_review || 0),
+        metric('Unsigned Files', summary.unsigned_files || 0),
+        metric('Baseline Changes', summary.baseline_changes || 'Future')
+    ].join('');
+}}
+
+function renderSecurityCheckStatus(status) {{
+    if (!status || !status.check_id) {{
+        $('securityStatus').textContent = 'No Security Check running.';
+        renderSecurityProgress();
+        renderSecuritySummary();
+        $('securityFindingsRows').innerHTML = '<tr><td colspan="6">No security findings yet. Run a Security Check to populate lifecycle status.</td></tr>';
+        $('securityFindingDetail').innerHTML = '<p class="muted">Select a future finding to see plain-language explanation, technical evidence, file verification, and safe next steps.</p><span class="security-badge">What this is</span><span class="security-badge">Why it matters</span><span class="security-badge">Technical evidence</span><span class="security-badge">Safe next steps</span>';
+        return;
+    }}
+
+    renderSecurityProgress(status.steps || []);
+    renderSecuritySummary(status.summary || {{}});
+    const options = status.options || {{}};
+    const skipped = (status.skipped_items || []).map(item => `${{item.category}}: ${{item.message}}`).join('<br>');
+    $('securityStatus').innerHTML = `Security Check <code>${{esc(status.check_id)}}</code><br>Status: <strong>${{esc(status.status)}}</strong> | Mode: ${{esc(status.mode || 'standard')}} | Registry backup opt-in: ${{options.registry_backup_opt_in ? 'yes' : 'no'}}`;
+    $('securityFindingsRows').innerHTML = '<tr><td colspan="6">No findings yet. Collector slices are not connected, so this lifecycle run only saved progress and skipped-source details.</td></tr>';
+    $('securityFindingDetail').innerHTML = `
+        <h3>Lifecycle Record</h3>
+        <p class="muted">This Security Check run created a local lifecycle record. It does not contain collector findings yet.</p>
+        <p><strong>Status:</strong> ${{esc(status.status)}}<br><strong>Started:</strong> ${{esc(status.started_at)}}<br><strong>Completed:</strong> ${{esc(status.completed_at || 'Still running')}}<br><strong>Record:</strong> <code>${{esc(status.record_path || 'Not saved yet')}}</code></p>
+        <h3>Skipped Sources</h3>
+        <p class="muted">${{skipped || 'No skipped source details yet.'}}</p>
+        <p class="muted">This is still not a malware verdict and no system settings were changed.</p>
+    `;
+}}
+
+async function startSecurityCheck() {{
+    const payload = {{
+        acknowledgeSafety: $('ackSecurityCheck').checked,
+        mode: selectedSecurityMode(),
+        registryBackup: $('securityRegistryBackup').checked
+    }};
+    showActionAlert('info', 'Security Check Starting', 'The dashboard is asking the local server to start a read-only lifecycle job.', [
+        `Mode: ${{payload.mode}}`,
+        `Registry backup opt-in: ${{payload.registryBackup ? 'yes' : 'no'}}`,
+        'This slice saves lifecycle records only. Real collectors are still planned.'
     ]);
+    try {{
+        const status = await api('/api/security-checks', {{ method: 'POST', body: JSON.stringify(payload) }});
+        state.securityCheckActive = true;
+        $('startScan').disabled = true;
+        $('cancelSecurityCheck').disabled = false;
+        updateSecurityCheckStartState();
+        setExitState(true, 'Cancel or wait for the current Security Check to finish before exiting.', 'security');
+        renderSecurityCheckStatus(status);
+        showTab('security');
+        showActionAlert('success', 'Security Check Started', 'Lifecycle progress is now visible in the Security Check tab.', [
+            `Check ID: ${{status.check_id}}`,
+            'No registry keys, files, scheduled tasks, Defender settings, browser policies, or logs are collected in this slice.'
+        ]);
+    }} catch (error) {{
+        showActionAlert('error', 'Security Check Failed To Start', error.message, [
+            'Confirm the acknowledgement checkbox is selected.',
+            'Wait for any active disk scan or Security Check to finish.'
+        ]);
+    }}
+}}
+
+async function cancelSecurityCheck() {{
+    showActionAlert('warning', 'Security Check Cancellation Requested', 'The dashboard is asking the local Security Check lifecycle job to stop.', [
+        'A partial local lifecycle record may be saved.'
+    ]);
+    try {{
+        await api('/api/security-checks/cancel', {{ method: 'POST', body: '{{}}' }});
+    }} catch (error) {{
+        showActionAlert('error', 'Security Check Cancel Failed', error.message, ['There may be no active Security Check to cancel.']);
+    }}
+}}
+
+async function pollSecurityStatus() {{
+    try {{
+        const status = await api('/api/security-checks/active');
+        if (!status.check_id) {{
+            state.securityCheckActive = false;
+            $('cancelSecurityCheck').disabled = true;
+            if (!state.scanActive) $('startScan').disabled = false;
+            setExitState(false, '', 'security');
+            updateSecurityCheckStartState();
+        }} else if (status.active) {{
+            state.securityCheckActive = true;
+            $('startScan').disabled = true;
+            $('cancelSecurityCheck').disabled = false;
+            setExitState(true, 'Cancel or wait for the current Security Check to finish before exiting.', 'security');
+            renderSecurityCheckStatus(status);
+            updateSecurityCheckStartState();
+        }} else {{
+            state.securityCheckActive = false;
+            $('cancelSecurityCheck').disabled = true;
+            if (!state.scanActive) $('startScan').disabled = false;
+            setExitState(false, '', 'security');
+            renderSecurityCheckStatus(status);
+            updateSecurityCheckStartState();
+            const statusKey = `${{status.check_id}}:${{status.status}}`;
+            if (state.lastSecurityStatusKey !== statusKey) {{
+                state.lastSecurityStatusKey = statusKey;
+                const alertType = status.status === 'completed' ? 'success' : (status.status === 'cancelled' ? 'warning' : 'error');
+                const title = status.status === 'completed' ? 'Security Check Completed' : (status.status === 'cancelled' ? 'Security Check Cancelled' : 'Security Check Failed');
+                showActionAlert(alertType, title, `Security Check status: ${{status.status}}.`, [
+                    `Check ID: ${{status.check_id}}`,
+                    `Record: ${{status.record_path || 'Unavailable'}}`,
+                    status.error ? `Error: ${{status.error}}` : 'A local lifecycle record was saved.',
+                    'Collector findings are not available until the next implementation slices.'
+                ]);
+            }}
+        }}
+    }} catch (error) {{
+        if (!state.isShuttingDown) {{
+            showActionAlert('error', 'Security Check Status Failed', error.message, ['The local server may be busy or unavailable.']);
+        }}
+    }}
+    if (!state.isShuttingDown) {{
+        setTimeout(pollSecurityStatus, 1000);
+    }}
 }}
 
 function setProcessPaneWidth(percent) {{
@@ -2869,6 +3298,13 @@ async function loadInitial() {{
         $('driveSelect').innerHTML = info.drives.map(d => `<option value="${{esc(d.path)}}">${{esc(d.label)}}</option>`).join('');
         if (info.drives.length) $('rootPath').value = info.drives.find(d => d.path === 'C:\\\\')?.path || info.drives[0].path;
         if (info.latest_record) renderResult(info.latest_record);
+        if (info.active_security_check && info.active_security_check.check_id) {{
+            renderSecurityCheckStatus(info.active_security_check);
+            state.securityCheckActive = Boolean(info.active_security_check.active);
+            setExitState(state.securityCheckActive, state.securityCheckActive ? 'Cancel or wait for the current Security Check to finish before exiting.' : '', 'security');
+            $('cancelSecurityCheck').disabled = !state.securityCheckActive;
+            updateSecurityCheckStartState();
+        }}
         showActionAlert('info', 'Dashboard Ready', 'Choose a scan or review running processes. Important action details will appear here.', ['The tool is read-only.', 'Local server is bound to 127.0.0.1.']);
         await refreshHistory(false);
         await pollStatus();
@@ -2898,6 +3334,7 @@ async function startScan() {{
         $('startScan').disabled = true;
         $('cancelScan').disabled = false;
         setExitState(true, 'Cancel or wait for the current scan to finish before exiting.');
+        updateSecurityCheckStartState();
         showActionAlert('success', 'Scan Started', 'Live progress is now visible in the scan status panel.', [
             `Path: ${{payload.root}}`,
             'The tool is still read-only and will save a local scan record when done.'
@@ -2919,17 +3356,20 @@ async function pollStatus() {{
             $('startScan').disabled = false;
             $('cancelScan').disabled = true;
             setExitState(false);
+            updateSecurityCheckStartState();
         }} else if (status.active) {{
             const p = status.progress || {{}};
             $('scanStatus').innerHTML = `Scanning <code>${{esc(status.root)}}</code><br>Folders: ${{p.folders_scanned || 0}} | Files: ${{p.files_scanned || 0}} | Size: ${{esc(p.total_size || '0 B')}} | Skipped: ${{p.skipped_count || 0}}<br>Current: <code>${{esc(p.current_path || '')}}</code>`;
             $('startScan').disabled = true;
             $('cancelScan').disabled = false;
             setExitState(true, 'Cancel or wait for the current scan to finish before exiting.');
+            updateSecurityCheckStartState();
         }} else {{
             $('scanStatus').textContent = `Last scan ${{status.status}}.`;
             $('startScan').disabled = false;
             $('cancelScan').disabled = true;
             setExitState(false);
+            updateSecurityCheckStartState();
             if (status.result) {{
                 renderResult(status);
                 await refreshHistory(false);
@@ -3504,7 +3944,8 @@ $('downloadProcessReport').addEventListener('click', downloadProcessReport);
 $('downloadVerificationReport').addEventListener('click', downloadVerificationReport);
 $('exitApp').addEventListener('click', exitApp);
 $('ackSecurityCheck').addEventListener('change', updateSecurityCheckStartState);
-$('startSecurityCheck').addEventListener('click', startSecurityCheckShell);
+$('startSecurityCheck').addEventListener('click', startSecurityCheck);
+$('cancelSecurityCheck').addEventListener('click', cancelSecurityCheck);
 $('processFilter').addEventListener('input', renderProcesses);
 $('processPublisherFilter').addEventListener('change', renderProcesses);
 $('processGroupBy').addEventListener('change', renderProcesses);
@@ -3540,13 +3981,14 @@ $('processRows').addEventListener('keydown', event => {{
 initProcessPaneResizer();
 updateSecurityCheckStartState();
 loadInitial();
+pollSecurityStatus();
 </script>
 </body>
 </html>"""
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
-    server_version = "DiskUsageDashboard/1.12"
+    server_version = "DiskUsageDashboard/1.13"
 
     def log_message(self, format, *args):
         return
@@ -3563,14 +4005,22 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 html_response(self, build_dashboard_html())
             elif path == "/api/state":
                 records = load_scan_records()
+                security_records = load_security_check_records()
                 json_response(self, {
                     "version": APP_STATE.version_metadata,
                     "drives": get_available_drives(),
                     "latest_record": records[0] if records else None,
                     "active_scan": APP_STATE.scan_status(),
+                    "latest_security_check": security_records[0] if security_records else None,
+                    "active_security_check": APP_STATE.security_check_status(),
                 })
             elif path == "/api/scans/active":
                 json_response(self, APP_STATE.scan_status())
+            elif path == "/api/security-checks/active":
+                json_response(self, APP_STATE.security_check_status())
+            elif path.startswith("/api/security-checks/"):
+                check_id = path.rsplit("/", 1)[-1]
+                json_response(self, APP_STATE.security_check_record(check_id))
             elif path == "/api/history":
                 json_response(self, {"records": APP_STATE.history()})
             elif path.startswith("/api/scans/"):
@@ -3596,6 +4046,10 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 json_response(self, APP_STATE.start_scan(data), status=201)
             elif path == "/api/scans/cancel":
                 json_response(self, APP_STATE.cancel_scan())
+            elif path == "/api/security-checks":
+                json_response(self, APP_STATE.start_security_check(data), status=201)
+            elif path == "/api/security-checks/cancel":
+                json_response(self, APP_STATE.cancel_security_check())
             elif path == "/api/shutdown":
                 if not self.is_local_request():
                     json_response(self, {"error": "Shutdown is only allowed from localhost."}, status=403)

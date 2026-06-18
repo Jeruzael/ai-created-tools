@@ -5,7 +5,7 @@
 - Status: Draft
 - Prepared for: Future UI redesign and feature planning prompts
 - Prepared by: Codex
-- Current app version described: v1.12.0
+- Current app version described: v1.13.0
 - Source reviewed: `windows/DiskUsageHtmlReport.py`
 
 ## Purpose
@@ -60,7 +60,7 @@ Top header:
 
 - Left side:
   - Title: `Windows Disk Usage Dashboard`
-  - Subtitle: `Local read-only scan and process review tool. App v1.12.0, docs v1.12.`
+  - Subtitle: `Local read-only scan and process review tool. App v1.13.0, docs v1.13.`
 - Right side:
   - `Exit App` button styled as a danger action.
   - Small helper text: `Server: 127.0.0.1 only` and `Reports stay on this computer.`
@@ -258,7 +258,7 @@ Downloaded process reports:
 
 ## Tab: Security Check
 
-The Security Check tab is currently a v1.12 shell for a planned local read-only security review workflow.
+The Security Check tab is currently a v1.13 lifecycle implementation for a planned local read-only security review workflow. It can start, poll, cancel, and save a local lifecycle record, but it does not run real Windows security collectors yet.
 
 Current shell elements:
 
@@ -268,18 +268,21 @@ Current shell elements:
 - Advanced Review shown as disabled future functionality.
 - Explicit registry-backup opt-in checkbox, off by default.
 - Disabled future options for baseline comparison, WMI, Event Log correlation, and optional Sysmon.
-- Placeholder progress steps.
+- Progress steps that update through the local lifecycle job.
 - Summary metric cards showing Not Run and zero counts.
 - Empty findings table with disabled filters.
 - Finding detail placeholder with plain-language/evidence badges.
 - Planned category blocks for Registry Startup, Browser Policy, Proxy/DNS, Defender Exclusions, Scheduled Tasks, and File Verification.
 - Disabled report buttons for future security reports and technical JSON.
+- Local lifecycle record details after a run completes or is cancelled.
 
 Important behavior:
 
-- Clicking Start after acknowledgement does not run collectors yet.
-- The app shows an alert explaining that no registry keys, files, scheduled tasks, Defender settings, browser policies, or logs were read.
-- This tab currently reserves the workflow and safety language only.
+- Clicking Start after acknowledgement calls the local Security Check lifecycle API.
+- Exit is disabled while the lifecycle job is running.
+- The user can cancel the lifecycle job.
+- Completed and cancelled lifecycle jobs are saved under the app's local security-check records directory.
+- No registry keys, files, scheduled tasks, Defender settings, browser policies, or logs are read yet.
 
 ## Tab: History
 
@@ -501,7 +504,7 @@ Results tab: scan summary, scan health, biggest folders, file types, biggest fil
 
 Processes tab: process refresh, grouped report download, verification report download, Verify link, process filters, publisher tooltip, compact summary cards, grouped tree, clickable process table, draggable split pane with Process Details, and a Verification Guide for digital signatures and SHA-256 hashes.
 
-Security Check tab: v1.12 shell for a planned local read-only security review workflow. It has safety acknowledgement, Standard Review mode, disabled Advanced/future options, explicit registry-backup opt-in, placeholder progress, summary, findings, detail, category blocks, and disabled report buttons. It does not run collectors yet.
+Security Check tab: v1.13 lifecycle implementation for a planned local read-only security review workflow. It has safety acknowledgement, Standard Review mode, disabled Advanced/future options, explicit registry-backup opt-in, progress polling, cancellation, local lifecycle record details, placeholder findings/category blocks, and disabled report buttons. It does not run collectors yet.
 
 History tab: table of saved scans with Open action.
 
