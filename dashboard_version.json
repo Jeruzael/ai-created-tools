@@ -1,8 +1,8 @@
 {
-  "app_version": "1.21.0",
-  "documentation_version": "1.21",
+  "app_version": "1.22.0",
+  "documentation_version": "1.22",
   "last_updated": "2026-06-18",
-  "revision_notes": "Added Advanced Review collectors for WMI persistence, event log correlation, optional Sysmon data, deeper services/drivers, and Explorer autorun-style locations.",
+  "revision_notes": "Added a local known-safe allowlist with add, remove, view, export, import, and score-adjustment behavior.",
   "affected_areas": [
     "browser_dashboard",
     "security_check_ui",
@@ -11,6 +11,7 @@
     "security_check_advanced_collectors",
     "security_check_reports",
     "security_check_baselines",
+    "security_check_allowlist",
     "local_records",
     "safety_messaging",
     "documentation_versioning"

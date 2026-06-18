@@ -1,41 +1,42 @@
-Implemented the next slice: v1.20 Baseline Creation And Comparison.
+Implemented the next slice: v1.21 Advanced Review Collectors. The .gitignore generated/private paths were already
+  in place from the earlier pass.
 
   What changed:
 
-  - .gitignore already includes private/generated paths:
-      - windows/security_check_records/
-      - windows/security_reports/
-      - windows/registry_backups/
-      - windows/baselines/
-      - windows/allowlist.local.json
+  - Enabled Advanced Review mode in the Security Check UI.
+  - Added optional advanced checkboxes for:
+      - WMI persistence
+      - Event Log correlation
+      - Sysmon correlation if already installed
 
-  - Added local Security Check baselines stored under windows/baselines/.
-  - Added API support to list baselines and create a baseline from a completed Security Check.
-  - Added optional baseline comparison when starting a later Security Check.
-  - Added UI for:
-      - selecting a baseline before a run
-      - creating a baseline from the current completed run
-      - viewing baseline counts and comparison rows
-      - filtering findings by new, changed, or unchanged
+  - Added read-only collectors for:
+      - WMI filters, consumers, and bindings
+      - Recent selected Defender, PowerShell, and service-install event logs
+      - Optional Sysmon events, calmly skipped if Sysmon is not present
+      - Deeper services and drivers review
+      - Explorer shell extension / autorun-style registry locations
 
-  - Added baseline comparison into the local report downloads.
-  - Bumped app/docs metadata to v1.20.0.
-  - Marked Slice 9 implemented in the Security Check roadmap.
+  - Advanced collector failures are isolated as skipped/error source details and do not break Standard Review
+    results.
+
+  - Bumped docs/app metadata to v1.21.0.
+  - Marked Slice 10 complete in the roadmap.
 
   Verification passed:
 
   python -m py_compile .\windows\DiskUsageHtmlReport.py
-  node --check runtime\dashboard-v120-script.js
+  python .\windows\DiskUsageHtmlReport.py --help
+  node --check runtime\dashboard-v121-script.js
 
   Also passed:
 
-  - dashboard render check for v1.20
-  - synthetic baseline comparison smoke test
-  - /api/security-baselines endpoint check
+  - dashboard HTML render check for App v1.21.0
+  - advanced collector orchestration smoke test
+  - local dashboard/state endpoint check
 
-  The updated v1.20 dashboard is running here:
+  The updated v1.21 dashboard is running here:
 
-  http://127.0.0.1:8767/
+  http://127.0.0.1:8768/
 
-  Ports 8765 and 8766 still have older dashboard instances listening, so use 8767 for this version. Next roadmap
-  slice is Slice 10: Advanced Review Collectors.
+  I did not run a full Advanced Review scan automatically, since that would read local WMI/event/Sysmon/service/
+  driver details from this machine. Next roadmap slice is Slice 11: Known-Safe Allowlist.

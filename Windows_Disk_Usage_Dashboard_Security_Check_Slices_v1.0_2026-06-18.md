@@ -5,7 +5,7 @@
 - Status: Draft with initial scope decisions
 - Source: `windows/temp.txt`
 - Current app version baseline: v1.11.0
-- Latest implemented app version: v1.21.0
+- Latest implemented app version: v1.22.0
 - Prepared by: Codex
 
 ## 1. Request Understanding
@@ -511,6 +511,8 @@ Implement only after the first Standard Review release has been tested on multip
 
 ### Slice 11: Known-Safe Allowlist
 
+Status: **Implemented in v1.22**
+
 Complexity: **L/XL**
 
 Goal:
@@ -527,11 +529,11 @@ Includes:
 
 Acceptance criteria:
 
-- [ ] Allowlist data is local-only.
-- [ ] Allowlisting lowers review priority but does not hide evidence by default.
-- [ ] UI states that allowlisting does not prove an item is safe forever.
-- [ ] User can remove allowlist entries.
-- [ ] Imported allowlist is validated before use.
+- [x] Allowlist data is local-only.
+- [x] Allowlisting lowers review priority but does not hide evidence by default.
+- [x] UI states that allowlisting does not prove an item is safe forever.
+- [x] User can remove allowlist entries.
+- [x] Imported allowlist is validated before use.
 
 Recommendation:
 

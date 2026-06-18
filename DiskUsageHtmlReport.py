@@ -27,13 +27,14 @@ except ImportError:  # pragma: no cover - non-Windows fallback
 
 sys.setrecursionlimit(10000)
 
-APP_VERSION = "1.21.0"
-DOC_VERSION = "1.21"
+APP_VERSION = "1.22.0"
+DOC_VERSION = "1.22"
 APP_DIR = Path(__file__).resolve().parent
 RECORDS_DIR = APP_DIR / "scan_records"
 REPORTS_DIR = APP_DIR / "generated_reports"
 SECURITY_RECORDS_DIR = APP_DIR / "security_check_records"
 BASELINES_DIR = APP_DIR / "baselines"
+ALLOWLIST_FILE = APP_DIR / "allowlist.local.json"
 VERSION_FILE = APP_DIR / "dashboard_version.json"
 
 
@@ -965,9 +966,8 @@ def ensure_version_metadata():
         "documentation_version": DOC_VERSION,
         "last_updated": "2026-06-18",
         "revision_notes": (
-            "Added Advanced Review collectors for WMI persistence, event log "
-            "correlation, optional Sysmon data, deeper services/drivers, and "
-            "Explorer autorun-style locations."
+            "Added a local known-safe allowlist with add, remove, view, "
+            "export, import, and score-adjustment behavior."
         ),
         "affected_areas": [
             "browser_dashboard",
@@ -977,6 +977,7 @@ def ensure_version_metadata():
             "security_check_advanced_collectors",
             "security_check_reports",
             "security_check_baselines",
+            "security_check_allowlist",
             "local_records",
             "safety_messaging",
             "documentation_versioning"
@@ -1159,6 +1160,224 @@ def load_security_baseline(baseline_id: str):
     if not path.exists():
         raise FileNotFoundError("Security baseline was not found.")
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def default_allowlist():
+    return {
+        "schema_version": "security-allowlist-v1",
+        "updated_at": now_iso(),
+        "entries": [],
+    }
+
+
+def load_security_allowlist():
+    ensure_app_dirs()
+    if not ALLOWLIST_FILE.exists():
+        return default_allowlist()
+    try:
+        data = json.loads(ALLOWLIST_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return default_allowlist()
+    try:
+        return validate_security_allowlist_payload(data)
+    except ValueError:
+        return default_allowlist()
+
+
+def save_security_allowlist(allowlist):
+    allowlist["updated_at"] = now_iso()
+    ALLOWLIST_FILE.write_text(json.dumps(allowlist, indent=2), encoding="utf-8")
+    return allowlist
+
+
+def allowlist_public_entry(entry):
+    return {
+        "entry_id": entry.get("entry_id"),
+        "created_at": entry.get("created_at"),
+        "updated_at": entry.get("updated_at"),
+        "label": entry.get("label"),
+        "category": entry.get("category"),
+        "title": entry.get("title"),
+        "match_scope": entry.get("match_scope", "finding_identity"),
+        "match_key": entry.get("match_key"),
+        "source_check_id": entry.get("source_check_id"),
+        "note": entry.get("note"),
+        "active": bool(entry.get("active", True)),
+    }
+
+
+def security_allowlist_public(allowlist=None):
+    allowlist = allowlist or load_security_allowlist()
+    entries = [allowlist_public_entry(entry) for entry in allowlist.get("entries", []) if entry.get("active", True)]
+    return {
+        "schema_version": allowlist.get("schema_version", "security-allowlist-v1"),
+        "updated_at": allowlist.get("updated_at"),
+        "entry_count": len(entries),
+        "entries": sorted(entries, key=lambda item: item.get("created_at") or "", reverse=True),
+    }
+
+
+def validate_security_allowlist_payload(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("Allowlist import must be a JSON object.")
+    entries = payload.get("entries")
+    if not isinstance(entries, list):
+        raise ValueError("Allowlist import must include an entries array.")
+    if len(entries) > 5000:
+        raise ValueError("Allowlist import has too many entries.")
+
+    clean_entries = []
+    for raw in entries:
+        if not isinstance(raw, dict):
+            raise ValueError("Every allowlist entry must be an object.")
+        match_key = str(raw.get("match_key", "") or "").strip()
+        if not re.fullmatch(r"[0-9a-f]{64}", match_key):
+            raise ValueError("Allowlist entries must include valid match keys.")
+        entry_id = str(raw.get("entry_id") or uuid.uuid4().hex)
+        entry_id = re.sub(r"[^0-9a-fA-F]", "", entry_id)[:32] or uuid.uuid4().hex
+        clean_entries.append({
+            "entry_id": entry_id,
+            "created_at": str(raw.get("created_at") or now_iso())[:40],
+            "updated_at": str(raw.get("updated_at") or raw.get("created_at") or now_iso())[:40],
+            "label": str(raw.get("label") or raw.get("title") or "Allowlist entry")[:160],
+            "category": str(raw.get("category") or "Uncategorized")[:120],
+            "title": str(raw.get("title") or "Untitled")[:240],
+            "match_scope": "finding_identity",
+            "match_key": match_key,
+            "source_check_id": str(raw.get("source_check_id") or "")[:80],
+            "note": str(raw.get("note") or "")[:500],
+            "active": bool(raw.get("active", True)),
+        })
+
+    return {
+        "schema_version": "security-allowlist-v1",
+        "updated_at": str(payload.get("updated_at") or now_iso())[:40],
+        "entries": clean_entries,
+    }
+
+
+def find_security_finding(record, finding_id):
+    for finding in record.get("findings") or []:
+        if finding.get("finding_id") == finding_id:
+            return finding
+    raise FileNotFoundError("Security finding was not found in the selected record.")
+
+
+def add_security_allowlist_entry_from_finding(record, finding_id, note=""):
+    if record.get("status") not in ("completed", "cancelled"):
+        raise ValueError("Allowlist entries can be created only from completed or cancelled Security Check records.")
+    finding = find_security_finding(record, finding_id)
+    allowlist = load_security_allowlist()
+    match_key = baseline_finding_identity(finding)
+    for entry in allowlist.get("entries", []):
+        if entry.get("match_key") == match_key and entry.get("active", True):
+            entry["updated_at"] = now_iso()
+            entry["note"] = str(note or entry.get("note") or "")[:500]
+            save_security_allowlist(allowlist)
+            return allowlist_public_entry(entry), security_allowlist_public(allowlist)
+
+    entry = {
+        "entry_id": uuid.uuid4().hex,
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+        "label": f"{finding.get('category') or 'Finding'}: {finding.get('title') or 'Untitled'}"[:160],
+        "category": finding.get("category") or "Uncategorized",
+        "title": finding.get("title") or "Untitled",
+        "match_scope": "finding_identity",
+        "match_key": match_key,
+        "source_check_id": record.get("check_id"),
+        "source_finding_id": finding.get("finding_id"),
+        "note": str(note or "")[:500],
+        "active": True,
+    }
+    allowlist.setdefault("entries", []).append(entry)
+    save_security_allowlist(allowlist)
+    return allowlist_public_entry(entry), security_allowlist_public(allowlist)
+
+
+def remove_security_allowlist_entry(entry_id):
+    clean_id = re.sub(r"[^0-9a-fA-F]", "", str(entry_id or ""))
+    if not clean_id:
+        raise ValueError("Allowlist entry id is required.")
+    allowlist = load_security_allowlist()
+    removed = None
+    for entry in allowlist.get("entries", []):
+        if entry.get("entry_id") == clean_id and entry.get("active", True):
+            entry["active"] = False
+            entry["updated_at"] = now_iso()
+            removed = entry
+            break
+    if removed is None:
+        raise FileNotFoundError("Allowlist entry was not found.")
+    save_security_allowlist(allowlist)
+    return allowlist_public_entry(removed), security_allowlist_public(allowlist)
+
+
+def import_security_allowlist(payload):
+    imported = validate_security_allowlist_payload(payload)
+    current = load_security_allowlist()
+    by_key = {
+        entry.get("match_key"): entry
+        for entry in current.get("entries", [])
+        if entry.get("match_key") and entry.get("active", True)
+    }
+    for entry in imported.get("entries", []):
+        if not entry.get("active", True):
+            continue
+        by_key[entry["match_key"]] = entry
+    merged = {
+        "schema_version": "security-allowlist-v1",
+        "updated_at": now_iso(),
+        "entries": list(by_key.values()),
+    }
+    save_security_allowlist(merged)
+    return security_allowlist_public(merged)
+
+
+def apply_security_allowlist(findings, allowlist=None):
+    allowlist = allowlist or load_security_allowlist()
+    entries = {
+        entry.get("match_key"): entry
+        for entry in allowlist.get("entries", [])
+        if entry.get("match_key") and entry.get("active", True)
+    }
+    matched = 0
+    for finding in findings:
+        entry = entries.get(baseline_finding_identity(finding))
+        if not entry:
+            continue
+        matched += 1
+        original_score = int(finding.get("score") or 0)
+        original_severity = finding.get("severity") or "Info"
+        original_status = finding.get("status") or "Found"
+        adjusted_score = min(original_score, 10)
+        finding["allowlist_status"] = "local_allowlist_match"
+        finding["allowlist_entry_id"] = entry.get("entry_id")
+        finding["allowlist_note"] = entry.get("note") or ""
+        finding["original_score"] = original_score
+        finding["original_severity"] = original_severity
+        finding["original_status"] = original_status
+        finding["score"] = adjusted_score
+        finding["severity"] = severity_for_score(adjusted_score)
+        finding["status"] = "Locally Allowlisted"
+        reasons = finding.setdefault("review_reasons", [])
+        if "Matched local allowlist entry" not in reasons:
+            reasons.append("Matched local allowlist entry")
+        finding["score_explanation"] = (
+            "This item matched a local allowlist entry, so review priority was lowered. "
+            "Allowlisting does not prove the item is safe forever and evidence remains visible."
+        )
+        sections = finding.setdefault("plain_language_sections", {})
+        sections["score_explanation"] = finding["score_explanation"]
+        sections["what_not_to_do"] = (
+            "Do not treat allowlisting as proof that this item is safe forever. "
+            "Do not hide or delete evidence based only on an allowlist match."
+        )
+    return {
+        "allowlist_entries": len(entries),
+        "allowlist_matches": matched,
+        "explanation": "Allowlist matches lower review priority but do not hide evidence or prove safety.",
+    }
 
 
 def stable_json_digest(value) -> str:
@@ -1356,6 +1575,7 @@ def security_check_summary(status="not_run", findings=None, skipped_items=None, 
         "low_review": severity_counts.get("Low Review", 0),
         "info": severity_counts.get("Info", 0),
         "unsigned_files": unsigned_files,
+        "allowlist_matches": len([finding for finding in findings if finding.get("allowlist_status")]),
         "baseline_changes": (
             (baseline_comparison or {}).get("new", 0)
             + (baseline_comparison or {}).get("changed", 0)
@@ -3455,6 +3675,7 @@ class DashboardApp:
             "skipped_items": [],
             "errors": [],
             "baseline_comparison": None,
+            "allowlist_summary": None,
             "steps": security_check_steps(),
             "record_path": str(security_check_record_path(check_id).resolve()),
             "app_version": APP_VERSION,
@@ -3554,6 +3775,7 @@ class DashboardApp:
 
             with self.lock:
                 active["findings"] = normalize_security_findings(active["findings"])
+                active["allowlist_summary"] = apply_security_allowlist(active["findings"])
                 if active["options"].get("baseline_id"):
                     baseline = load_security_baseline(active["options"]["baseline_id"])
                     active["baseline_comparison"] = apply_security_baseline_comparison(active["findings"], baseline)
@@ -3600,6 +3822,7 @@ class DashboardApp:
             "skipped_items": active["skipped_items"],
             "errors": active["errors"],
             "baseline_comparison": active.get("baseline_comparison"),
+            "allowlist_summary": active.get("allowlist_summary"),
             "steps": active["steps"],
             "record_path": active["record_path"],
             "app_version": APP_VERSION,
@@ -3673,6 +3896,31 @@ class DashboardApp:
         label = data.get("label") or f"Baseline from {record.get('completed_at') or record.get('started_at')}"
         baseline = create_security_baseline_from_record(record, label)
         return {"baseline": baseline, "baselines": load_security_baselines()}
+
+    def security_allowlist(self):
+        return security_allowlist_public()
+
+    def add_security_allowlist_entry(self, data):
+        if not bool(data.get("acknowledgeAllowlist", False)):
+            raise ValueError("Allowlist creation requires confirmation that this is only a local review-priority adjustment.")
+        check_id = str(data.get("checkId", "") or "").strip()
+        finding_id = str(data.get("findingId", "") or "").strip()
+        if not check_id or not finding_id:
+            raise ValueError("A Security Check record and finding are required.")
+        record = self.security_check_record(check_id)
+        entry, allowlist = add_security_allowlist_entry_from_finding(record, finding_id, data.get("note") or "")
+        return {"entry": entry, "allowlist": allowlist}
+
+    def remove_security_allowlist_entry(self, data):
+        entry, allowlist = remove_security_allowlist_entry(data.get("entryId"))
+        return {"entry": entry, "allowlist": allowlist}
+
+    def import_security_allowlist(self, data):
+        if not bool(data.get("acknowledgeImport", False)):
+            raise ValueError("Allowlist import requires confirmation that imported entries are local review-priority hints only.")
+        payload = data.get("allowlist")
+        allowlist = import_security_allowlist(payload)
+        return {"allowlist": allowlist}
 
     def request_shutdown(self):
         with self.lock:
@@ -4485,6 +4733,27 @@ summary {{ cursor: pointer; padding: 6px; }}
                 </section>
 
                 <section class="section">
+                    <h2>Known-Safe Allowlist</h2>
+                    <p class="muted">Allowlisting is local-only and lowers review priority for matching future findings. It does not hide evidence and does not prove an item is safe forever.</p>
+                    <div class="actions">
+                        <button id="refreshSecurityAllowlist">Refresh allowlist</button>
+                        <button id="exportSecurityAllowlist">Export allowlist</button>
+                        <button id="importSecurityAllowlist">Import allowlist</button>
+                        <input id="securityAllowlistFile" type="file" accept="application/json,.json" style="display:none">
+                    </div>
+                    <div id="securityAllowlistSummary" class="grid" style="margin-top:12px">
+                        <div class="metric"><div class="label">Entries</div><div class="value">0</div></div>
+                        <div class="metric"><div class="label">Matches</div><div class="value">0</div></div>
+                    </div>
+                    <div class="table-wrap" style="margin-top:12px">
+                        <table>
+                            <thead><tr><th>Created</th><th>Category</th><th>Item</th><th>Note</th><th>Action</th></tr></thead>
+                            <tbody id="securityAllowlistRows"><tr><td colspan="5">No allowlist entries loaded.</td></tr></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="section">
                     <h2>Findings Review</h2>
                     <p class="muted">Run a Security Check to review startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, services summary, and referenced file verification. Findings are review items with evidence, not malware verdicts.</p>
                     <div class="form-grid">
@@ -4766,7 +5035,7 @@ summary {{ cursor: pointer; padding: 6px; }}
     </section>
 </main>
 <script>
-const state = {{ currentRecord: null, currentSecurityStatus: null, selectedSecurityFindingId: null, securityBaselines: [], processes: [], lastScanStatusKey: null, lastSecurityStatusKey: null, scanActive: false, securityCheckActive: false, isShuttingDown: false }};
+const state = {{ currentRecord: null, currentSecurityStatus: null, selectedSecurityFindingId: null, securityBaselines: [], securityAllowlist: null, processes: [], lastScanStatusKey: null, lastSecurityStatusKey: null, scanActive: false, securityCheckActive: false, isShuttingDown: false }};
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));
 
@@ -4887,6 +5156,7 @@ function showTab(name) {{
             'Registry backups require explicit opt-in.'
         ]);
         refreshSecurityBaselines(false);
+        refreshSecurityAllowlist(false);
     }}
 }}
 
@@ -4944,6 +5214,7 @@ function renderSecuritySummary(summary = {{}}, status = null) {{
         metric('Low Review', summary.low_review || 0),
         metric('Categories', categories),
         metric('Unsigned Files', summary.unsigned_files || 0),
+        metric('Allowlist Matches', summary.allowlist_matches || 0),
         metric('Baseline Changes', summary.baseline_changes || 0),
         metric('Skipped Sources', summary.skipped_count || 0)
     ].join('');
@@ -5063,6 +5334,146 @@ async function createSecurityBaseline() {{
     }}
 }}
 
+function renderSecurityAllowlist(allowlist = null, status = null) {{
+    const data = allowlist || state.securityAllowlist || {{ entries: [], entry_count: 0 }};
+    const entries = data.entries || [];
+    const matches = status?.summary?.allowlist_matches || status?.allowlist_summary?.allowlist_matches || 0;
+    $('securityAllowlistSummary').innerHTML = [
+        metric('Entries', data.entry_count ?? entries.length),
+        metric('Matches This Run', matches),
+        metric('Updated', data.updated_at || 'Not saved')
+    ].join('');
+    $('securityAllowlistRows').innerHTML = entries.map(entry => `
+        <tr>
+            <td>${{esc(entry.created_at || 'Unavailable')}}</td>
+            <td>${{esc(entry.category || 'Uncategorized')}}</td>
+            <td>${{esc(entry.title || entry.label || 'Untitled')}}</td>
+            <td>${{esc(entry.note || 'No note')}}</td>
+            <td><button type="button" data-allowlist-remove="${{esc(entry.entry_id)}}">Remove</button></td>
+        </tr>
+    `).join('') || '<tr><td colspan="5">No active allowlist entries. Add one from a selected finding after reviewing it.</td></tr>';
+}}
+
+async function refreshSecurityAllowlist(showAlert = true) {{
+    try {{
+        const data = await api('/api/security-allowlist');
+        state.securityAllowlist = data;
+        renderSecurityAllowlist(data, state.currentSecurityStatus);
+        if (showAlert) {{
+            showActionAlert('success', 'Allowlist Refreshed', 'Local known-safe allowlist entries were loaded from this computer.', [
+                `Entries: ${{data.entry_count || 0}}`,
+                'Allowlisting lowers review priority only; it does not prove safety.'
+            ]);
+        }}
+    }} catch (error) {{
+        showActionAlert('error', 'Allowlist Load Failed', error.message, [
+            'The allowlist is stored locally as windows/allowlist.local.json.'
+        ]);
+    }}
+}}
+
+async function addSelectedFindingToAllowlist(findingId) {{
+    const status = state.currentSecurityStatus;
+    if (!securityReportReady(status)) {{
+        showActionAlert('warning', 'Allowlist Unavailable', 'Add allowlist entries only from a completed or cancelled Security Check record.', [
+            'Run or load a Security Check record first.'
+        ]);
+        return;
+    }}
+    const finding = (status.findings || []).find(item => item.finding_id === findingId);
+    if (!finding) return;
+    const confirmed = confirm('Add To Local Allowlist?\\n\\nThis lowers review priority for matching future findings. It does not hide evidence and does not prove the item is safe forever.');
+    if (!confirmed) {{
+        showActionAlert('info', 'Allowlist Add Cancelled', 'No allowlist entry was created.', [
+            'Only add entries after reviewing the evidence.'
+        ]);
+        return;
+    }}
+    const note = prompt('Optional allowlist note', `Reviewed: ${{finding.title || 'finding'}}`) || '';
+    try {{
+        const data = await api('/api/security-allowlist', {{
+            method: 'POST',
+            body: JSON.stringify({{
+                checkId: status.check_id,
+                findingId,
+                note,
+                acknowledgeAllowlist: true
+            }})
+        }});
+        state.securityAllowlist = data.allowlist;
+        renderSecurityAllowlist(data.allowlist, state.currentSecurityStatus);
+        showActionAlert('success', 'Allowlist Entry Added', 'A local allowlist entry was created for matching future findings.', [
+            `Entry: ${{data.entry?.label || data.entry?.entry_id}}`,
+            'Evidence remains visible and allowlisting is not a safety guarantee.'
+        ]);
+    }} catch (error) {{
+        showActionAlert('error', 'Allowlist Add Failed', error.message, [
+            'Only completed or cancelled Security Check records can be used.'
+        ]);
+    }}
+}}
+
+async function removeSecurityAllowlistEntry(entryId) {{
+    const confirmed = confirm('Remove Allowlist Entry?\\n\\nFuture findings will no longer have their review priority lowered by this entry.');
+    if (!confirmed) return;
+    try {{
+        const data = await api('/api/security-allowlist/remove', {{
+            method: 'POST',
+            body: JSON.stringify({{ entryId }})
+        }});
+        state.securityAllowlist = data.allowlist;
+        renderSecurityAllowlist(data.allowlist, state.currentSecurityStatus);
+        showActionAlert('success', 'Allowlist Entry Removed', 'The local allowlist entry was removed.', [
+            `Entry: ${{data.entry?.label || entryId}}`
+        ]);
+    }} catch (error) {{
+        showActionAlert('error', 'Allowlist Remove Failed', error.message, [
+            'Refresh the allowlist and try again if the entry was already removed.'
+        ]);
+    }}
+}}
+
+function exportSecurityAllowlist() {{
+    const allowlist = state.securityAllowlist || {{ schema_version: 'security-allowlist-v1', entries: [] }};
+    const payload = {{
+        schema_version: 'security-allowlist-export-v1',
+        exported_at: new Date().toISOString(),
+        warning: 'Allowlist entries are local review-priority hints only and do not prove safety.',
+        entries: allowlist.entries || []
+    }};
+    downloadSecurityBlob(`security-allowlist-${{new Date().toISOString().replace(/[:.]/g, '-')}}.json`, JSON.stringify(payload, null, 2), 'application/json');
+    showActionAlert('success', 'Allowlist Exported', 'A local JSON allowlist export was generated.', [
+        'Review before sharing because entries can reveal local software and paths.'
+    ]);
+}}
+
+async function importSecurityAllowlistFromFile(file) {{
+    if (!file) return;
+    const confirmed = confirm('Import Allowlist?\\n\\nImported entries lower review priority for matching future findings. Import only allowlists you trust.');
+    if (!confirmed) return;
+    try {{
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+        const allowlist = parsed.entries ? parsed : (parsed.allowlist || parsed);
+        const data = await api('/api/security-allowlist/import', {{
+            method: 'POST',
+            body: JSON.stringify({{ allowlist, acknowledgeImport: true }})
+        }});
+        state.securityAllowlist = data.allowlist;
+        renderSecurityAllowlist(data.allowlist, state.currentSecurityStatus);
+        showActionAlert('success', 'Allowlist Imported', 'The imported allowlist was validated and merged locally.', [
+            `Entries: ${{data.allowlist?.entry_count || 0}}`,
+            'Allowlisting is not a safety guarantee.'
+        ]);
+    }} catch (error) {{
+        showActionAlert('error', 'Allowlist Import Failed', error.message, [
+            'The import must be valid JSON with allowlist entries and valid match keys.'
+        ]);
+    }} finally {{
+        $('securityAllowlistFile').value = '';
+    }}
+}}
+
 function findingSearchText(finding) {{
     return [
         finding.severity,
@@ -5070,6 +5481,7 @@ function findingSearchText(finding) {{
         finding.title,
         finding.status,
         finding.baseline_status,
+        finding.allowlist_status,
         (finding.review_reasons || []).join(' '),
         finding.plain_explanation,
         JSON.stringify(finding.evidence || {{}})
@@ -5179,12 +5591,13 @@ function renderSecurityFindings(status) {{
     $('securityFindingsRows').innerHTML = findings.map(finding => {{
         const reasons = (finding.review_reasons || []).join('; ') || finding.status || 'Review item';
         const baseline = finding.baseline_status ? `<br><span class="security-badge">${{esc(finding.baseline_status)}}</span>` : '';
+        const allowlist = finding.allowlist_status ? `<br><span class="security-badge">allowlist match</span>` : '';
         const selected = finding.finding_id === state.selectedSecurityFindingId ? ' selected' : '';
         return `<tr class="security-finding-row${{selected}}" tabindex="0" role="button" aria-label="Open finding details" data-security-finding="${{esc(finding.finding_id)}}">
             <td>${{esc(finding.severity || 'Info')}}</td>
             <td>${{esc(finding.score ?? 0)}}</td>
             <td>${{esc(finding.category || 'Uncategorized')}}</td>
-            <td>${{esc(finding.title || 'Untitled')}}${{baseline}}</td>
+            <td>${{esc(finding.title || 'Untitled')}}${{baseline}}${{allowlist}}</td>
             <td>${{esc(reasons)}}</td>
             <td><button type="button" data-security-finding="${{esc(finding.finding_id)}}">Details</button></td>
         </tr>`;
@@ -5222,6 +5635,9 @@ function renderSecurityFindingDetail(status, findingId) {{
     const sections = finding.plain_language_sections || {{}};
     const reasons = (finding.review_reasons || []).map(item => `<li>${{esc(item)}}</li>`).join('') || '<li>No specific reason recorded.</li>';
     const nextSteps = (finding.recommended_next_steps || []).map(item => `<li>${{esc(item)}}</li>`).join('') || '<li>Review the evidence before making changes.</li>';
+    const allowlistNote = finding.allowlist_status
+        ? `<p class="notice"><strong>Local allowlist match:</strong> Review priority was lowered for this run, but evidence remains visible and this is not a safety guarantee.<br>Original score: ${{esc(finding.original_score ?? 'Unavailable')}} | Original severity: ${{esc(finding.original_severity || 'Unavailable')}}</p>`
+        : '';
     const evidence = Object.entries(finding.evidence || {{}})
         .map(([key, value]) => `${{key}}: ${{Array.isArray(value) ? value.join(', ') : (typeof value === 'object' && value !== null ? JSON.stringify(value) : value)}}`)
         .join('\\n');
@@ -5230,7 +5646,9 @@ function renderSecurityFindingDetail(status, findingId) {{
         <span class="security-badge">${{esc(finding.severity || 'Info')}}</span>
         <span class="security-badge">${{esc(finding.category || 'Uncategorized')}}</span>
         <span class="security-badge">Score ${{esc(finding.score ?? 0)}}/100</span>
+        ${{finding.allowlist_status ? '<span class="security-badge">local allowlist match</span>' : ''}}
         <p>${{esc(sections.score_explanation || finding.score_explanation || 'A higher score means more suspicious patterns, not proof of malware.')}}</p>
+        ${{allowlistNote}}
         <h3>What This Is</h3>
         <p>${{esc(sections.what_this_is || finding.plain_explanation || 'This is a local review item collected by the Security Check.')}}</p>
         <h3>Why It Matters</h3>
@@ -5247,6 +5665,7 @@ function renderSecurityFindingDetail(status, findingId) {{
             <summary>Technical Evidence</summary>
             <pre>${{esc(evidence || 'No technical evidence recorded.')}}</pre>
         </details>
+        <div class="actions"><button type="button" data-allowlist-finding="${{esc(finding.finding_id)}}">Add to local allowlist</button></div>
         <p class="muted">This is not a malware verdict. Use trusted security tools and vendor documentation for final decisions.</p>
     `;
 }}
@@ -5328,6 +5747,7 @@ function securitySummaryHtml(status) {{
 <span class="badge">Low Review: ${{esc(summary.low_review || 0)}}</span>
 <span class="badge">Info: ${{esc(summary.info || 0)}}</span>
 <span class="badge">Unsigned files: ${{esc(summary.unsigned_files || 0)}}</span>
+<span class="badge">Allowlist matches: ${{esc(summary.allowlist_matches || 0)}}</span>
 <span class="badge">Baseline changes: ${{esc(summary.baseline_changes || 0)}}</span>
 <span class="badge">Skipped: ${{esc(summary.skipped_count || 0)}}</span>
 </p>`;
@@ -5512,6 +5932,7 @@ function renderSecurityCheckStatus(status) {{
         state.selectedSecurityFindingId = null;
         setSecurityReportButtons(null);
         renderSecurityBaselineComparison(null);
+        renderSecurityAllowlist(state.securityAllowlist, null);
         $('securityStatus').textContent = 'No Security Check running.';
         renderSecurityProgress();
         renderSecuritySummary();
@@ -5530,6 +5951,7 @@ function renderSecurityCheckStatus(status) {{
     $('securityStatus').innerHTML = `Security Check <code>${{esc(status.check_id)}}</code><br>Status: <strong>${{esc(status.status)}}</strong> | Mode: ${{esc(status.mode || 'standard')}} | Registry backup opt-in: ${{options.registry_backup_opt_in ? 'yes' : 'no'}}`;
     renderSecurityCategoryBlocks(status);
     renderSecurityBaselineComparison(status);
+    renderSecurityAllowlist(state.securityAllowlist, status);
     renderSecurityFindings(status);
     setSecurityReportButtons(status);
 }}
@@ -5800,7 +6222,9 @@ async function loadInitial() {{
         $('versionInfo').textContent = JSON.stringify(info.version, null, 2);
         $('driveSelect').innerHTML = info.drives.map(d => `<option value="${{esc(d.path)}}">${{esc(d.label)}}</option>`).join('');
         state.securityBaselines = info.security_baselines || [];
+        state.securityAllowlist = info.security_allowlist || null;
         renderSecurityBaselineControls();
+        renderSecurityAllowlist(state.securityAllowlist, null);
         if (info.drives.length) $('rootPath').value = info.drives.find(d => d.path === 'C:\\\\')?.path || info.drives[0].path;
         if (info.latest_record) renderResult(info.latest_record);
         const latestSecurityStatus = info.active_security_check?.check_id ? info.active_security_check : info.latest_security_check;
@@ -6454,6 +6878,18 @@ $('downloadSecurityVerificationReport').addEventListener('click', () => download
 $('downloadSecurityJsonReport').addEventListener('click', downloadSecurityJsonReport);
 $('refreshSecurityBaselines').addEventListener('click', () => refreshSecurityBaselines(true));
 $('createSecurityBaseline').addEventListener('click', createSecurityBaseline);
+$('refreshSecurityAllowlist').addEventListener('click', () => refreshSecurityAllowlist(true));
+$('exportSecurityAllowlist').addEventListener('click', exportSecurityAllowlist);
+$('importSecurityAllowlist').addEventListener('click', () => $('securityAllowlistFile').click());
+$('securityAllowlistFile').addEventListener('change', event => importSecurityAllowlistFromFile(event.target.files[0]));
+$('securityAllowlistRows').addEventListener('click', event => {{
+    const button = event.target.closest('[data-allowlist-remove]');
+    if (button) removeSecurityAllowlistEntry(button.dataset.allowlistRemove);
+}});
+$('securityFindingDetail').addEventListener('click', event => {{
+    const button = event.target.closest('[data-allowlist-finding]');
+    if (button) addSelectedFindingToAllowlist(button.dataset.allowlistFinding);
+}});
 $('exitApp').addEventListener('click', exitApp);
 $('ackSecurityCheck').addEventListener('change', updateSecurityCheckStartState);
 document.querySelectorAll('input[name="securityMode"]').forEach(input => input.addEventListener('change', updateAdvancedReviewOptions));
@@ -6553,6 +6989,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 records = load_scan_records()
                 security_records = load_security_check_records()
                 security_baselines = load_security_baselines()
+                security_allowlist = security_allowlist_public()
                 json_response(self, {
                     "version": APP_STATE.version_metadata,
                     "drives": get_available_drives(),
@@ -6561,6 +6998,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                     "latest_security_check": security_records[0] if security_records else None,
                     "active_security_check": APP_STATE.security_check_status(),
                     "security_baselines": security_baselines,
+                    "security_allowlist": security_allowlist,
                 })
             elif path == "/api/scans/active":
                 json_response(self, APP_STATE.scan_status())
@@ -6568,6 +7006,8 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 json_response(self, APP_STATE.security_check_status())
             elif path == "/api/security-baselines":
                 json_response(self, APP_STATE.security_baselines())
+            elif path == "/api/security-allowlist":
+                json_response(self, APP_STATE.security_allowlist())
             elif path.startswith("/api/security-checks/"):
                 check_id = path.rsplit("/", 1)[-1]
                 json_response(self, APP_STATE.security_check_record(check_id))
@@ -6602,6 +7042,12 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 json_response(self, APP_STATE.cancel_security_check())
             elif path == "/api/security-baselines":
                 json_response(self, APP_STATE.create_security_baseline(data), status=201)
+            elif path == "/api/security-allowlist":
+                json_response(self, APP_STATE.add_security_allowlist_entry(data), status=201)
+            elif path == "/api/security-allowlist/remove":
+                json_response(self, APP_STATE.remove_security_allowlist_entry(data))
+            elif path == "/api/security-allowlist/import":
+                json_response(self, APP_STATE.import_security_allowlist(data))
             elif path == "/api/shutdown":
                 if not self.is_local_request():
                     json_response(self, {"error": "Shutdown is only allowed from localhost."}, status=403)
