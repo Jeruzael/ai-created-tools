@@ -1,8 +1,8 @@
 {
   "app_version": "1.23.0",
-  "documentation_version": "1.23",
+  "documentation_version": "1.23.1",
   "last_updated": "2026-06-18",
-  "revision_notes": "Added a Security Check timeline view with chronological events for runs, baselines, files, scheduled tasks, registry evidence, Defender data, event logs, and related findings.",
+  "revision_notes": "Expanded project documentation and README guidance for non-technical users and technical maintainers, including safety boundaries, workflows, Security Check interpretation, generated files, troubleshooting, verification, and maintenance notes.",
   "affected_areas": [
     "browser_dashboard",
     "security_check_ui",

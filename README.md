@@ -1,10 +1,37 @@
-# Windows Disk Usage Dashboard
+# Windows Folder Operations Guide
 
-Version: `1.23.0`
+- Document: Folder README and operations guide
+- Project: Windows Disk Usage Dashboard
+- App version: `1.23.0`
+- Documentation version: `1.23.1`
+- Date: 2026-06-18
+- Prepared by: Codex
+- Prepared for: users and maintainers working inside the `windows/` folder
+- Status: Revised
+- Revision notes: Expanded quick-start, safety notes, Security Check workflow, generated files, commands, verification, and maintenance guidance.
 
-This folder contains a local Windows browser dashboard for disk usage review, scan history, process review, local read-only security review workflows, and safe cleanup guidance.
+## 1. Purpose
 
-## Quick Start
+This folder contains the Windows Disk Usage Dashboard application.
+
+The main file is:
+
+```text
+DiskUsageHtmlReport.py
+```
+
+It runs a local browser dashboard for:
+
+- Disk usage scans.
+- Scan history.
+- Running process review.
+- Read-only Security Check workflows.
+- Safe cleanup guidance.
+- Local report generation.
+
+The app is local-only and designed for review. It does not clean, quarantine, disable, delete, upload, or modify system settings.
+
+## 2. Quick Start
 
 Open PowerShell or Windows Terminal in this `windows` folder, then run:
 
@@ -30,7 +57,13 @@ If that port is busy, use another port:
 python .\DiskUsageHtmlReport.py --port 8766
 ```
 
-## Recommended First Scan
+Start without opening the browser automatically:
+
+```powershell
+python .\DiskUsageHtmlReport.py --no-open
+```
+
+## 3. Recommended First Scan
 
 For most users, start with:
 
@@ -40,36 +73,82 @@ C:\Users
 
 This is usually faster and safer than scanning the full `C:\` drive.
 
-## Important Safety Notes
+Full-drive scans may take longer and may include Windows folders, app data, caches, developer projects, game folders, backups, and cloud-sync folders.
+
+## 4. Important Safety Notes
 
 - This tool reports only.
 - It does not delete, move, rename, compress, quarantine, upload, or modify files.
 - It does not stop, kill, disable, or modify running processes.
-- It does not modify registry keys, Defender settings, browser policies, DNS, proxy settings, startup items, scheduled tasks, services, processes, or files.
+- It does not modify registry keys, Defender settings, browser policies, DNS settings, proxy settings, startup items, scheduled tasks, services, drivers, WMI subscriptions, event logs, Sysmon configuration, processes, or files.
+- It does not install Sysmon or any other external tool.
 - The allowlist lowers local review priority for matching future findings but does not prove anything is safe forever.
 - Large files are not automatically safe to delete.
 - Unknown processes are not automatically malware.
-- Keep generated reports private because they can contain local paths and filenames.
-- Scan Health explains if a scan was affected by locked files, running apps, permissions, changing paths, or skipped reparse points.
+- Timeline order does not prove cause.
+- Keep generated reports private because they can contain local paths, filenames, command lines, registry values, hashes, and installed software details.
 
-## Main Tabs
+## 5. Main Tabs
 
-- `Scan`: choose a drive or folder and start a scan.
-- `Results`: review biggest folders, file types, biggest files, tree view, and skipped paths. Use Copy directory buttons to copy folder paths for manual review.
-- `Scan Health`: inside Results, explains whether any skipped paths may have been caused by locked files, running apps, permissions, changing paths, or reparse points.
-- `Processes`: review running programs and local technical indicators. Filter to Needs Review, filter by review reason or publisher, group by publisher or memory use, view grouped trees, use the Verify guide for signature/hash checks, download grouped/verification reports, and select a process row or Details button to open the technical panel. Drag the divider between Running Programs and Process Details to resize both panes.
-- `Security Check`: run a local read-only Standard or Advanced Review. In v1.23 it records progress, supports cancellation, blocks exit while active, saves local records, shows scored review findings with expanded filters, keyboard-selectable rows, plain-language sections, and collapsible technical evidence for startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, services summary, command/name indicators, referenced file verification, WMI persistence, event log correlation, optional Sysmon data when already installed, deeper services/drivers, and Explorer autorun-style locations, downloads local reports from completed or cancelled records, compares later runs against explicit local baselines, applies local known-safe allowlist matches, and shows a timeline of evidence timestamps.
-- `History`: open previous scan records. Opened records switch to Results and show the loaded scan path, scan ID, and timestamps.
-- `Manual`: read safe usage guidance, scan setting explanations, use cases, cleanup workflow, and do's/don'ts.
-- `About`: view version and local privacy notes.
+### Scan
 
-## Exit The App
+Choose a drive or folder and start a scan.
 
-Use the `Exit App` button in the dashboard.
+### Results
 
-Exit is disabled while a scan is running. Cancel the scan or wait for it to finish first.
+Review biggest folders, file types, biggest files, tree view, skipped paths, and Scan Health. Copy-directory buttons help users copy folder paths for manual review.
 
-## Legacy One-Shot Report
+### Scan Health
+
+Explains whether the scan was affected by locked files, running apps, permission-limited folders, changing paths, or skipped reparse points.
+
+### Processes
+
+Review running programs and local technical indicators. The UI supports Needs Review filtering, publisher and memory grouping, grouped tree summaries, verification reports, selectable rows, and a resizable details panel.
+
+### Security Check
+
+Run a local read-only Standard or Advanced Review.
+
+Standard Review checks startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, scoped services summary, command/name indicators, and referenced file verification.
+
+Advanced Review adds WMI persistence, event-log correlation, optional Sysmon data when already installed, deeper services/drivers, and Explorer autorun-style locations.
+
+Security Check stores local records, shows scored findings, explains evidence in plain language, supports collapsible technical evidence, downloads local reports, compares against user-created baselines, applies a local known-safe allowlist, and shows a timeline of evidence timestamps.
+
+### History
+
+Open previous disk scan records. Opened records switch to Results and show the loaded scan path, scan ID, and timestamps.
+
+### Manual
+
+Read safe usage guidance, scan setting explanations, use cases, cleanup workflow, and do's/don'ts.
+
+### About
+
+View version and local privacy notes.
+
+## 6. Security Check Workflow
+
+Recommended workflow:
+
+1. Run Standard Review first.
+2. Review skipped sources and permission notes.
+3. Inspect higher-priority findings before lower-priority findings.
+4. Open Details for evidence and plain-language explanations.
+5. Download reports only when a local copy is needed.
+6. Create a baseline only after the current system state has been reviewed and considered normal.
+7. Use allowlist only for intentionally reviewed items.
+8. Re-run later and compare against the baseline.
+
+Important interpretation rules:
+
+- Findings are review prompts, not malware verdicts.
+- Baseline `new`, `changed`, `unchanged`, and `removed` labels describe evidence changes only.
+- Allowlisting lowers local review priority but does not hide evidence by default.
+- Timeline rows are evidence timestamps only and do not prove cause or harm.
+
+## 7. Legacy One-Shot Report
 
 To generate a single static HTML report without using the browser app:
 
@@ -77,40 +156,144 @@ To generate a single static HTML report without using the browser app:
 python .\DiskUsageHtmlReport.py --scan-once --root "C:\Users" --output ".\User_Dashboard.html" --top 200 --open
 ```
 
-Use `--force` only when you intentionally want to overwrite an existing output file.
+Use `--force` only when you intentionally want to overwrite an existing output file:
 
-## Technical Notes
+```powershell
+python .\DiskUsageHtmlReport.py --scan-once --root "C:\Users" --output ".\User_Dashboard.html" --force
+```
+
+Avoid `--include-reparse` unless you understand Windows junctions, symlinks, and reparse points.
+
+## 8. Command Reference
+
+Show all options:
+
+```powershell
+python .\DiskUsageHtmlReport.py --help
+```
+
+Useful options:
+
+- `--port 8766`: run the browser app on a different local port.
+- `--no-open`: start the server without opening the browser.
+- `--scan-once`: run the legacy static report mode.
+- `--root "C:\Users"`: choose the folder for one-shot scans.
+- `--output ".\User_Dashboard.html"`: choose the one-shot HTML output file.
+- `--top 200`: choose how many largest folders/files to show.
+- `--force`: overwrite an existing one-shot output file.
+- `--show-skipped-live`: print skipped/access-denied paths while scanning.
+- `--include-reparse`: include reparse points; not recommended for normal use.
+
+## 9. Generated Local Files
+
+These paths are generated locally and ignored by Git:
+
+- `generated_reports/`
+- `scan_records/`
+- `security_check_records/`
+- `security_reports/`
+- `registry_backups/`
+- `baselines/`
+- `allowlist.local.json`
+- `DiskUsageDashboard.html`
+- `*_Dashboard.html`
+- `*scan-once.html`
+- `C_Drive_DiskUsageReport.txt`
+- `temp.txt`
+- `__pycache__/`
+
+Do not commit generated reports or records. They may contain private paths, usernames, process command lines, registry values, hashes, installed software details, and event-log summaries.
+
+## 10. Technical Notes
 
 - Requires Python 3.9 or newer.
 - No external Python packages are required.
-- The local app binds only to `127.0.0.1` or `localhost`.
-- Process details are collected from local Windows metadata through PowerShell/CIM.
-- Generated reports are stored in `generated_reports/`.
-- Scan records are stored in `scan_records/`.
-- Security Check records are stored in `security_check_records/`.
-- Security Check baselines are stored in `baselines/`.
-- Security Check allowlist entries are stored in `allowlist.local.json`.
-- These generated folders are ignored by git because they may contain private local paths, command lines, registry values, hashes, and installed software details.
+- The local server binds only to `127.0.0.1` or `localhost`.
+- PowerShell/CIM is used for local Windows process and system metadata.
+- Security Check collectors continue where possible when individual sources are unavailable or permission-limited.
+- Reports, baselines, and allowlist files are local artifacts written under this folder.
+- The root repository also has a `.gitignore`; keep this folder `.gitignore` in sync when generated paths change.
 
-## Scan Health
+## 11. Verification
 
-If a game, editor, backup tool, or app is active while scanning, some files may be locked or changing. The scan should continue where possible and show a Scan Health message after completion.
-
-If Scan Health reports locked or in-use files, close heavy apps or games and scan again if those skipped paths matter.
-
-## Manual Topics
-
-The built-in Manual explains:
-
-- `Top items`: how many largest results are shown in each results table.
-- `Tree depth`: how many folder levels are expanded in the large folder tree.
-- `Children per folder`: how many subfolders can appear under each tree folder.
-- `Min tree size MB`: the smallest folder size shown in the tree.
-- Reparse points, junctions, and symlinks: Windows link-like folders that are skipped by default to avoid loops or duplicate counts.
-
-## Verify
+Compile check:
 
 ```powershell
 python -m py_compile .\DiskUsageHtmlReport.py
+```
+
+Help check:
+
+```powershell
 python .\DiskUsageHtmlReport.py --help
 ```
+
+Manual smoke test:
+
+```powershell
+python .\DiskUsageHtmlReport.py --host 127.0.0.1 --port 8765 --no-open
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8765/
+```
+
+Expected checks:
+
+- Dashboard loads locally.
+- Scan tab starts and cancels a scan.
+- Results and History tabs open.
+- Processes tab loads without crashing.
+- Security Check can start and cancel.
+- Exit App is blocked during active work.
+- Generated output remains ignored by Git.
+
+## 12. Troubleshooting
+
+### `python` is not recognized
+
+Try:
+
+```powershell
+py .\DiskUsageHtmlReport.py
+```
+
+If that fails, install Python 3.9 or newer and add it to PATH.
+
+### Port is busy
+
+Run with a different port:
+
+```powershell
+python .\DiskUsageHtmlReport.py --port 8766
+```
+
+### Browser does not open
+
+Copy the printed local URL into a browser manually.
+
+### Scan is slow
+
+Scan a smaller folder first, such as `C:\Users`. Close large apps, games, editors, backup tools, or cloud-sync tools before rescanning if needed.
+
+### Some sources are skipped
+
+Review Scan Health or Security Check skipped-source details. Administrator permission may be required for some Windows locations. Missing optional sources, such as Sysmon when it is not installed, should be reported without failing the whole review.
+
+## 13. Maintainer Checklist
+
+Before handing off changes:
+
+- Run `python -m py_compile .\DiskUsageHtmlReport.py`.
+- Run `python .\DiskUsageHtmlReport.py --help`.
+- Start the local dashboard and check the main tabs.
+- Confirm generated/private files are ignored by Git.
+- Update `APP_VERSION`, `DOC_VERSION`, `dashboard_version.json`, root `README.md`, and this README when behavior changes.
+- Keep safety wording accurate and conservative.
+- Do not add external dependencies without documenting why.
+
+## 14. Current Version Summary
+
+Version `1.23.0` includes the Security Check timeline view. Timeline rows show chronological evidence points for run events, baselines, file timestamps, scheduled task times, registry evidence, Defender data, event-log entries, and related findings.

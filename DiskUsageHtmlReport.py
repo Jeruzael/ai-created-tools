@@ -28,7 +28,7 @@ except ImportError:  # pragma: no cover - non-Windows fallback
 sys.setrecursionlimit(10000)
 
 APP_VERSION = "1.23.0"
-DOC_VERSION = "1.23"
+DOC_VERSION = "1.23.1"
 APP_DIR = Path(__file__).resolve().parent
 RECORDS_DIR = APP_DIR / "scan_records"
 REPORTS_DIR = APP_DIR / "generated_reports"
@@ -966,9 +966,10 @@ def ensure_version_metadata():
         "documentation_version": DOC_VERSION,
         "last_updated": "2026-06-18",
         "revision_notes": (
-            "Added a Security Check timeline view with chronological events "
-            "for runs, baselines, files, scheduled tasks, registry evidence, "
-            "Defender data, event logs, and related findings."
+            "Expanded project documentation and README guidance for "
+            "non-technical users and technical maintainers, including safety "
+            "boundaries, workflows, Security Check interpretation, generated "
+            "files, troubleshooting, verification, and maintenance notes."
         ),
         "affected_areas": [
             "browser_dashboard",
