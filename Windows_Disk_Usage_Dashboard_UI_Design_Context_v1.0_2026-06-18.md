@@ -5,18 +5,18 @@
 - Status: Draft
 - Prepared for: Future UI redesign and feature planning prompts
 - Prepared by: Codex
-- Current app version described: v1.11.0
+- Current app version described: v1.12.0
 - Source reviewed: `windows/DiskUsageHtmlReport.py`
 
 ## Purpose
 
 This document describes the current browser UI of the Windows Disk Usage Dashboard so it can be used as context when asking GPT or another design assistant to redesign the app or plan future features.
 
-The app is a local Windows utility that opens in a browser. It scans selected drives or folders, shows disk usage results, keeps scan history, and provides a running-process review panel. The current design is functional, safety-focused, and utility-oriented rather than decorative.
+The app is a local Windows utility that opens in a browser. It scans selected drives or folders, shows disk usage results, keeps scan history, provides a running-process review panel, and now includes a placeholder Security Check shell for planned local read-only security review. The current design is functional, safety-focused, and utility-oriented rather than decorative.
 
 ## One-Paragraph App Description For GPT
 
-The current app is a local browser-based Windows utility called "Windows Disk Usage Dashboard." It uses a clean, light, admin-tool style with a white header, pale gray page background, blue primary actions, bordered white panels, compact tables, safety alerts, and tab navigation. The first screen is not a marketing page; it is the actual tool. Users can scan drives or folders, review disk usage results, inspect running programs, open scan history, read a built-in manual, and view safety/about information. The UI is practical and information-dense, with clear warnings that the tool is read-only, local-only, and does not delete files or make malware verdicts.
+The current app is a local browser-based Windows utility called "Windows Disk Usage Dashboard." It uses a clean, light, admin-tool style with a white header, pale gray page background, blue primary actions, bordered white panels, compact tables, safety alerts, and tab navigation. The first screen is not a marketing page; it is the actual tool. Users can scan drives or folders, review disk usage results, inspect running programs, preview a planned Security Check workflow, open scan history, read a built-in manual, and view safety/about information. The UI is practical and information-dense, with clear warnings that the tool is read-only, local-only, and does not delete files or make malware verdicts.
 
 ## Visual Style
 
@@ -60,7 +60,7 @@ Top header:
 
 - Left side:
   - Title: `Windows Disk Usage Dashboard`
-  - Subtitle: `Local read-only scan and process review tool. App v1.11.0, docs v1.11.`
+  - Subtitle: `Local read-only scan and process review tool. App v1.12.0, docs v1.12.`
 - Right side:
   - `Exit App` button styled as a danger action.
   - Small helper text: `Server: 127.0.0.1 only` and `Reports stay on this computer.`
@@ -78,6 +78,7 @@ Main navigation:
   - `Scan`
   - `Results`
   - `Processes`
+  - `Security Check`
   - `History`
   - `Manual`
   - `About`
@@ -254,6 +255,31 @@ Downloaded process reports:
 - Grouped process report includes grouped tree and uncategorized background programs.
 - Verification report focuses on processes that need review.
 - Both include the Verification Guide.
+
+## Tab: Security Check
+
+The Security Check tab is currently a v1.12 shell for a planned local read-only security review workflow.
+
+Current shell elements:
+
+- Safety notice explaining that future findings will mean review this, not this is malware.
+- Safety acknowledgement checkbox required before the Start Security Check button is enabled.
+- Standard Review mode as the planned first path.
+- Advanced Review shown as disabled future functionality.
+- Explicit registry-backup opt-in checkbox, off by default.
+- Disabled future options for baseline comparison, WMI, Event Log correlation, and optional Sysmon.
+- Placeholder progress steps.
+- Summary metric cards showing Not Run and zero counts.
+- Empty findings table with disabled filters.
+- Finding detail placeholder with plain-language/evidence badges.
+- Planned category blocks for Registry Startup, Browser Policy, Proxy/DNS, Defender Exclusions, Scheduled Tasks, and File Verification.
+- Disabled report buttons for future security reports and technical JSON.
+
+Important behavior:
+
+- Clicking Start after acknowledgement does not run collectors yet.
+- The app shows an alert explaining that no registry keys, files, scheduled tasks, Defender settings, browser policies, or logs were read.
+- This tab currently reserves the workflow and safety language only.
 
 ## Tab: History
 
@@ -463,17 +489,19 @@ Any future redesign should preserve these product requirements:
 Use this prompt when asking GPT to redesign the app:
 
 ```text
-We have a local Windows browser app called Windows Disk Usage Dashboard. It runs on 127.0.0.1 and helps users scan drives/folders, review disk usage, inspect running programs, open scan history, read a built-in manual, and safely exit the local server.
+We have a local Windows browser app called Windows Disk Usage Dashboard. It runs on 127.0.0.1 and helps users scan drives/folders, review disk usage, inspect running programs, preview a planned Security Check workflow, open scan history, read a built-in manual, and safely exit the local server.
 
 Current design: light admin-dashboard style, white header, pale gray background, bordered white panels, compact tables, blue primary buttons, amber/green/red/blue safety alerts, horizontal tabs, and dense utility controls. The app is safety-focused and repeatedly explains that it is read-only, local-only, does not delete files, and does not make malware verdicts.
 
-Main tabs: Scan, Results, Processes, History, Manual, About.
+Main tabs: Scan, Results, Processes, Security Check, History, Manual, About.
 
 Scan tab: drive selector, folder path input, scan settings, safety acknowledgement, Start scan, Cancel scan, scan status, and a large Before You Scan safety notice.
 
 Results tab: scan summary, scan health, biggest folders, file types, biggest files, large folder tree, skipped paths, search fields, and copy directory buttons.
 
 Processes tab: process refresh, grouped report download, verification report download, Verify link, process filters, publisher tooltip, compact summary cards, grouped tree, clickable process table, draggable split pane with Process Details, and a Verification Guide for digital signatures and SHA-256 hashes.
+
+Security Check tab: v1.12 shell for a planned local read-only security review workflow. It has safety acknowledgement, Standard Review mode, disabled Advanced/future options, explicit registry-backup opt-in, placeholder progress, summary, findings, detail, category blocks, and disabled report buttons. It does not run collectors yet.
 
 History tab: table of saved scans with Open action.
 
@@ -483,4 +511,3 @@ About tab: local-only and safety notes plus version metadata.
 
 Please redesign the UI for [NEW FEATURE OR GOAL], but preserve the safety-focused local utility nature, keep the app usable for non-technical users and technical reviewers, and avoid implying that the app deletes files or detects malware.
 ```
-

@@ -1,13 +1,12 @@
 {
-  "app_version": "1.11.0",
-  "documentation_version": "1.11",
+  "app_version": "1.12.0",
+  "documentation_version": "1.12",
   "last_updated": "2026-06-18",
-  "revision_notes": "Improved Process report usability with publisher tooltip, compact summary metrics, and a beginner-friendly verification guide.",
+  "revision_notes": "Added the Security Check tab shell with safety acknowledgement, explicit registry-backup opt-in, placeholder review panels, and disabled future report actions.",
   "affected_areas": [
     "browser_dashboard",
-    "process_review",
-    "process_report_ui",
-    "verification_guide",
+    "security_check_ui",
+    "safety_messaging",
     "documentation_versioning"
   ],
   "compatibility_notes": "Default run starts the browser app. Use --scan-once for legacy one-shot HTML report generation."

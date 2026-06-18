@@ -19,8 +19,8 @@ from urllib.parse import parse_qs, urlparse
 
 sys.setrecursionlimit(10000)
 
-APP_VERSION = "1.11.0"
-DOC_VERSION = "1.11"
+APP_VERSION = "1.12.0"
+DOC_VERSION = "1.12"
 APP_DIR = Path(__file__).resolve().parent
 RECORDS_DIR = APP_DIR / "scan_records"
 REPORTS_DIR = APP_DIR / "generated_reports"
@@ -953,14 +953,14 @@ def ensure_version_metadata():
         "documentation_version": DOC_VERSION,
         "last_updated": "2026-06-18",
         "revision_notes": (
-            "Improved Process report usability with publisher tooltip, compact "
-            "summary metrics, and a beginner-friendly verification guide."
+            "Added the Security Check tab shell with safety acknowledgement, "
+            "explicit registry-backup opt-in, placeholder review panels, and "
+            "disabled future report actions."
         ),
         "affected_areas": [
             "browser_dashboard",
-            "process_review",
-            "process_report_ui",
-            "verification_guide",
+            "security_check_ui",
+            "safety_messaging",
             "documentation_versioning"
         ],
         "compatibility_notes": "Default run starts the browser app. Use --scan-once for legacy one-shot HTML report generation."
@@ -1968,8 +1968,77 @@ summary {{ cursor: pointer; padding: 6px; }}
 .health-panel.info {{ border-left-color: var(--accent); background: #f3f8ff; }}
 .category-list {{ display: grid; grid-template-columns: repeat(2, minmax(240px, 1fr)); gap: 10px; margin-top: 10px; }}
 .category-item {{ border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: #fff; }}
+.security-layout {{
+    display: grid;
+    grid-template-columns: minmax(300px, 420px) minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+}}
+.security-mode-grid {{
+    display: grid;
+    grid-template-columns: repeat(2, minmax(150px, 1fr));
+    gap: 10px;
+    margin: 10px 0 12px;
+}}
+.security-mode {{
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px;
+    background: var(--panel-soft);
+}}
+.security-mode input {{ width: auto; margin-right: 6px; }}
+.security-option-list {{
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+}}
+.security-option-list label {{
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px;
+    background: #fff;
+    font-weight: 500;
+}}
+.security-option-list input {{ width: auto; margin-right: 6px; }}
+.security-progress {{
+    display: grid;
+    gap: 8px;
+}}
+.security-step {{
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 9px 10px;
+    background: #fff;
+}}
+.security-step-status {{
+    white-space: nowrap;
+    color: var(--muted);
+    font-size: 12px;
+}}
+.security-detail-panel {{
+    min-height: 180px;
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    padding: 14px;
+    background: #fff;
+}}
+.security-badge {{
+    display: inline-block;
+    border-radius: 999px;
+    padding: 3px 8px;
+    margin: 2px 4px 2px 0;
+    background: #e8f3ff;
+    color: var(--accent-strong);
+    font-size: 12px;
+}}
+.security-badge.future {{ background: #f3f5f8; color: var(--muted); }}
 @media (max-width: 980px) {{
-    .layout, .form-grid, .grid, .manual-grid, .category-list {{ grid-template-columns: 1fr; }}
+    .layout, .form-grid, .grid, .manual-grid, .category-list, .security-layout, .security-mode-grid {{ grid-template-columns: 1fr; }}
     .process-controls, .process-summary-grid {{ grid-template-columns: 1fr; }}
     .process-layout {{ display: block; }}
     .process-panel {{
@@ -2006,6 +2075,7 @@ summary {{ cursor: pointer; padding: 6px; }}
         <button class="tab active" data-tab="scan">Scan</button>
         <button class="tab" data-tab="results">Results</button>
         <button class="tab" data-tab="processes">Processes</button>
+        <button class="tab" data-tab="security">Security Check</button>
         <button class="tab" data-tab="history">History</button>
         <button class="tab" data-tab="manual">Manual</button>
         <button class="tab" data-tab="about">About</button>
@@ -2175,6 +2245,136 @@ summary {{ cursor: pointer; padding: 6px; }}
                 <li>Use official uninstallers, Windows Settings, or vendor tools instead of deleting program files manually.</li>
             </ul>
             <p><a class="button-link" href="#processTop">Back to top</a></p>
+        </section>
+    </section>
+
+    <section id="tab-security" class="tab-panel hidden">
+        <section class="action-alert info">
+            <h2>Before You Run a Security Check</h2>
+            <p>This future review area is for Windows security-related evidence such as startup entries, browser policies, proxy settings, Defender exclusions, scheduled tasks, file signatures, and SHA-256 hashes.</p>
+            <p>It is designed as a local read-only review workflow. Findings will mean review this, not this is malware.</p>
+        </section>
+
+        <div class="security-layout">
+            <div>
+                <section class="section">
+                    <h2>Security Check Setup</h2>
+                    <p>Choose how the local review should run. Standard Review is the planned first implementation path.</p>
+                    <label style="margin-top:10px"><input id="ackSecurityCheck" type="checkbox" style="width:auto"> I understand this is a review report and not a malware verdict.</label>
+
+                    <h3>Check Mode</h3>
+                    <div class="security-mode-grid">
+                        <label class="security-mode">
+                            <input type="radio" name="securityMode" value="standard" checked>
+                            <strong>Standard Review</strong>
+                            <span class="muted">Startup, browser policy, proxy/DNS, Defender exclusions, scheduled tasks, signatures, hashes, and suspicious command patterns.</span>
+                        </label>
+                        <label class="security-mode">
+                            <input type="radio" name="securityMode" value="advanced" disabled>
+                            <strong>Advanced Review</strong>
+                            <span class="muted">Future deeper checks for WMI, event logs, optional Sysmon, services, and drivers.</span>
+                        </label>
+                    </div>
+
+                    <h3>Options</h3>
+                    <div class="security-option-list">
+                        <label><input id="securityRegistryBackup" type="checkbox"> Create registry backups before reading selected registry locations</label>
+                        <label class="muted"><input type="checkbox" disabled> Compare against previous baseline <span class="security-badge future">future slice</span></label>
+                        <label class="muted"><input type="checkbox" disabled> Include WMI persistence check <span class="security-badge future">future slice</span></label>
+                        <label class="muted"><input type="checkbox" disabled> Include Event Log correlation <span class="security-badge future">future slice</span></label>
+                        <label class="muted"><input type="checkbox" disabled> Include optional Sysmon data if installed <span class="security-badge future">future slice</span></label>
+                    </div>
+
+                    <div class="actions">
+                        <button id="startSecurityCheck" class="primary" disabled>Start Security Check</button>
+                        <button id="cancelSecurityCheck" class="danger" disabled>Cancel Security Check</button>
+                    </div>
+                </section>
+
+                <section class="section">
+                    <h2>Security Check Progress</h2>
+                    <p class="muted">Collectors are not connected yet. This shell reserves the final workflow and safety states.</p>
+                    <div id="securityProgress" class="security-progress">
+                        <div class="security-step"><span>Preparing local review</span><span class="security-step-status">Waiting</span></div>
+                        <div class="security-step"><span>Reading standard security locations</span><span class="security-step-status">Waiting</span></div>
+                        <div class="security-step"><span>Checking file signatures and SHA-256 hashes</span><span class="security-step-status">Waiting</span></div>
+                        <div class="security-step"><span>Building local report</span><span class="security-step-status">Waiting</span></div>
+                    </div>
+                </section>
+            </div>
+
+            <div>
+                <section class="section">
+                    <h2>Security Summary</h2>
+                    <div id="securitySummary" class="grid">
+                        <div class="metric"><div class="label">Overall Status</div><div class="value">Not Run</div></div>
+                        <div class="metric"><div class="label">High Review</div><div class="value">0</div></div>
+                        <div class="metric"><div class="label">Medium Review</div><div class="value">0</div></div>
+                        <div class="metric"><div class="label">Unsigned Files</div><div class="value">0</div></div>
+                        <div class="metric"><div class="label">Baseline Changes</div><div class="value">Future</div></div>
+                    </div>
+                </section>
+
+                <section class="section">
+                    <h2>Findings Review</h2>
+                    <p class="muted">No security check has run yet. Future findings will appear here as review items with evidence, not malware verdicts.</p>
+                    <div class="form-grid">
+                        <label>Search
+                            <input id="securityFindingFilter" placeholder="Finding, file, publisher, path, hash, registry key..." disabled>
+                        </label>
+                        <label>Severity
+                            <select id="securitySeverityFilter" disabled>
+                                <option>All severities</option>
+                                <option>High Review</option>
+                                <option>Medium Review</option>
+                                <option>Low Review</option>
+                                <option>Info</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="table-wrap" style="margin-top:12px">
+                        <table>
+                            <thead><tr><th>Severity</th><th>Score</th><th>Category</th><th>Item</th><th>Reason</th><th>Action</th></tr></thead>
+                            <tbody id="securityFindingsRows"><tr><td colspan="6">No security findings yet. Run a future Security Check to populate this table.</td></tr></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="section">
+                    <h2>Finding Details</h2>
+                    <div id="securityFindingDetail" class="security-detail-panel">
+                        <p class="muted">Select a future finding to see plain-language explanation, technical evidence, file verification, and safe next steps.</p>
+                        <span class="security-badge">What this is</span>
+                        <span class="security-badge">Why it matters</span>
+                        <span class="security-badge">Technical evidence</span>
+                        <span class="security-badge">Safe next steps</span>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <section class="section">
+            <h2>Planned Category Blocks</h2>
+            <p>These blocks are reserved for later implementation slices. Empty states should stay calm and clear when a source is unavailable or has no findings.</p>
+            <div class="category-list">
+                <div class="category-item"><strong>Registry Startup</strong><p>Run keys and startup-folder entries.</p><span class="security-badge future">future collector</span></div>
+                <div class="category-item"><strong>Browser Policy Review</strong><p>Chrome and Edge managed settings, forced extensions, homepage, search, and proxy policies.</p><span class="security-badge future">future collector</span></div>
+                <div class="category-item"><strong>Proxy And DNS Review</strong><p>Proxy, PAC script, DNS server, and hosts-file indicators.</p><span class="security-badge future">future collector</span></div>
+                <div class="category-item"><strong>Microsoft Defender Exclusions</strong><p>Excluded paths, processes, extensions, and IP addresses.</p><span class="security-badge future">future collector</span></div>
+                <div class="category-item"><strong>Scheduled Tasks Review</strong><p>Task actions, triggers, authors, hidden tasks, and suspicious command patterns.</p><span class="security-badge future">future collector</span></div>
+                <div class="category-item"><strong>File Verification</strong><p>File existence, Authenticode signatures, publishers, and SHA-256 hashes.</p><span class="security-badge future">future collector</span></div>
+            </div>
+        </section>
+
+        <section class="section">
+            <h2>Reports</h2>
+            <p>Report downloads will be enabled after security check records exist. Reports may contain local paths, usernames, installed software, command lines, hashes, and configuration details.</p>
+            <div class="actions">
+                <button id="downloadSecurityFullReport" disabled>Download Full Security Report</button>
+                <button id="downloadSecurityFindingsReport" disabled>Download Findings Only</button>
+                <button id="downloadSecurityVerificationReport" disabled>Download Verification Report</button>
+                <button id="downloadSecurityJsonReport" disabled>Download Technical JSON</button>
+            </div>
         </section>
     </section>
 
@@ -2475,7 +2675,29 @@ function showTab(name) {{
             'Large files are not automatically safe to delete.',
             'Unfamiliar processes are not automatically malware.'
         ]);
+    }} else if (name === 'security') {{
+        showActionAlert('info', 'Security Check Shell Opened', 'This tab reserves the planned local read-only security review workflow.', [
+            'Collectors are not connected in this slice.',
+            'Future findings will be review items, not malware verdicts.',
+            'Registry backups require explicit opt-in.'
+        ]);
     }}
+}}
+
+function updateSecurityCheckStartState() {{
+    const acknowledged = $('ackSecurityCheck')?.checked;
+    const button = $('startSecurityCheck');
+    if (!button) return;
+    button.disabled = !acknowledged;
+}}
+
+function startSecurityCheckShell() {{
+    const registryBackup = $('securityRegistryBackup')?.checked;
+    showActionAlert('warning', 'Security Check Not Started Yet', 'The Security Check interface is ready, but collectors will be implemented in the next backend slices.', [
+        'No registry keys, files, scheduled tasks, Defender settings, browser policies, or event logs were read.',
+        `Registry backup opt-in: ${{registryBackup ? 'enabled for future run' : 'not enabled'}}`,
+        'This app still does not delete files, edit registry values, stop programs, quarantine files, upload data, or make malware verdicts.'
+    ]);
 }}
 
 function setProcessPaneWidth(percent) {{
@@ -3281,6 +3503,8 @@ $('refreshProcesses').addEventListener('click', refreshProcesses);
 $('downloadProcessReport').addEventListener('click', downloadProcessReport);
 $('downloadVerificationReport').addEventListener('click', downloadVerificationReport);
 $('exitApp').addEventListener('click', exitApp);
+$('ackSecurityCheck').addEventListener('change', updateSecurityCheckStartState);
+$('startSecurityCheck').addEventListener('click', startSecurityCheckShell);
 $('processFilter').addEventListener('input', renderProcesses);
 $('processPublisherFilter').addEventListener('change', renderProcesses);
 $('processGroupBy').addEventListener('change', renderProcesses);
@@ -3314,6 +3538,7 @@ $('processRows').addEventListener('keydown', event => {{
     showProcessDetail(row.dataset.pid);
 }});
 initProcessPaneResizer();
+updateSecurityCheckStartState();
 loadInitial();
 </script>
 </body>
@@ -3321,7 +3546,7 @@ loadInitial();
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
-    server_version = "DiskUsageDashboard/1.11"
+    server_version = "DiskUsageDashboard/1.12"
 
     def log_message(self, format, *args):
         return
