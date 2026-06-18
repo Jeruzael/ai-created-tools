@@ -1,37 +1,1535 @@
-Implemented the v1.11 Process/report usability update and documented it.
+I based this redesign on your current dashboard context: the existing app is local-first, browser-based, light admin-dashboard style, uses compact tables/panels, and repeatedly explains that it is read-only, local-only, and does not make malware verdicts. 
 
-  Changed:
+Here’s a clean UI design draft you can use for Codex or your documentation.
 
-  - windows/DiskUsageHtmlReport.py:22
-      - Updated app/docs version to 1.11.0 / 1.11.
-      - Moved Publisher explanation into an accessible hover/focus tooltip.
-      - Added compact 5-column Process summary grid for desktop, with mobile wrapping preserved.
-      - Added Verify link and in-page Verification Guide.
-      - Added digital signature and SHA-256 beginner instructions.
-      - Added the same Verification Guide to downloaded grouped and verification reports.
-      - Updated server header to DiskUsageDashboard/1.11.
+# Windows Health & Security Review Dashboard UI Design Draft
 
-  - windows/Windows_Disk_Usage_Dashboard_AppRequirements_v1.11_2026-06-18.md:1
-      - Documented v1.11 requirements, revision history, checklist, and acceptance criteria.
+* Document: Registry and Security Check UI Design
+* App Context: Local Windows browser dashboard
+* Status: Draft
+* Goal: Add a simple, organized, text-heavy but readable security review interface
+* Safety Position: Read-only review tool, not a malware verdict engine
 
-  - README.md:1, windows/README.md:1, windows/dashboard_version.json:1
-      - Updated version and user-facing notes.
+---
 
-  Verification passed:
+## 1. Design Goal
 
-  - python -m py_compile windows\DiskUsageHtmlReport.py
-  - Restarted dashboard server: http://127.0.0.1:8765/, PID 4624
-  - API reports app_version: 1.11.0, documentation_version: 1.11
-  - Confirmed served UI contains tooltip, Verify link, Verification Guide, signature/hash commands, and Back to top.
-  - Confirmed old visible Publisher note is no longer taking layout space.
-  - Process API returned live data: 302 processes, 57 needs-review entries.
-  - Legacy CLI mode still works and generated runtime\disk_usage_html_report_test\legacy-v111-scan-once.html.
+The new UI should help users review Windows security-related areas in a calm, organized, and non-technical way.
 
-  Manual browser check:
+The app should check registry entries, startup locations, scheduled tasks, browser policies, proxy/DNS settings, Defender exclusions, WMI persistence, event logs, optional Sysmon data, file signatures, SHA-256 hashes, suspicious command lines, baseline changes, suspicious names, and known-safe allowlists.
 
-  1. Open http://127.0.0.1:8765/.
-  2. Go to Processes.
-  3. Hover or tab-focus the i beside Publisher.
-  4. Confirm five summary boxes stay on one row at normal desktop width.
-  5. Click Verify and confirm it scrolls to Verification Guide.
-  6. Download grouped/verification reports and confirm the guide appears there too.
+The UI must be detailed enough for technical users, but still understandable for non-technical users.
+
+The main design rule:
+
+> Show evidence clearly. Do not scare the user. Do not say something is malware unless verified by a real security engine. Use “review needed,” “suspicious pattern,” or “high-risk pattern” instead.
+
+---
+
+## 2. Recommended Main Navigation
+
+The current app has tabs like Scan, Results, Processes, History, Manual, and About. For the new security features, add one major tab:
+
+```txt
+Scan
+Results
+Processes
+Security Check
+History
+Manual
+About
+```
+
+The new tab should be:
+
+```txt
+Security Check
+```
+
+Avoid names like:
+
+```txt
+Malware Scanner
+Virus Detector
+Threat Killer
+Cleaner
+```
+
+Better names:
+
+```txt
+Security Check
+Registry Review
+Startup Review
+System Review
+Evidence Review
+```
+
+Recommended final name:
+
+```txt
+Security Check
+```
+
+Because it can cover registry, autoruns, Defender, browser policies, tasks, WMI, event logs, and Sysmon without sounding too aggressive.
+
+---
+
+## 3. Security Check Tab Layout
+
+The Security Check tab should use a guided layout:
+
+```txt
+[Safety Notice]
+[Checkup Setup]
+[Scan Progress]
+[Security Summary]
+[Findings Review]
+[Evidence Details]
+[Timeline]
+[Baseline Changes]
+[Recommended Next Steps]
+[Export Reports]
+```
+
+On desktop, use a two-column layout:
+
+```txt
+Left / Main Column:
+- Checkup setup
+- Summary
+- Findings
+- Timeline
+- Baseline changes
+
+Right / Detail Column:
+- Selected finding details
+- Evidence explanation
+- Non-technical explanation
+- Recommended next steps
+```
+
+On smaller screens, stack everything vertically.
+
+---
+
+## 4. Top Safety Notice
+
+Place this at the top of the Security Check tab.
+
+Title:
+
+```txt
+Before You Run a Security Check
+```
+
+Message:
+
+```txt
+This tool reviews Windows settings, startup locations, registry keys, browser policies, scheduled tasks, and security-related indicators. It does not delete files, edit the registry, stop programs, quarantine files, or make final malware verdicts.
+
+Findings mean “review this,” not “this is malware.”
+```
+
+Use a blue information alert with a left border.
+
+Add a checkbox before running the scan:
+
+```txt
+I understand this is a review report and not a malware verdict.
+```
+
+Start button should be disabled until checked.
+
+---
+
+## 5. Checkup Setup Block
+
+Create one simple setup panel:
+
+Title:
+
+```txt
+Security Check Setup
+```
+
+Subtitle:
+
+```txt
+Choose how deep the local review should be. Standard mode is recommended for most users.
+```
+
+Fields:
+
+```txt
+Check Mode:
+[ Standard Review ] [ Advanced Review ]
+
+Standard Review includes:
+- Registry startup entries
+- Browser policies
+- Proxy settings
+- Defender exclusions
+- Scheduled tasks
+- File signature and SHA-256 checks
+- Suspicious command-line detection
+- Suspicious name detection
+
+Advanced Review also includes:
+- Services and drivers
+- WMI persistence
+- Event Log correlation
+- Optional Sysmon correlation
+- Deeper autoruns-style locations
+```
+
+Recommended controls:
+
+```txt
+[ ] Include Event Log correlation
+[ ] Include WMI persistence check
+[ ] Include optional Sysmon data if installed
+[ ] Include deep Services and Drivers review
+[ ] Create registry backups before registry scan
+[ ] Compare against previous baseline if available
+```
+
+Primary action:
+
+```txt
+Start Security Check
+```
+
+Secondary actions:
+
+```txt
+Load Previous Report
+Create New Baseline
+Compare With Baseline
+```
+
+Danger-style actions should not appear here because the app should not clean or delete anything.
+
+---
+
+## 6. Scan Progress Block
+
+While scanning, show a progress panel.
+
+Title:
+
+```txt
+Security Check Running
+```
+
+Progress steps:
+
+```txt
+1. Preparing local scan
+2. Backing up selected registry keys
+3. Reading registry security locations
+4. Checking autoruns-style startup areas
+5. Checking scheduled tasks
+6. Checking browser policies
+7. Checking proxy and DNS settings
+8. Checking Defender exclusions
+9. Checking WMI persistence
+10. Checking file signatures and SHA-256 hashes
+11. Correlating event logs
+12. Building report
+```
+
+Each step should show one of these statuses:
+
+```txt
+Waiting
+Running
+Complete
+Skipped
+Needs Admin
+Access Denied
+Error
+```
+
+Use calm wording:
+
+```txt
+Some locations may require Administrator access. Skipped items will be listed in the report.
+```
+
+---
+
+## 7. Security Summary Block
+
+After the scan, show summary cards at the top.
+
+Recommended cards:
+
+```txt
+Overall Review Status
+High Review Items
+Medium Review Items
+Baseline Changes
+Unsigned Files
+Suspicious Commands
+Browser Policies
+Defender Exclusions
+Startup Entries
+Scheduled Tasks
+```
+
+Example layout:
+
+```txt
+Overall Review Status: Review Needed
+High Review Items: 3
+Medium Review Items: 12
+Baseline Changes: 8
+Unsigned Files: 5
+Suspicious Commands: 2
+Browser Policies: 4
+Defender Exclusions: 1
+Startup Entries: 18
+Scheduled Tasks: 22
+```
+
+Do not use:
+
+```txt
+Threats Found
+Viruses Found
+Infected Files
+```
+
+Use:
+
+```txt
+Review Items
+Findings
+Indicators
+Evidence
+Needs Review
+```
+
+---
+
+## 8. Risk Score Design
+
+Each finding should have a risk score, but it must be explained clearly.
+
+Score bands:
+
+```txt
+0–20    Info
+21–40   Low
+41–70   Medium
+71–100  High
+```
+
+Badge labels:
+
+```txt
+Info
+Low Review
+Medium Review
+High Review
+```
+
+Avoid:
+
+```txt
+Safe
+Malicious
+Infected
+Clean
+```
+
+Example risk card:
+
+```txt
+Risk Score: 82 / 100
+Label: High Review
+Reason:
+- Starts automatically
+- Runs from AppData
+- File is unsigned
+- Uses hidden PowerShell command
+```
+
+Add explanation:
+
+```txt
+A higher score means the item has more suspicious patterns. It does not prove the file is malware.
+```
+
+---
+
+## 9. Findings Review Layout
+
+Use a table with filters at the top.
+
+Filters:
+
+```txt
+Search finding, file, publisher, path, hash, registry key
+Severity: All / High / Medium / Low / Info
+Category: All / Registry / Startup / Browser / Defender / Tasks / WMI / Proxy / DNS / Event Logs / Sysmon
+Status: All / New / Changed / Known Safe / Missing File / Unsigned / Needs Admin
+Show only baseline changes
+Show only unsigned files
+Show only suspicious commands
+Show only user-writable paths
+```
+
+Table columns:
+
+```txt
+Severity
+Score
+Category
+Item
+Location
+Reason
+Status
+Action
+```
+
+Example row:
+
+```txt
+High Review | 82 | Startup Registry | ChromeUpdate | HKCU\...\Run | Unsigned file in AppData | New since baseline | Details
+```
+
+The table should be compact but readable. Long paths should wrap. Headers should be sticky. Rows should be clickable.
+
+---
+
+## 10. Finding Detail Panel
+
+When a user clicks a finding, open a detail panel on the right side.
+
+Header:
+
+```txt
+Finding Details
+```
+
+Top summary:
+
+```txt
+Item: ChromeUpdate
+Category: Startup Registry
+Severity: High Review
+Risk Score: 82 / 100
+Status: New since last baseline
+```
+
+Detail sections:
+
+```txt
+What Was Found
+Why It Needs Review
+Technical Evidence
+File Verification
+Baseline History
+Timeline
+Recommended Next Steps
+```
+
+---
+
+## 11. Non-Technical Explanation Panel
+
+Every finding should include a plain-language explanation.
+
+Example:
+
+```txt
+What this means:
+This setting tells Windows to start a program automatically when you sign in.
+
+Why this needs review:
+The program starts from your AppData folder and does not have a valid digital signature. Some legitimate apps do this, but unwanted software also commonly uses this method to stay active after reboot.
+
+What you should do:
+Do not delete it yet. First check the file name, publisher, signature status, SHA-256 hash, and whether you recently installed software related to it.
+```
+
+Use this format for every finding:
+
+```txt
+What this is
+Why it matters
+Why it was flagged
+What to check next
+What not to do
+```
+
+This makes the UI text-heavy but still easy to read.
+
+---
+
+## 12. Technical Evidence Panel
+
+Show technical details in a separate collapsible block.
+
+Title:
+
+```txt
+Technical Evidence
+```
+
+Fields:
+
+```txt
+Registry Key
+Value Name
+Value Data
+File Path
+Command Line
+Publisher
+Signature Status
+Signer
+SHA-256
+File Created
+File Modified
+First Seen In Baseline
+Last Seen
+Related Event Logs
+Related Sysmon Events
+```
+
+Use monospace formatting for:
+
+```txt
+Registry paths
+File paths
+Command lines
+Hashes
+Event IDs
+```
+
+Example:
+
+```txt
+Registry Key:
+HKCU\Software\Microsoft\Windows\CurrentVersion\Run
+
+Value Name:
+ChromeUpdate
+
+Value Data:
+"C:\Users\User\AppData\Roaming\ChromeUpdate\update.exe"
+
+SHA-256:
+A4B3...
+```
+
+---
+
+## 13. Category Blocks
+
+Instead of showing one huge mixed report, group findings into category blocks.
+
+Recommended category blocks:
+
+```txt
+Registry Startup
+Autoruns-Style Locations
+File Signature and Hashes
+Suspicious Commands
+Defender Exclusions
+Browser Policies
+Proxy and DNS
+Scheduled Tasks
+WMI Persistence
+Event Log Correlation
+Sysmon Correlation
+Baseline Changes
+Known-Safe Matches
+Suspicious Names
+```
+
+Each block should have:
+
+```txt
+Category title
+Short explanation
+Count summary
+Top findings
+View all button
+```
+
+Example:
+
+```txt
+Browser Policies
+4 items found
+
+This section checks browser settings that can force search engines, homepages, startup pages, proxy settings, or extensions.
+
+Top Finding:
+Chrome ExtensionInstallForcelist was found.
+This may force-install a browser extension.
+```
+
+---
+
+## 14. Baseline Comparison UI
+
+Add a dedicated block:
+
+Title:
+
+```txt
+Baseline Comparison
+```
+
+Subtitle:
+
+```txt
+Compare this scan against a previous known-good state.
+```
+
+Summary cards:
+
+```txt
+New Items
+Changed Items
+Removed Items
+Unchanged Items
+First Scan Items
+```
+
+Table columns:
+
+```txt
+Change Type
+Category
+Item
+Old Value
+New Value
+First Seen
+Last Seen
+Action
+```
+
+Change labels:
+
+```txt
+New
+Changed
+Removed
+Unchanged
+First Seen
+```
+
+Example:
+
+```txt
+New | Startup Registry | ChromeUpdate | Not present before | AppData\ChromeUpdate\update.exe | 2026-06-18 | Details
+```
+
+Important explanation:
+
+```txt
+New or changed does not always mean bad. It only means the setting is different from the previous scan.
+```
+
+---
+
+## 15. Autoruns-Style Coverage UI
+
+Create a block called:
+
+```txt
+Startup and Autoruns Review
+```
+
+Show grouped sections:
+
+```txt
+Registry Run Keys
+Startup Folders
+Scheduled Tasks
+Services
+Drivers
+Explorer Extensions
+Winlogon
+AppInit DLLs
+KnownDLLs
+IFEO Debuggers
+WMI Persistence
+Browser Helper Objects
+```
+
+Each section should show:
+
+```txt
+Total checked
+Found items
+Needs review
+Access denied
+Skipped
+```
+
+This makes the large check easier to understand.
+
+---
+
+## 16. File Signature and SHA-256 UI
+
+Create a block:
+
+```txt
+File Verification
+```
+
+Summary cards:
+
+```txt
+Files Checked
+Valid Signatures
+Unsigned Files
+Invalid Signatures
+Missing Files
+Hashes Calculated
+```
+
+Table columns:
+
+```txt
+File
+Exists
+Signature
+Signer
+SHA-256
+Referenced By
+Status
+```
+
+Signature labels:
+
+```txt
+Valid Signature
+Unsigned
+Invalid Signature
+Hash Mismatch
+Unknown
+File Missing
+```
+
+Simple explanation:
+
+```txt
+A valid signature is a trust signal, but it does not guarantee safety. An unsigned file is not automatically harmful, but it needs more review when it runs automatically or appears in sensitive locations.
+```
+
+---
+
+## 17. Suspicious Command-Line UI
+
+Create a block:
+
+```txt
+Suspicious Command-Line Patterns
+```
+
+Detect and show patterns like:
+
+```txt
+EncodedCommand
+ExecutionPolicy Bypass
+WindowStyle Hidden
+DownloadString
+Invoke-WebRequest
+mshta.exe
+wscript.exe
+cscript.exe
+rundll32.exe
+regsvr32.exe
+certutil.exe
+bitsadmin.exe
+```
+
+Table columns:
+
+```txt
+Command
+Pattern Found
+Referenced By
+Risk Reason
+File Path
+Action
+```
+
+Plain explanation example:
+
+```txt
+This command starts PowerShell with encoded instructions. Encoded commands can be used by administrators, but they are also commonly used to hide what a command is doing.
+```
+
+---
+
+## 18. Defender Exclusion Audit UI
+
+Create a block:
+
+```txt
+Microsoft Defender Exclusions
+```
+
+Show exclusions grouped by type:
+
+```txt
+Excluded Paths
+Excluded Processes
+Excluded Extensions
+Excluded IP Addresses
+```
+
+Highlight dangerous-looking exclusions:
+
+```txt
+C:\
+C:\Users\
+C:\Users\User\AppData\
+*.exe
+powershell.exe
+cmd.exe
+```
+
+Plain explanation:
+
+```txt
+Defender exclusions tell Microsoft Defender what not to scan. Some exclusions are normal for developer tools or game engines, but broad exclusions can weaken protection.
+```
+
+Recommended labels:
+
+```txt
+Normal-Looking
+Broad Exclusion
+User Folder Exclusion
+Process Exclusion
+Needs Review
+```
+
+---
+
+## 19. Browser Hijacker Policy UI
+
+Create a block:
+
+```txt
+Browser Policy Review
+```
+
+Group by browser:
+
+```txt
+Google Chrome
+Microsoft Edge
+Mozilla Firefox
+```
+
+Check for:
+
+```txt
+Forced extensions
+Homepage override
+Startup URL override
+Default search provider override
+Proxy policy
+New tab override
+Extension blocklist or allowlist
+Managed by organization indicators
+```
+
+Plain explanation example:
+
+```txt
+This policy can force your browser to install an extension or use a specific search engine. This can be legitimate in a company-managed device, but on a personal computer it may need review.
+```
+
+Use badges:
+
+```txt
+Forced Extension
+Search Override
+Homepage Override
+Proxy Policy
+Managed Setting
+```
+
+---
+
+## 20. Proxy and DNS UI
+
+Create a block:
+
+```txt
+Proxy and DNS Review
+```
+
+Sections:
+
+```txt
+Windows Proxy Settings
+AutoConfig URL / PAC Script
+DNS Servers
+Hosts File Entries
+Network Adapter DNS
+```
+
+Warning examples:
+
+```txt
+Proxy is enabled
+Unknown proxy server configured
+AutoConfigURL points to unknown URL
+Hosts file redirects security or browser domains
+DNS server changed from automatic to manual
+```
+
+Plain explanation:
+
+```txt
+Proxy and DNS settings can affect where your web traffic goes. Some are normal for work, school, VPNs, or privacy tools. Unknown settings should be reviewed.
+```
+
+---
+
+## 21. Scheduled Task Cross-Check UI
+
+Create a block:
+
+```txt
+Scheduled Tasks Review
+```
+
+Table columns:
+
+```txt
+Task Name
+Trigger
+Action
+Arguments
+Author
+Last Run
+Next Run
+Signature
+Risk
+Action
+```
+
+Flag:
+
+```txt
+Hidden task
+Task runs from AppData
+Task launches PowerShell
+Task uses encoded command
+Task has random-looking name
+Task points to missing file
+```
+
+Plain explanation:
+
+```txt
+Scheduled Tasks can run programs automatically at login, startup, or specific times. This is normal for many apps, but unwanted software may use tasks to come back after reboot.
+```
+
+---
+
+## 22. WMI Persistence UI
+
+Create a block:
+
+```txt
+WMI Persistence Review
+```
+
+Show:
+
+```txt
+Event Filters
+Command Line Consumers
+Active Script Consumers
+Filter-To-Consumer Bindings
+```
+
+Plain explanation:
+
+```txt
+WMI can be used by Windows administrators to automate system actions. Some advanced malware also uses WMI to run commands automatically without a normal startup entry.
+```
+
+Use a stronger warning style here because WMI persistence is less common for normal users.
+
+---
+
+## 23. Event Log Correlation UI
+
+Create a block:
+
+```txt
+Related Event Logs
+```
+
+Purpose:
+
+```txt
+Use Windows logs to add context around when a suspicious item appeared or ran.
+```
+
+Show related logs:
+
+```txt
+PowerShell activity
+Task Scheduler activity
+Service installation events
+Defender detections
+Application errors
+System changes
+```
+
+Table columns:
+
+```txt
+Time
+Log Source
+Event ID
+Related Item
+Summary
+Action
+```
+
+Plain explanation:
+
+```txt
+Event logs do not always prove what happened, but they can help show when a file ran, when a task was created, or whether Defender detected something related.
+```
+
+---
+
+## 24. Optional Sysmon Integration UI
+
+Create a block:
+
+```txt
+Sysmon Correlation
+```
+
+If Sysmon is not installed:
+
+```txt
+Sysmon was not detected on this computer. This section is optional and was skipped.
+```
+
+If installed:
+
+```txt
+Process creation events
+Network connections
+File creation events
+Registry change events
+Image loaded events
+```
+
+Plain explanation:
+
+```txt
+Sysmon provides deeper activity logs if it is already installed. This app does not install Sysmon automatically.
+```
+
+Do not add automatic Sysmon installation. Keep it optional.
+
+---
+
+## 25. Known-Safe Allowlist UI
+
+Create a block:
+
+```txt
+Known-Safe Allowlist
+```
+
+Purpose:
+
+```txt
+Reduce repeated review items by marking trusted publishers, hashes, or paths.
+```
+
+Allowlist types:
+
+```txt
+Trusted Publisher
+Trusted SHA-256 Hash
+Trusted File Path
+Trusted Registry Value
+Trusted Scheduled Task
+```
+
+Important safety text:
+
+```txt
+Allowlisting only lowers review priority. It does not prove that an item is safe forever.
+```
+
+UI actions:
+
+```txt
+Add to local allowlist
+Remove from allowlist
+View allowlist
+Export allowlist
+Import allowlist
+```
+
+Do not upload allowlist data.
+
+---
+
+## 26. Suspicious Name Detection UI
+
+Create a block:
+
+```txt
+Suspicious Name Review
+```
+
+Flag names that imitate Windows components:
+
+```txt
+svhost.exe
+scvhost.exe
+explorer32.exe
+windowss.exe
+defenderupdate.exe
+systemservice.exe
+lsass.exe outside System32
+csrss.exe outside System32
+winlogon.exe outside System32
+runtimebroker.exe outside System32
+```
+
+Plain explanation:
+
+```txt
+The file name looks similar to a Windows component, but its location is unusual. This may be harmless, but it should be reviewed carefully.
+```
+
+---
+
+## 27. Timeline View
+
+Create a visual timeline block:
+
+```txt
+Security Timeline
+```
+
+Show events in chronological order:
+
+```txt
+Baseline created
+Registry value first seen
+File created
+File modified
+Scheduled task created
+Service installed
+Defender detection
+PowerShell event
+Sysmon event
+Finding last seen
+```
+
+Timeline row format:
+
+```txt
+Date / Time
+Event Type
+Item
+Summary
+Severity
+Details
+```
+
+Example:
+
+```txt
+2026-06-18 09:14 PM
+New Startup Entry
+ChromeUpdate
+New HKCU Run value points to AppData executable.
+High Review
+Details
+```
+
+This helps users answer:
+
+```txt
+What changed recently?
+Did this appear after I installed something?
+Did this appear around the time ads or popups started?
+```
+
+---
+
+## 28. Quarantine Recommendation Mode
+
+Do not add automatic quarantine.
+
+Instead, add:
+
+```txt
+Recommended Next Steps
+```
+
+For high-review items, show a safe checklist:
+
+```txt
+1. Do not delete this item yet.
+2. Check the file signature and publisher.
+3. Copy the SHA-256 hash for review.
+4. Check whether you recently installed related software.
+5. Run Microsoft Defender Full Scan or Offline Scan.
+6. Disable only if you understand the effect.
+7. Prefer uninstalling the related app from Windows Settings.
+8. Keep the registry backup before making changes.
+```
+
+Use label:
+
+```txt
+Manual Review Guidance
+```
+
+Avoid button labels like:
+
+```txt
+Quarantine Now
+Delete Threat
+Remove Malware
+Clean PC
+```
+
+Better button labels:
+
+```txt
+Copy Evidence
+Open File Location
+Copy SHA-256
+Show Verification Steps
+Show Safe Next Steps
+Download Review Report
+```
+
+---
+
+## 29. Report Download UI
+
+Add report buttons:
+
+```txt
+Download Full Security Report
+Download Findings Only
+Download Verification Report
+Download Baseline Comparison
+Download Technical JSON
+```
+
+Report should include:
+
+```txt
+Safety statement
+Scan summary
+Registry backups created
+Findings table
+Evidence details
+File signatures
+SHA-256 hashes
+Baseline changes
+Timeline
+Recommended next steps
+Privacy reminder
+```
+
+Privacy note:
+
+```txt
+Reports may contain local file paths, usernames, installed software names, and system configuration. Keep reports private unless you intentionally redact them.
+```
+
+---
+
+## 30. Recommended Color System
+
+Preserve the existing style but slightly improve hierarchy.
+
+Base tokens:
+
+```css
+--bg: #f7f8fb;
+--text: #17202a;
+--muted: #5f6b7a;
+--line: #d9dee7;
+--panel: #ffffff;
+--panel-soft: #eef3f8;
+--accent: #1769aa;
+--accent-strong: #0f4c81;
+--ok: #1f7a4d;
+--warn: #9a5b00;
+--bad: #b42318;
+```
+
+Add security review tokens:
+
+```css
+--info-bg: #eef6ff;
+--info-border: #8bbce8;
+
+--low-bg: #eef7f1;
+--low-border: #8bc99f;
+
+--medium-bg: #fff7e6;
+--medium-border: #e6b65c;
+
+--high-bg: #fff0ee;
+--high-border: #e18b82;
+
+--neutral-bg: #f3f5f8;
+--neutral-border: #cfd6e0;
+
+--code-bg: #f6f8fa;
+```
+
+Use color carefully:
+
+```txt
+Blue = information
+Green = normal/verified/success
+Amber = review needed
+Red = high review or access error
+Gray = skipped/unknown/not checked
+```
+
+Never rely on color alone. Always include text labels.
+
+---
+
+## 31. Block Design Technique
+
+Because the UI is text-heavy, each block should follow the same readable structure:
+
+```txt
+Title
+One-sentence explanation
+Summary badges
+Main content table or list
+Collapsible technical details
+Safe next-step guidance
+```
+
+Example block:
+
+```txt
+Defender Exclusions
+
+Defender exclusions tell Microsoft Defender what not to scan. Some are normal, but broad exclusions can weaken protection.
+
+Badges:
+4 exclusions found
+1 broad exclusion
+2 user-folder exclusions
+1 process exclusion
+
+Table:
+Type | Value | Reason | Severity | Details
+```
+
+This prevents long text from becoming intimidating.
+
+---
+
+## 32. Empty States
+
+Every section should have a clear empty state.
+
+Examples:
+
+```txt
+No Defender exclusions were found.
+No suspicious command-line patterns were found.
+No forced browser extension policies were found.
+No WMI persistence entries were found.
+No baseline exists yet. Create a baseline after reviewing that your system looks normal.
+Sysmon was not detected. This optional section was skipped.
+```
+
+Empty states should be calm and helpful.
+
+---
+
+## 33. Accessibility Requirements
+
+The new UI should preserve and improve accessibility.
+
+Requirements:
+
+```txt
+Clickable rows must also be keyboard focusable.
+Tooltips must open on hover and keyboard focus.
+Risk badges must include text, not only color.
+Tables must support horizontal scroll.
+Long paths and command lines must wrap.
+Buttons must have clear labels.
+The detail panel must have a visible heading.
+The selected row must have a visible focus/selected state.
+```
+
+Use plain language wherever possible.
+
+---
+
+## 34. Suggested UI Copy Standards
+
+Use these phrases:
+
+```txt
+Review Needed
+Suspicious Pattern
+High Review
+Medium Review
+Low Review
+No Obvious Issue
+Known-Safe Match
+Changed Since Baseline
+New Since Baseline
+File Missing
+Unsigned File
+Policy Detected
+Manual Review Recommended
+Not a Malware Verdict
+```
+
+Avoid these phrases:
+
+```txt
+Virus Found
+Malware Confirmed
+Threat Removed
+System Infected
+Clean This Now
+Delete Immediately
+Guaranteed Safe
+Guaranteed Dangerous
+```
+
+---
+
+## 35. Recommended First Version Scope
+
+For the first implementation, prioritize:
+
+```txt
+Security Check tab
+Standard Review mode
+Registry startup scan
+Browser policy check
+Proxy settings check
+Defender exclusion audit
+Scheduled task cross-check
+File signature verification
+SHA-256 hashing
+Suspicious command-line detection
+Risk scoring
+HTML report
+JSON report
+Registry backups
+Non-technical explanation panel
+```
+
+Add later:
+
+```txt
+WMI persistence
+Event Log correlation
+Optional Sysmon integration
+Deep services and drivers
+Known-safe allowlist editor
+Timeline view
+Baseline comparison
+```
+
+However, the UI should already reserve space for all planned features so the app does not need a major redesign later.
+
+---
+
+## 36. Best Overall Page Structure
+
+Recommended final Security Check tab:
+
+```txt
+Security Check
+
+[Blue Safety Notice]
+This is a local read-only review. Findings are not malware verdicts.
+
+[Security Check Setup]
+Mode, options, baseline, registry backup checkbox, Start Security Check.
+
+[Progress / Latest Status]
+Step-by-step scan progress.
+
+[Security Summary]
+Metric cards and overall review status.
+
+[Findings Review]
+Filterable table of findings.
+
+[Selected Finding Details]
+Plain-language explanation, evidence, file verification, timeline, next steps.
+
+[Category Review Blocks]
+Registry, Autoruns, Browser, Defender, Proxy/DNS, Tasks, WMI, Event Logs, Sysmon.
+
+[Baseline Comparison]
+New, changed, removed, unchanged items.
+
+[Security Timeline]
+Events grouped by time.
+
+[Reports]
+Download HTML, JSON, findings-only, verification report.
+
+[Safety Reminder]
+Do not delete registry entries or files based only on this report.
+```
+
+---
+
+## 37. Final Design Principle
+
+The UI should feel like a calm investigation dashboard.
+
+Not scary.
+Not decorative.
+Not too technical at first glance.
+Not hiding details.
+
+The best user experience is:
+
+```txt
+Simple summary first.
+Clear findings second.
+Evidence third.
+Safe explanation fourth.
+Technical details only when needed.
+Manual next steps last.
+```
+
+The app should help users understand what changed, what needs review, why it was flagged, and what safe action they can take next.
+
+My strongest recommendation: make **Security Check** one tab first, then use internal blocks/filters instead of adding too many new main tabs. That keeps the app simple even though the feature set is powerful.
