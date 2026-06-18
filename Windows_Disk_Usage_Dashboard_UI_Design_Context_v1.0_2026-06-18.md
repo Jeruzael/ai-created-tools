@@ -5,7 +5,7 @@
 - Status: Draft
 - Prepared for: Future UI redesign and feature planning prompts
 - Prepared by: Codex
-- Current app version described: v1.16.0
+- Current app version described: v1.17.0
 - Source reviewed: `windows/DiskUsageHtmlReport.py`
 
 ## Purpose
@@ -60,7 +60,7 @@ Top header:
 
 - Left side:
   - Title: `Windows Disk Usage Dashboard`
-  - Subtitle: `Local read-only scan and process review tool. App v1.16.0, docs v1.16.`
+  - Subtitle: `Local read-only scan and process review tool. App v1.17.0, docs v1.17.`
 - Right side:
   - `Exit App` button styled as a danger action.
   - Small helper text: `Server: 127.0.0.1 only` and `Reports stay on this computer.`
@@ -258,7 +258,7 @@ Downloaded process reports:
 
 ## Tab: Security Check
 
-The Security Check tab is currently a v1.16 local read-only Standard Review workflow. It can start, poll, cancel, save a local record, and show collected review findings for startup entries, browser policies, proxy/DNS settings, Microsoft Defender exclusions, scheduled tasks, scoped services summary, command/name review indicators, and referenced file verification.
+The Security Check tab is currently a v1.17 local read-only Standard Review workflow. It can start, poll, cancel, save a local record, and show collected review findings for startup entries, browser policies, proxy/DNS settings, Microsoft Defender exclusions, scheduled tasks, scoped services summary, command/name review indicators, and referenced file verification. Each finding has a normalized 0-100 review score, score-band explanation, and structured plain-language sections.
 
 Current shell elements:
 
@@ -272,7 +272,7 @@ Current shell elements:
 - Summary metric cards showing Not Run and zero counts.
 - Empty findings table with disabled filters.
 - Selectable findings table with plain-language reasons, severity, category, and Details buttons.
-- Finding detail panel with explanation, review reasons, technical evidence, and safe next steps.
+- Finding detail panel with score explanation, `What this is`, `Why it matters`, `Why it was flagged`, `What to check next`, `What not to do`, and separate technical evidence.
 - Review category blocks for Registry Startup, Startup Folder, Browser Policy, Proxy Settings, DNS Settings, Defender Exclusions, Scheduled Tasks, Windows Services Summary, and File Verification.
 - Disabled report buttons for future security reports and technical JSON.
 - Local lifecycle record details after a run completes or is cancelled.
@@ -505,7 +505,7 @@ Results tab: scan summary, scan health, biggest folders, file types, biggest fil
 
 Processes tab: process refresh, grouped report download, verification report download, Verify link, process filters, publisher tooltip, compact summary cards, grouped tree, clickable process table, draggable split pane with Process Details, and a Verification Guide for digital signatures and SHA-256 hashes.
 
-Security Check tab: v1.16 local read-only Standard Review workflow. It has safety acknowledgement, Standard Review mode, disabled Advanced/future options, explicit registry-backup opt-in, progress polling, cancellation, local record details, selectable findings, grouped category blocks, skipped-source details, unsigned-file summary, referenced file verification evidence, and disabled report buttons. It reviews startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, services summary, command/name indicators, and referenced file verification without changing system settings.
+Security Check tab: v1.17 local read-only Standard Review workflow. It has safety acknowledgement, Standard Review mode, disabled Advanced/future options, explicit registry-backup opt-in, progress polling, cancellation, local record details, selectable findings, grouped category blocks, skipped-source details, unsigned-file summary, referenced file verification evidence, normalized review scores, structured plain-language detail sections, and disabled report buttons. It reviews startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, services summary, command/name indicators, and referenced file verification without changing system settings.
 
 History tab: table of saved scans with Open action.
 

@@ -27,8 +27,8 @@ except ImportError:  # pragma: no cover - non-Windows fallback
 
 sys.setrecursionlimit(10000)
 
-APP_VERSION = "1.16.0"
-DOC_VERSION = "1.16"
+APP_VERSION = "1.17.0"
+DOC_VERSION = "1.17"
 APP_DIR = Path(__file__).resolve().parent
 RECORDS_DIR = APP_DIR / "scan_records"
 REPORTS_DIR = APP_DIR / "generated_reports"
@@ -963,8 +963,8 @@ def ensure_version_metadata():
         "documentation_version": DOC_VERSION,
         "last_updated": "2026-06-18",
         "revision_notes": (
-            "Added read-only file verification for referenced files with "
-            "existence, Authenticode signature status, SHA-256, and timestamps."
+            "Added normalized risk scoring, score-band explanations, and "
+            "structured plain-language finding details."
         ),
         "affected_areas": [
             "browser_dashboard",
@@ -1180,7 +1180,7 @@ def security_check_summary(status="not_run", findings=None, skipped_items=None):
 def security_finding(category, title, severity="Info", score=10, status="Found",
                      review_reasons=None, explanation="", next_steps=None,
                      evidence=None, source="local_standard_review"):
-    return {
+    finding = {
         "finding_id": uuid.uuid4().hex,
         "category": category,
         "title": title,
@@ -1198,6 +1198,7 @@ def security_finding(category, title, severity="Info", score=10, status="Found",
         "first_seen": now_iso(),
         "last_seen": now_iso(),
     }
+    return normalize_security_finding(finding)
 
 
 def security_skip(category, message, status="Skipped", detail=None):
@@ -1215,6 +1216,123 @@ SEVERITY_RANK = {
     "Medium Review": 2,
     "High Review": 3,
 }
+
+
+SCORE_BANDS = [
+    (70, "High Review", "High review score: multiple or stronger suspicious patterns were seen. This is still not proof of malware."),
+    (40, "Medium Review", "Medium review score: one or more meaningful review signals were seen. A higher score means more suspicious patterns, not proof of malware."),
+    (15, "Low Review", "Low review score: a weak or routine review signal was seen. It may be normal, but it is worth checking if unfamiliar."),
+    (0, "Info", "Info score: this item is mainly informational or no obvious issue was found."),
+]
+
+CATEGORY_LANGUAGE = {
+    "Registry Startup": {
+        "what": "A Windows registry startup entry can start a program when Windows starts or when a user signs in.",
+        "matters": "Startup entries are useful for normal apps and updaters, but unfamiliar entries can affect every sign-in.",
+        "not_do": "Do not delete registry startup values until you confirm the owning app and have a recovery plan.",
+    },
+    "Startup Folder": {
+        "what": "A Startup folder item is a file or shortcut that can run when the user signs in.",
+        "matters": "This location is easy for users and installers to modify, so unfamiliar items deserve review.",
+        "not_do": "Do not delete shortcuts blindly; confirm the owning software first.",
+    },
+    "Browser Policy": {
+        "what": "A browser policy is a managed Chrome or Edge setting stored by Windows policy.",
+        "matters": "Policies can force extensions, search, homepage, startup, or proxy behavior.",
+        "not_do": "Do not remove browser policies without confirming whether work, school, or security software manages this device.",
+    },
+    "Proxy Settings": {
+        "what": "Proxy settings control whether web traffic is routed through another server or PAC script.",
+        "matters": "Proxy settings can be normal for VPNs, work, school, or privacy tools, but unknown values should be checked.",
+        "not_do": "Do not change proxy settings until you know whether a VPN, workplace, school, or security tool requires them.",
+    },
+    "DNS Settings": {
+        "what": "DNS settings decide which servers translate website names into network addresses.",
+        "matters": "Custom DNS can be intentional, but unfamiliar DNS servers can affect browsing and app connectivity.",
+        "not_do": "Do not change DNS settings blindly; record current values before making network changes.",
+    },
+    "Microsoft Defender Exclusions": {
+        "what": "A Defender exclusion tells Microsoft Defender what not to scan.",
+        "matters": "Some exclusions are needed by trusted software, but broad or unfamiliar exclusions can reduce protection.",
+        "not_do": "Do not remove exclusions blindly; some business, developer, or security tools require them.",
+    },
+    "Scheduled Task": {
+        "what": "A scheduled task can run a program on a schedule, at sign-in, during maintenance, or after system events.",
+        "matters": "Many scheduled tasks are normal, but unfamiliar actions or command patterns should be reviewed.",
+        "not_do": "Do not disable scheduled tasks blindly; changing tasks can break updates, drivers, or installed apps.",
+    },
+    "Windows Service": {
+        "what": "A Windows service is a background component that can run with Windows.",
+        "matters": "Services are common for Windows and installed software, but unusual service commands deserve review.",
+        "not_do": "Do not disable services blindly; service changes can break Windows or applications.",
+    },
+    "File Verification": {
+        "what": "File verification checks a referenced file for existence, signature status, SHA-256 hash, and timestamps.",
+        "matters": "A valid signature and stable hash help with review; missing or unsigned files are signals to investigate, not final verdicts.",
+        "not_do": "Do not delete or quarantine a file based only on signature or hash information from this dashboard.",
+    },
+}
+
+
+def clamp_score(score):
+    try:
+        parsed = int(score)
+    except (TypeError, ValueError):
+        parsed = 0
+    return max(0, min(100, parsed))
+
+
+def severity_for_score(score):
+    for minimum, label, _explanation in SCORE_BANDS:
+        if score >= minimum:
+            return label
+    return "Info"
+
+
+def score_explanation_for_score(score):
+    for minimum, _label, explanation in SCORE_BANDS:
+        if score >= minimum:
+            return explanation
+    return SCORE_BANDS[-1][2]
+
+
+def plain_language_sections_for_finding(finding):
+    category = finding.get("category") or "Finding"
+    language = CATEGORY_LANGUAGE.get(category, {})
+    reasons = finding.get("review_reasons") or []
+    next_steps = finding.get("recommended_next_steps") or []
+    status = finding.get("status") or "Found"
+    score = finding.get("score", 0)
+    severity = finding.get("severity") or severity_for_score(score)
+    why_flagged = "; ".join(str(reason) for reason in reasons) if reasons else f"Status: {status}."
+    what_next = " ".join(str(step) for step in next_steps) if next_steps else "Review the evidence and compare it with software you recognize."
+    return {
+        "what_this_is": language.get("what") or finding.get("plain_explanation") or "This is a local review item collected by the Security Check.",
+        "why_it_matters": language.get("matters") or "This item can affect startup, browser, network, service, task, or file-review behavior on this computer.",
+        "why_it_was_flagged": why_flagged,
+        "what_to_check_next": what_next,
+        "what_not_to_do": language.get("not_do") or "Do not delete files, disable entries, or change settings based only on this review item.",
+        "score_explanation": f"Score {score}/100, {severity}. {score_explanation_for_score(score)}",
+    }
+
+
+def normalize_security_finding(finding):
+    finding["score"] = clamp_score(finding.get("score", 0))
+    finding["severity"] = severity_for_score(finding["score"])
+    finding["score_explanation"] = score_explanation_for_score(finding["score"])
+    if not finding.get("review_reasons"):
+        finding["review_reasons"] = ["No specific review reason was recorded"]
+    if not finding.get("recommended_next_steps"):
+        finding["recommended_next_steps"] = [
+            "Review the evidence before making changes.",
+            "Ask a technical reviewer if the item is unfamiliar.",
+        ]
+    finding["plain_language_sections"] = plain_language_sections_for_finding(finding)
+    return finding
+
+
+def normalize_security_findings(findings):
+    return [normalize_security_finding(finding) for finding in findings]
 
 COMMAND_REVIEW_PATTERNS = [
     (
@@ -1358,7 +1476,7 @@ def apply_command_review_to_finding(finding, command_text, path_hint=None):
             reasons.append(indicator["label"])
         finding["severity"] = stronger_severity(finding.get("severity", "Info"), indicator["severity"])
         finding["score"] = max(int(finding.get("score") or 0), int(indicator["score"]))
-    return finding
+    return normalize_security_finding(finding)
 
 
 def as_list(value):
@@ -2827,6 +2945,7 @@ class DashboardApp:
                     "status": "Skipped",
                     "message": "Security report downloads are planned for a later slice.",
                 })
+                active["findings"] = normalize_security_findings(active["findings"])
                 active["summary"] = security_check_summary("running", active["findings"], active["skipped_items"])
         except ScanCancelled as ex:
             status = "cancelled"
@@ -4198,6 +4317,7 @@ function renderSecurityFindingDetail(status, findingId) {{
         return;
     }}
     state.selectedSecurityFindingId = findingId;
+    const sections = finding.plain_language_sections || {{}};
     const reasons = (finding.review_reasons || []).map(item => `<li>${{esc(item)}}</li>`).join('') || '<li>No specific reason recorded.</li>';
     const nextSteps = (finding.recommended_next_steps || []).map(item => `<li>${{esc(item)}}</li>`).join('') || '<li>Review the evidence before making changes.</li>';
     const evidence = Object.entries(finding.evidence || {{}})
@@ -4207,14 +4327,23 @@ function renderSecurityFindingDetail(status, findingId) {{
         <h3>${{esc(finding.title || 'Finding Detail')}}</h3>
         <span class="security-badge">${{esc(finding.severity || 'Info')}}</span>
         <span class="security-badge">${{esc(finding.category || 'Uncategorized')}}</span>
-        <p>${{esc(finding.plain_explanation || 'Review this item with the evidence shown below.')}}</p>
+        <span class="security-badge">Score ${{esc(finding.score ?? 0)}}/100</span>
+        <p>${{esc(sections.score_explanation || finding.score_explanation || 'A higher score means more suspicious patterns, not proof of malware.')}}</p>
+        <h3>What This Is</h3>
+        <p>${{esc(sections.what_this_is || finding.plain_explanation || 'This is a local review item collected by the Security Check.')}}</p>
         <h3>Why It Matters</h3>
+        <p>${{esc(sections.why_it_matters || 'This item may affect startup, network, browser, service, task, or file-review behavior.')}}</p>
+        <h3>Why It Was Flagged</h3>
+        <p>${{esc(sections.why_it_was_flagged || 'Review reasons are listed below.')}}</p>
         <ul>${{reasons}}</ul>
+        <h3>What To Check Next</h3>
+        <p>${{esc(sections.what_to_check_next || 'Review the recommended next steps below.')}}</p>
+        <ul>${{nextSteps}}</ul>
+        <h3>What Not To Do</h3>
+        <p>${{esc(sections.what_not_to_do || 'Do not delete files, disable entries, or change settings based only on this review item.')}}</p>
         <h3>Technical Evidence</h3>
         <pre>${{esc(evidence || 'No technical evidence recorded.')}}</pre>
-        <h3>Safe Next Steps</h3>
-        <ul>${{nextSteps}}</ul>
-        <p class="muted">Do not delete files, remove registry values, or change Defender/network settings based only on this review item.</p>
+        <p class="muted">This is not a malware verdict. Use trusted security tools and vendor documentation for final decisions.</p>
     `;
 }}
 
@@ -5199,7 +5328,7 @@ pollSecurityStatus();
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
-    server_version = "DiskUsageDashboard/1.16"
+    server_version = "DiskUsageDashboard/1.17"
 
     def log_message(self, format, *args):
         return

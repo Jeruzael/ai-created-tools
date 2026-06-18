@@ -1,37 +1,32 @@
- Implemented the next slice: Security Check v1.16, Slice 5 File Verification.
+Implemented the next slice: Security Check v1.17, Slice 6 Risk Scoring and Plain-Language Explanations.
 
   What changed:
 
-  - Added read-only file verification after Standard Review collectors.
-  - Extracts referenced file paths from startup entries, scheduled tasks, services, Defender exclusions, and command
-    evidence.
+  - Every Security Check finding now gets a normalized 0-100 review score.
+  - Severity is assigned by score band: Info, Low Review, Medium Review, High Review.
+  - Every finding now includes:
+      - What this is
+      - Why it matters
+      - Why it was flagged
+      - What to check next
+      - What not to do
+      - score explanation
 
-  - For existing files, records:
-      - existence
-      - Authenticode signature status
-      - signer details when available
-      - SHA-256 hash
-      - created/modified timestamps
-      - file size
-
-  - Missing referenced files are marked File Missing.
-  - Unsigned/problematic signatures are review signals, not malware verdicts.
-  - Signature/hash failures are recorded as unavailable/skipped details instead of crashing the check.
-  - Security Check summary now includes Unsigned Files.
-  - File Verification is now an active category in the UI and links users to the existing Verification Guide.
+  - The detail panel now shows those sections separately from technical evidence.
+  - Score explanations explicitly say higher scores mean more suspicious patterns, not proof of malware.
+  - Info and No Obvious Issue findings remain supported for known-normal/informational items.
 
   Verification passed:
 
   - python -m py_compile windows\DiskUsageHtmlReport.py
-  - Fresh v1.16 Security Check completed with 421 findings.
-  - File Verification produced 95 findings.
-  - 88 referenced files had SHA-256 hashes.
-  - Signature statuses included Valid and NotSigned.
-  - Missing file behavior verified with File Missing.
+  - Fresh v1.17 Security Check completed with 421 findings.
+  - missing_sections: 0
+  - bad_scores: 0
+  - No Obvious Issue findings still present.
   - API still rejects Security Check start without acknowledgement: 400.
   - Served browser JavaScript parses successfully.
   - Legacy --scan-once still works.
 
-  The v1.16 server is running at:
+  The v1.17 server is running at:
 
   http://127.0.0.1:8765/

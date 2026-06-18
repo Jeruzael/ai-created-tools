@@ -1,8 +1,8 @@
 {
-  "app_version": "1.16.0",
-  "documentation_version": "1.16",
+  "app_version": "1.17.0",
+  "documentation_version": "1.17",
   "last_updated": "2026-06-18",
-  "revision_notes": "Added read-only file verification for referenced files with existence, Authenticode signature status, SHA-256, and timestamps.",
+  "revision_notes": "Added normalized risk scoring, score-band explanations, and structured plain-language finding details.",
   "affected_areas": [
     "browser_dashboard",
     "security_check_ui",

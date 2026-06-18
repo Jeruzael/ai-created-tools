@@ -5,7 +5,7 @@
 - Status: Draft with initial scope decisions
 - Source: `windows/temp.txt`
 - Current app version baseline: v1.11.0
-- Latest implemented app version: v1.16.0
+- Latest implemented app version: v1.17.0
 - Prepared by: Codex
 
 ## 1. Request Understanding
@@ -362,6 +362,8 @@ Acceptance criteria:
 
 ### Slice 6: Risk Scoring And Plain-Language Explanations
 
+Status: **Implemented in v1.17**
+
 Complexity: **M/L**
 
 Goal:
@@ -378,11 +380,11 @@ Includes:
 
 Acceptance criteria:
 
-- [ ] Each finding has a score from 0 to 100.
-- [ ] Each finding has a severity label.
-- [ ] Each finding explains `What this is`, `Why it matters`, `Why it was flagged`, `What to check next`, and `What not to do`.
-- [ ] Score explanation states that a higher score means more suspicious patterns, not proof of malware.
-- [ ] Known normal items can appear as `Info` or `No Obvious Issue`.
+- [x] Each finding has a score from 0 to 100.
+- [x] Each finding has a severity label.
+- [x] Each finding explains `What this is`, `Why it matters`, `Why it was flagged`, `What to check next`, and `What not to do`.
+- [x] Score explanation states that a higher score means more suspicious patterns, not proof of malware.
+- [x] Known normal items can appear as `Info` or `No Obvious Issue`.
 
 ### Slice 7: Findings Review UI And Detail Panel
 
