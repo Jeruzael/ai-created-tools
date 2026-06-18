@@ -5,7 +5,7 @@
 - Status: Draft with initial scope decisions
 - Source: `windows/temp.txt`
 - Current app version baseline: v1.11.0
-- Latest implemented app version: v1.20.0
+- Latest implemented app version: v1.21.0
 - Prepared by: Codex
 
 ## 1. Request Understanding
@@ -480,6 +480,8 @@ Defer this until after Standard Review works reliably. Best practice is not to c
 
 ### Slice 10: Advanced Review Collectors
 
+Status: **Implemented in v1.21**
+
 Complexity: **XL**
 
 Goal:
@@ -496,12 +498,12 @@ Includes:
 
 Acceptance criteria:
 
-- [ ] Advanced Review clearly explains that it may take longer and may need Administrator permission.
-- [ ] WMI persistence results are grouped into filters, consumers, and bindings.
-- [ ] Event log correlation shows related time, source, event ID, summary, and item.
-- [ ] Sysmon section is skipped calmly when Sysmon is not installed.
-- [ ] The app does not install Sysmon automatically.
-- [ ] Advanced failures do not break Standard Review results.
+- [x] Advanced Review clearly explains that it may take longer and may need Administrator permission.
+- [x] WMI persistence results are grouped into filters, consumers, and bindings.
+- [x] Event log correlation shows related time, source, event ID, summary, and item.
+- [x] Sysmon section is skipped calmly when Sysmon is not installed.
+- [x] The app does not install Sysmon automatically.
+- [x] Advanced failures do not break Standard Review results.
 
 Recommendation:
 

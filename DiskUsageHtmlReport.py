@@ -27,8 +27,8 @@ except ImportError:  # pragma: no cover - non-Windows fallback
 
 sys.setrecursionlimit(10000)
 
-APP_VERSION = "1.20.0"
-DOC_VERSION = "1.20"
+APP_VERSION = "1.21.0"
+DOC_VERSION = "1.21"
 APP_DIR = Path(__file__).resolve().parent
 RECORDS_DIR = APP_DIR / "scan_records"
 REPORTS_DIR = APP_DIR / "generated_reports"
@@ -965,14 +965,16 @@ def ensure_version_metadata():
         "documentation_version": DOC_VERSION,
         "last_updated": "2026-06-18",
         "revision_notes": (
-            "Added local Security Check baseline creation and comparison "
-            "with new, changed, unchanged, and removed item labels."
+            "Added Advanced Review collectors for WMI persistence, event log "
+            "correlation, optional Sysmon data, deeper services/drivers, and "
+            "Explorer autorun-style locations."
         ),
         "affected_areas": [
             "browser_dashboard",
             "security_check_ui",
             "security_check_api",
             "security_check_collectors",
+            "security_check_advanced_collectors",
             "security_check_reports",
             "security_check_baselines",
             "local_records",
@@ -1314,6 +1316,12 @@ def security_check_steps():
             "label": "Checking file signatures and SHA-256 hashes",
             "status": "Waiting",
             "detail": "Waiting to verify referenced files for existence, signature status, SHA-256, and timestamps.",
+        },
+        {
+            "id": "advanced_review",
+            "label": "Running optional Advanced Review collectors",
+            "status": "Waiting",
+            "detail": "Advanced Review is optional and may need Administrator permission for complete WMI, event log, Sysmon, driver, and Explorer extension data.",
         },
         {
             "id": "record",
@@ -2483,6 +2491,374 @@ ConvertTo-Json -Depth 5
     return findings, skipped
 
 
+def collect_wmi_persistence():
+    command = r"""
+$ErrorActionPreference = 'Stop'
+$filters = @(Get-CimInstance -Namespace root/subscription -ClassName __EventFilter -ErrorAction Stop | ForEach-Object {
+    [PSCustomObject]@{
+        GroupType = 'Filter'
+        Name = $_.Name
+        Query = $_.Query
+        QueryLanguage = $_.QueryLanguage
+        EventNamespace = $_.EventNamespace
+        CreatorSID = if ($_.CreatorSID) { [Convert]::ToBase64String($_.CreatorSID) } else { $null }
+    }
+})
+$commandConsumers = @(Get-CimInstance -Namespace root/subscription -ClassName CommandLineEventConsumer -ErrorAction Stop | ForEach-Object {
+    [PSCustomObject]@{
+        GroupType = 'Consumer'
+        ConsumerType = 'CommandLineEventConsumer'
+        Name = $_.Name
+        CommandLineTemplate = $_.CommandLineTemplate
+        ExecutablePath = $_.ExecutablePath
+        WorkingDirectory = $_.WorkingDirectory
+    }
+})
+$scriptConsumers = @(Get-CimInstance -Namespace root/subscription -ClassName ActiveScriptEventConsumer -ErrorAction Stop | ForEach-Object {
+    [PSCustomObject]@{
+        GroupType = 'Consumer'
+        ConsumerType = 'ActiveScriptEventConsumer'
+        Name = $_.Name
+        ScriptingEngine = $_.ScriptingEngine
+        ScriptFilename = $_.ScriptFilename
+        ScriptTextPreview = if ($_.ScriptText) { $_.ScriptText.Substring(0, [Math]::Min(500, $_.ScriptText.Length)) } else { $null }
+    }
+})
+$bindings = @(Get-CimInstance -Namespace root/subscription -ClassName __FilterToConsumerBinding -ErrorAction Stop | ForEach-Object {
+    [PSCustomObject]@{
+        GroupType = 'Binding'
+        Filter = [string]$_.Filter
+        Consumer = [string]$_.Consumer
+        CreatorSID = if ($_.CreatorSID) { [Convert]::ToBase64String($_.CreatorSID) } else { $null }
+    }
+})
+@($filters + $commandConsumers + $scriptConsumers + $bindings) | ConvertTo-Json -Depth 8 -Compress
+"""
+    findings = []
+    skipped = []
+    try:
+        rows = run_powershell_json(command, timeout_seconds=35)
+        grouped = defaultdict(int)
+        for row in rows:
+            group_type = row.get("GroupType") or "WMI Item"
+            grouped[group_type] += 1
+            title = row.get("Name") or row.get("Consumer") or row.get("Filter") or group_type
+            command_text = row.get("CommandLineTemplate") or row.get("ExecutablePath") or row.get("ScriptFilename") or row.get("ScriptTextPreview") or ""
+            severity = "Medium Review" if group_type in ("Consumer", "Binding") else "Low Review"
+            finding = security_finding(
+                category="WMI Persistence",
+                title=f"{group_type}: {title}",
+                severity=severity,
+                score=55 if severity == "Medium Review" else 35,
+                status="Needs Review",
+                review_reasons=[f"WMI {group_type.lower()} is present"],
+                explanation=(
+                    "Permanent WMI event subscriptions can run commands or scripts when system events occur. "
+                    "They are uncommon on many personal computers and should be reviewed when present."
+                ),
+                evidence={key.lower(): value for key, value in row.items()},
+                next_steps=[
+                    "Confirm whether the WMI filter, consumer, and binding belongs to trusted management, security, or vendor software.",
+                    "Do not delete WMI subscriptions blindly; collect evidence and use trusted security tools for decisions.",
+                ],
+                source="advanced_review",
+            )
+            if command_text:
+                apply_command_review_to_finding(finding, command_text)
+            findings.append(finding)
+        if not rows:
+            findings.append(security_finding(
+                category="WMI Persistence",
+                title="No WMI persistence items reported",
+                severity="Info",
+                score=0,
+                status="No Obvious Issue",
+                review_reasons=["No WMI filters, consumers, or bindings were returned from root/subscription"],
+                explanation="No permanent WMI event subscription items were reported by the read-only Advanced Review collector.",
+                evidence={"namespace": "root/subscription", "groups": {"Filter": 0, "Consumer": 0, "Binding": 0}},
+                source="advanced_review",
+            ))
+    except Exception as ex:
+        skipped.append(security_skip("WMI Persistence", "Could not read WMI persistence data. Administrator permission may be required.", "Error", str(ex)))
+    return findings, skipped
+
+
+def collect_event_log_correlation():
+    command = r"""
+$ErrorActionPreference = 'SilentlyContinue'
+$start = (Get-Date).AddDays(-7)
+$queries = @(
+    @{ LogName = 'Microsoft-Windows-Windows Defender/Operational'; Id = @(1116,1117,1121,5007); Label = 'Microsoft Defender' },
+    @{ LogName = 'Microsoft-Windows-PowerShell/Operational'; Id = @(4103,4104); Label = 'PowerShell' },
+    @{ LogName = 'System'; Id = @(7045); Label = 'Service Control Manager' }
+)
+$items = foreach ($query in $queries) {
+    try {
+        Get-WinEvent -FilterHashtable @{ LogName = $query.LogName; Id = $query.Id; StartTime = $start } -MaxEvents 40 -ErrorAction Stop | ForEach-Object {
+            [PSCustomObject]@{
+                TimeCreated = [string]$_.TimeCreated
+                Source = $_.ProviderName
+                LogName = $_.LogName
+                EventId = $_.Id
+                LevelDisplayName = $_.LevelDisplayName
+                Summary = ($_.Message -replace '\s+', ' ').Substring(0, [Math]::Min(500, ($_.Message -replace '\s+', ' ').Length))
+                RelatedItem = $query.Label
+            }
+        }
+    } catch {
+        [PSCustomObject]@{
+            TimeCreated = $null
+            Source = 'Collector'
+            LogName = $query.LogName
+            EventId = $null
+            LevelDisplayName = 'Skipped'
+            Summary = $_.Exception.Message
+            RelatedItem = $query.Label
+        }
+    }
+}
+$items | ConvertTo-Json -Depth 6 -Compress
+"""
+    findings = []
+    skipped = []
+    try:
+        rows = run_powershell_json(command, timeout_seconds=45)
+        for row in rows:
+            if row.get("LevelDisplayName") == "Skipped":
+                skipped.append(security_skip("Event Log Correlation", f"Could not read {row.get('LogName')}.", "Skipped", row.get("Summary")))
+                continue
+            event_id = row.get("EventId")
+            title = f"{row.get('RelatedItem') or row.get('Source')}: Event {event_id}"
+            severity = "Medium Review" if event_id in (1116, 7045, 4104) else "Low Review"
+            findings.append(security_finding(
+                category="Event Log Correlation",
+                title=title,
+                severity=severity,
+                score=50 if severity == "Medium Review" else 30,
+                status="Found",
+                review_reasons=["Related Windows event log entry was found"],
+                explanation=(
+                    "Advanced Review checks recent Windows event logs for selected security-relevant events. "
+                    "Events can be normal administrative or security-tool activity and are not malware verdicts."
+                ),
+                evidence={
+                    "time_created": row.get("TimeCreated"),
+                    "source": row.get("Source"),
+                    "log_name": row.get("LogName"),
+                    "event_id": event_id,
+                    "level": row.get("LevelDisplayName"),
+                    "summary": row.get("Summary"),
+                    "related_item": row.get("RelatedItem"),
+                },
+                next_steps=[
+                    "Review the event time, source, event ID, and summary in context with known installs, updates, or security scans.",
+                    "Use Event Viewer or trusted security tooling for deeper investigation before changing settings.",
+                ],
+                source="advanced_review",
+            ))
+        if not findings and not skipped:
+            findings.append(security_finding(
+                category="Event Log Correlation",
+                title="No selected recent event log entries reported",
+                severity="Info",
+                score=0,
+                status="No Obvious Issue",
+                review_reasons=["No selected Defender, PowerShell, or service-install events were returned for the recent window"],
+                explanation="No selected recent event log entries were returned by the Advanced Review collector.",
+                evidence={"lookback_days": 7},
+                source="advanced_review",
+            ))
+    except Exception as ex:
+        skipped.append(security_skip("Event Log Correlation", "Could not run event log correlation.", "Error", str(ex)))
+    return findings, skipped
+
+
+def collect_sysmon_correlation():
+    command = r"""
+$logName = 'Microsoft-Windows-Sysmon/Operational'
+$log = Get-WinEvent -ListLog $logName -ErrorAction SilentlyContinue
+if (-not $log -or -not $log.IsEnabled) {
+    [PSCustomObject]@{ SysmonInstalled = $false; Skipped = $true; Message = 'Sysmon operational log was not detected or is not enabled.' } | ConvertTo-Json -Depth 5 -Compress
+    return
+}
+$start = (Get-Date).AddDays(-3)
+Get-WinEvent -FilterHashtable @{ LogName = $logName; Id = @(1,3,7,11,13); StartTime = $start } -MaxEvents 60 -ErrorAction Stop |
+ForEach-Object {
+    [PSCustomObject]@{
+        SysmonInstalled = $true
+        TimeCreated = [string]$_.TimeCreated
+        Source = $_.ProviderName
+        LogName = $_.LogName
+        EventId = $_.Id
+        Summary = ($_.Message -replace '\s+', ' ').Substring(0, [Math]::Min(700, ($_.Message -replace '\s+', ' ').Length))
+    }
+} | ConvertTo-Json -Depth 6 -Compress
+"""
+    findings = []
+    skipped = []
+    try:
+        rows = run_powershell_json(command, timeout_seconds=35)
+        if rows and rows[0].get("Skipped"):
+            skipped.append(security_skip("Sysmon Correlation", rows[0].get("Message") or "Sysmon was not detected.", "Skipped"))
+            return findings, skipped
+        for row in rows:
+            event_id = row.get("EventId")
+            findings.append(security_finding(
+                category="Sysmon Correlation",
+                title=f"Sysmon Event {event_id}",
+                severity="Low Review",
+                score=30,
+                status="Found",
+                review_reasons=["Optional Sysmon event was found"],
+                explanation=(
+                    "Sysmon events can provide deeper technical evidence if Sysmon is already installed. "
+                    "This app does not install Sysmon and only reads the existing local log when available."
+                ),
+                evidence={
+                    "time_created": row.get("TimeCreated"),
+                    "source": row.get("Source"),
+                    "log_name": row.get("LogName"),
+                    "event_id": event_id,
+                    "summary": row.get("Summary"),
+                },
+                next_steps=[
+                    "Correlate Sysmon events with known software activity and other findings before taking action.",
+                    "Use your trusted security workflow for final decisions.",
+                ],
+                source="advanced_review",
+            ))
+        if not findings:
+            findings.append(security_finding(
+                category="Sysmon Correlation",
+                title="No selected recent Sysmon events reported",
+                severity="Info",
+                score=0,
+                status="No Obvious Issue",
+                review_reasons=["Sysmon log was present but no selected recent events were returned"],
+                explanation="Sysmon appears available, but no selected recent Sysmon event IDs were returned for the current query.",
+                evidence={"lookback_days": 3, "event_ids": [1, 3, 7, 11, 13]},
+                source="advanced_review",
+            ))
+    except Exception as ex:
+        skipped.append(security_skip("Sysmon Correlation", "Could not read optional Sysmon data. The app does not install Sysmon.", "Error", str(ex)))
+    return findings, skipped
+
+
+def collect_deep_services_and_drivers():
+    command = r"""
+$services = Get-CimInstance Win32_Service | Select-Object Name,DisplayName,State,StartMode,PathName,StartName,ServiceType
+$drivers = Get-CimInstance Win32_SystemDriver | Select-Object Name,DisplayName,State,StartMode,PathName,ServiceType
+[PSCustomObject]@{
+    Services = @($services)
+    Drivers = @($drivers)
+} | ConvertTo-Json -Depth 7 -Compress
+"""
+    findings = []
+    skipped = []
+    try:
+        rows = run_powershell_json(command, timeout_seconds=45)
+        data = rows[0] if rows else {}
+        services = as_list(data.get("Services"))
+        drivers = as_list(data.get("Drivers"))
+        findings.append(security_finding(
+            category="Advanced Services And Drivers",
+            title="Advanced services and drivers summary",
+            severity="Info",
+            score=0,
+            status="Found",
+            review_reasons=["Advanced services and drivers were summarized in read-only mode"],
+            explanation="Advanced Review summarizes services and kernel/system drivers and flags only entries with command or path review indicators.",
+            evidence={
+                "services_total": len(services),
+                "drivers_total": len(drivers),
+                "automatic_services": len([row for row in services if str(row.get("StartMode") or "").lower() == "auto"]),
+                "running_drivers": len([row for row in drivers if str(row.get("State") or "").lower() == "running"]),
+            },
+            source="advanced_review",
+        ))
+        for group_name, rows_to_check in (("Service", services), ("Driver", drivers)):
+            for row in rows_to_check:
+                path = row.get("PathName") or ""
+                indicators = command_review_indicators(path)
+                if not indicators:
+                    continue
+                finding = security_finding(
+                    category="Advanced Services And Drivers",
+                    title=f"{group_name}: {row.get('DisplayName') or row.get('Name') or 'Unnamed'}",
+                    severity="Low Review",
+                    score=38,
+                    status="Needs Review",
+                    review_reasons=[f"{group_name} path has review indicators"],
+                    explanation=(
+                        "Advanced Review found a service or driver path with local command/path indicators. "
+                        "This is review evidence only, not a safety verdict."
+                    ),
+                    evidence={
+                        "item_type": group_name,
+                        "name": row.get("Name"),
+                        "display_name": row.get("DisplayName"),
+                        "state": row.get("State"),
+                        "start_mode": row.get("StartMode"),
+                        "path_name": path,
+                        "start_name": row.get("StartName"),
+                        "service_type": row.get("ServiceType"),
+                    },
+                    next_steps=[
+                        "Confirm the service or driver belongs to trusted software before changing anything.",
+                        "Do not disable drivers or services blindly because Windows or installed apps can break.",
+                    ],
+                    source="advanced_review",
+                )
+                apply_command_review_to_finding(finding, path)
+                findings.append(finding)
+    except Exception as ex:
+        skipped.append(security_skip("Advanced Services And Drivers", "Could not read advanced services and drivers.", "Error", str(ex)))
+    return findings, skipped
+
+
+def collect_explorer_autorun_locations():
+    locations = [
+        ("HKCU", winreg.HKEY_CURRENT_USER if winreg else None, r"Software\Microsoft\Windows\CurrentVersion\Explorer\ShellIconOverlayIdentifiers"),
+        ("HKLM", winreg.HKEY_LOCAL_MACHINE if winreg else None, r"Software\Microsoft\Windows\CurrentVersion\Explorer\ShellIconOverlayIdentifiers"),
+        ("HKCU", winreg.HKEY_CURRENT_USER if winreg else None, r"Software\Microsoft\Windows\CurrentVersion\Shell Extensions\Approved"),
+        ("HKLM", winreg.HKEY_LOCAL_MACHINE if winreg else None, r"Software\Microsoft\Windows\CurrentVersion\Shell Extensions\Approved"),
+        ("HKLM", winreg.HKEY_LOCAL_MACHINE if winreg else None, r"Software\Microsoft\Windows\CurrentVersion\Explorer\Browser Helper Objects"),
+    ]
+    findings = []
+    skipped = []
+    if winreg is None:
+        return findings, [security_skip("Explorer Extension", "Windows registry APIs are not available on this platform.")]
+
+    for root_label, root, subkey in locations:
+        rows, issues = collect_registry_tree_values(root_label, root, subkey, "Explorer Extension", "Windows Explorer", max_depth=2)
+        for row in rows:
+            row["source"] = "advanced_review"
+            row["plain_explanation"] = (
+                "Explorer shell extensions and related autorun-style registry locations can add context menu, overlay, helper, or shell behavior. "
+                "Many are normal, but unfamiliar entries should be reviewed."
+            )
+            row["review_reasons"] = ["Explorer autorun-style registry value is present"]
+            row["recommended_next_steps"] = [
+                "Confirm the CLSID, value, or extension belongs to software you recognize.",
+                "Do not delete Explorer extension registry values without a rollback plan.",
+            ]
+        findings.extend(rows)
+        skipped.extend(issues)
+    if not findings and not skipped:
+        findings.append(security_finding(
+            category="Explorer Extension",
+            title="No Explorer autorun-style entries reported",
+            severity="Info",
+            score=0,
+            status="No Obvious Issue",
+            review_reasons=["No values were found in the selected Explorer extension locations"],
+            explanation="No selected Explorer shell extension or helper registry values were reported.",
+            evidence={"locations_checked": [f"{root_label}\\{subkey}" for root_label, _root, subkey in locations]},
+            source="advanced_review",
+        ))
+    return findings, skipped
+
+
 def collect_standard_security_review(cancel_event=None):
     findings = []
     skipped = []
@@ -2499,6 +2875,34 @@ def collect_standard_security_review(cancel_event=None):
     for label, collector in collectors:
         if cancel_event and cancel_event.is_set():
             raise ScanCancelled("Security Check cancelled by user.")
+        try:
+            rows, issues = collector()
+            findings.extend(rows)
+            skipped.extend(issues)
+        except ScanCancelled:
+            raise
+        except Exception as ex:
+            skipped.append(security_skip(label, f"{label} collector failed.", "Error", str(ex)))
+    return findings, skipped
+
+
+def collect_advanced_security_review(options=None, cancel_event=None):
+    options = options or {}
+    findings = []
+    skipped = []
+    collectors = [
+        ("WMI Persistence", collect_wmi_persistence, bool(options.get("wmi_check", True))),
+        ("Event Log Correlation", collect_event_log_correlation, bool(options.get("event_log_correlation", True))),
+        ("Sysmon Correlation", collect_sysmon_correlation, bool(options.get("sysmon_correlation", True))),
+        ("Advanced Services And Drivers", collect_deep_services_and_drivers, True),
+        ("Explorer Extension", collect_explorer_autorun_locations, True),
+    ]
+    for label, collector, enabled in collectors:
+        if cancel_event and cancel_event.is_set():
+            raise ScanCancelled("Security Check cancelled by user.")
+        if not enabled:
+            skipped.append(security_skip(label, f"{label} collector was not selected.", "Skipped"))
+            continue
         try:
             rows, issues = collector()
             findings.extend(rows)
@@ -3014,8 +3418,8 @@ class DashboardApp:
             raise ValueError("Security Check acknowledgement is required before starting.")
 
         mode = str(data.get("mode", "standard")).strip().lower() or "standard"
-        if mode != "standard":
-            raise ValueError("Only Standard Review is available in this implementation slice.")
+        if mode not in ("standard", "advanced"):
+            raise ValueError("Security Check mode must be Standard Review or Advanced Review.")
 
         baseline_id = str(data.get("baselineId", "") or "").strip()
         baseline = None
@@ -3029,9 +3433,10 @@ class DashboardApp:
             "baseline_compare": bool(baseline_id),
             "baseline_id": baseline_summary.get("baseline_id") if baseline_summary else None,
             "baseline_label": baseline_summary.get("label") if baseline_summary else None,
-            "wmi_check": False,
-            "event_log_correlation": False,
-            "sysmon_correlation": False,
+            "advanced_review": mode == "advanced",
+            "wmi_check": bool(data.get("wmiCheck", mode == "advanced")),
+            "event_log_correlation": bool(data.get("eventLogCorrelation", mode == "advanced")),
+            "sysmon_correlation": bool(data.get("sysmonCorrelation", mode == "advanced")),
         }
         check_id = uuid.uuid4().hex
         cancel_event = threading.Event()
@@ -3130,6 +3535,22 @@ class DashboardApp:
                 "Complete",
                 f"Verified {len(verification_findings)} referenced file item(s); skipped {len(verification_skips)} verification issue(s).",
             )
+
+            if active["mode"] == "advanced":
+                self._set_security_step(active, "advanced_review", "Running", "Running optional Advanced Review collectors in read-only mode.")
+                advanced_findings, advanced_skips = collect_advanced_security_review(active["options"], active["cancel_event"])
+                with self.lock:
+                    active["findings"].extend(advanced_findings)
+                    active["skipped_items"].extend(advanced_skips)
+                    active["summary"] = security_check_summary("running", active["findings"], active["skipped_items"])
+                self._set_security_step(
+                    active,
+                    "advanced_review",
+                    "Complete",
+                    f"Collected {len(advanced_findings)} advanced review item(s); skipped {len(advanced_skips)} advanced source(s).",
+                )
+            else:
+                self._set_security_step(active, "advanced_review", "Skipped", "Advanced Review was not selected for this run.")
 
             with self.lock:
                 active["findings"] = normalize_security_findings(active["findings"])
@@ -3972,8 +4393,8 @@ summary {{ cursor: pointer; padding: 6px; }}
     <section id="tab-security" class="tab-panel hidden">
         <section class="action-alert info">
             <h2>Before You Run a Security Check</h2>
-            <p>This local review area reads Windows security-related indicators such as startup entries, browser policies, proxy settings, DNS settings, Defender exclusions, scheduled tasks, services summary, and referenced file verification.</p>
-            <p>It is designed as a local read-only review workflow. Findings mean review this, not this is malware. Reports and baselines are generated locally from completed Security Check records. Event logs, Sysmon data, and allowlists are later slices.</p>
+            <p>This local review area reads Windows security-related indicators such as startup entries, browser policies, proxy settings, DNS settings, Defender exclusions, scheduled tasks, services summary, referenced file verification, and optional Advanced Review sources.</p>
+            <p>It is designed as a local read-only review workflow. Findings mean review this, not this is malware. Advanced Review may take longer and may need Administrator permission for complete WMI, event log, Sysmon, driver, service, and Explorer extension data.</p>
         </section>
 
         <div class="security-layout">
@@ -3991,9 +4412,9 @@ summary {{ cursor: pointer; padding: 6px; }}
                             <span class="muted">Startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, services summary, command/name indicators, and referenced file verification.</span>
                         </label>
                         <label class="security-mode">
-                            <input type="radio" name="securityMode" value="advanced" disabled>
+                            <input type="radio" name="securityMode" value="advanced">
                             <strong>Advanced Review</strong>
-                            <span class="muted">Future deeper checks for WMI, event logs, optional Sysmon, services, and drivers.</span>
+                            <span class="muted">Adds WMI persistence, event log correlation, optional Sysmon if already installed, deeper services/drivers, and Explorer autorun-style locations. It may take longer and some sources may need Administrator permission.</span>
                         </label>
                     </div>
 
@@ -4005,9 +4426,9 @@ summary {{ cursor: pointer; padding: 6px; }}
                                 <option value="">No baseline comparison</option>
                             </select>
                         </label>
-                        <label class="muted"><input type="checkbox" disabled> Include WMI persistence check <span class="security-badge future">future slice</span></label>
-                        <label class="muted"><input type="checkbox" disabled> Include Event Log correlation <span class="security-badge future">future slice</span></label>
-                        <label class="muted"><input type="checkbox" disabled> Include optional Sysmon data if installed <span class="security-badge future">future slice</span></label>
+                        <label><input id="securityWmiCheck" type="checkbox" checked> Include WMI persistence check</label>
+                        <label><input id="securityEventLogCorrelation" type="checkbox" checked> Include Event Log correlation</label>
+                        <label><input id="securitySysmonCorrelation" type="checkbox" checked> Include optional Sysmon data if installed</label>
                     </div>
 
                     <div class="actions">
@@ -4024,6 +4445,7 @@ summary {{ cursor: pointer; padding: 6px; }}
                         <div class="security-step"><span>Preparing local review</span><span class="security-step-status">Waiting</span></div>
                         <div class="security-step"><span>Reading standard security locations</span><span class="security-step-status">Waiting</span></div>
                         <div class="security-step"><span>Checking file signatures and SHA-256 hashes</span><span class="security-step-status">Waiting</span></div>
+                        <div class="security-step"><span>Running optional Advanced Review collectors</span><span class="security-step-status">Waiting</span></div>
                         <div class="security-step"><span>Saving local security check record</span><span class="security-step-status">Waiting</span></div>
                     </div>
                 </section>
@@ -4137,6 +4559,7 @@ summary {{ cursor: pointer; padding: 6px; }}
                 <div class="category-item"><strong>Scheduled Tasks Review</strong><p>Task actions, triggers, authors, last run, next run, and command review indicators.</p><span class="security-badge">ready</span></div>
                 <div class="category-item"><strong>Windows Services Summary</strong><p>Scoped automatic-service summary and individual service command/name review items.</p><span class="security-badge">ready</span></div>
                 <div class="category-item"><strong>File Verification</strong><p>File existence, Authenticode signatures, publishers, SHA-256 hashes, and timestamps.</p><span class="security-badge">ready</span></div>
+                <div class="category-item"><strong>Advanced Review</strong><p>WMI persistence, event log correlation, optional Sysmon, deeper services/drivers, and Explorer autorun-style locations.</p><span class="security-badge">advanced</span></div>
             </div>
         </section>
 
@@ -4478,11 +4901,20 @@ function selectedSecurityMode() {{
     return document.querySelector('input[name="securityMode"]:checked')?.value || 'standard';
 }}
 
+function updateAdvancedReviewOptions() {{
+    const advanced = selectedSecurityMode() === 'advanced';
+    ['securityWmiCheck', 'securityEventLogCorrelation', 'securitySysmonCorrelation'].forEach(id => {{
+        const input = $(id);
+        if (input) input.disabled = !advanced;
+    }});
+}}
+
 function renderSecurityProgress(steps = []) {{
     const rows = steps.length ? steps : [
         {{ label: 'Preparing local review', status: 'Waiting', detail: 'Waiting to start.' }},
         {{ label: 'Reading standard security locations', status: 'Waiting', detail: 'Waiting to read local review sources.' }},
         {{ label: 'Checking file signatures and SHA-256 hashes', status: 'Waiting', detail: 'Waiting to verify referenced files.' }},
+        {{ label: 'Running optional Advanced Review collectors', status: 'Waiting', detail: 'Waiting for Advanced Review selection.' }},
         {{ label: 'Saving local security check record', status: 'Waiting', detail: 'No lifecycle record has been saved yet.' }}
     ];
     $('securityProgress').innerHTML = rows.map(step => `
@@ -4704,7 +5136,12 @@ function renderSecurityCategoryBlocks(status) {{
         ['Microsoft Defender Exclusions', 'Defender excluded paths, processes, extensions, and IP addresses.'],
         ['Scheduled Task', 'Scheduled task actions, triggers, authors, last run, next run, and command indicators.'],
         ['Windows Service', 'Scoped services summary and automatic service command/name indicators.'],
-        ['File Verification', 'Referenced file existence, Authenticode signature status, SHA-256 hashes, and timestamps.']
+        ['File Verification', 'Referenced file existence, Authenticode signature status, SHA-256 hashes, and timestamps.'],
+        ['WMI Persistence', 'Permanent WMI filters, consumers, and bindings from root/subscription.'],
+        ['Event Log Correlation', 'Recent selected Defender, PowerShell, and service-install event log entries.'],
+        ['Sysmon Correlation', 'Optional Sysmon events when Sysmon is already installed and enabled.'],
+        ['Advanced Services And Drivers', 'Deeper services and system driver summary with path review indicators.'],
+        ['Explorer Extension', 'Explorer shell extension and helper autorun-style registry locations.']
     ];
     $('securityCategoryBlocks').innerHTML = categories.map(([name, description]) => {{
         const matches = findings.filter(finding => finding.category === name);
@@ -4719,6 +5156,10 @@ function renderSecurityCategoryBlocks(status) {{
             if (evidence.task_path) groups.add(evidence.task_path);
             if (evidence.start_mode) groups.add(evidence.start_mode);
             if (evidence.signature_status) groups.add(evidence.signature_status);
+            if (evidence.grouptype) groups.add(evidence.grouptype);
+            if (evidence.related_item) groups.add(evidence.related_item);
+            if (evidence.event_id) groups.add('Event ' + evidence.event_id);
+            if (evidence.item_type) groups.add(evidence.item_type);
         }});
         const groupText = groups.size ? `<p class="muted">Groups: ${{esc(Array.from(groups).join(', '))}}</p>` : '';
         const skippedText = categorySkipped.length ? `<p class="muted">Skipped: ${{esc(categorySkipped.length)}}</p>` : '';
@@ -5094,16 +5535,21 @@ function renderSecurityCheckStatus(status) {{
 }}
 
 async function startSecurityCheck() {{
+    const advanced = selectedSecurityMode() === 'advanced';
     const payload = {{
         acknowledgeSafety: $('ackSecurityCheck').checked,
         mode: selectedSecurityMode(),
         registryBackup: $('securityRegistryBackup').checked,
-        baselineId: $('securityBaselineSelect').value || ''
+        baselineId: $('securityBaselineSelect').value || '',
+        wmiCheck: advanced && $('securityWmiCheck').checked,
+        eventLogCorrelation: advanced && $('securityEventLogCorrelation').checked,
+        sysmonCorrelation: advanced && $('securitySysmonCorrelation').checked
     }};
     showActionAlert('info', 'Security Check Starting', 'The dashboard is asking the local server to start a read-only lifecycle job.', [
         `Mode: ${{payload.mode}}`,
         `Registry backup opt-in: ${{payload.registryBackup ? 'yes' : 'no'}}`,
         `Baseline comparison: ${{payload.baselineId ? 'enabled' : 'none'}}`,
+        payload.mode === 'advanced' ? 'Advanced Review may take longer and some sources may require Administrator permission.' : 'Standard Review selected.',
         'This run reads startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, services summary, and referenced files without changing settings.'
     ]);
     try {{
@@ -5118,6 +5564,7 @@ async function startSecurityCheck() {{
         showActionAlert('success', 'Security Check Started', 'Lifecycle progress is now visible in the Security Check tab.', [
             `Check ID: ${{status.check_id}}`,
             status.options?.baseline_compare ? `Comparing against baseline: ${{status.options.baseline_label || status.options.baseline_id}}` : 'No baseline comparison selected.',
+            status.mode === 'advanced' ? 'Advanced Review collectors are included in this run.' : 'Standard Review collectors are included in this run.',
             'Signature status and SHA-256 are collected for referenced files when available. Reports are available after the run completes.'
         ]);
     }} catch (error) {{
@@ -6009,6 +6456,7 @@ $('refreshSecurityBaselines').addEventListener('click', () => refreshSecurityBas
 $('createSecurityBaseline').addEventListener('click', createSecurityBaseline);
 $('exitApp').addEventListener('click', exitApp);
 $('ackSecurityCheck').addEventListener('change', updateSecurityCheckStartState);
+document.querySelectorAll('input[name="securityMode"]').forEach(input => input.addEventListener('change', updateAdvancedReviewOptions));
 $('startSecurityCheck').addEventListener('click', startSecurityCheck);
 $('cancelSecurityCheck').addEventListener('click', cancelSecurityCheck);
 $('securityFindingsRows').addEventListener('click', event => {{
@@ -6077,6 +6525,7 @@ $('processRows').addEventListener('keydown', event => {{
 }});
 initProcessPaneResizer();
 updateSecurityCheckStartState();
+updateAdvancedReviewOptions();
 loadInitial();
 pollSecurityStatus();
 </script>

@@ -1,13 +1,14 @@
 {
-  "app_version": "1.20.0",
-  "documentation_version": "1.20",
+  "app_version": "1.21.0",
+  "documentation_version": "1.21",
   "last_updated": "2026-06-18",
-  "revision_notes": "Added local Security Check baseline creation and comparison with new, changed, unchanged, and removed item labels.",
+  "revision_notes": "Added Advanced Review collectors for WMI persistence, event log correlation, optional Sysmon data, deeper services/drivers, and Explorer autorun-style locations.",
   "affected_areas": [
     "browser_dashboard",
     "security_check_ui",
     "security_check_api",
     "security_check_collectors",
+    "security_check_advanced_collectors",
     "security_check_reports",
     "security_check_baselines",
     "local_records",
