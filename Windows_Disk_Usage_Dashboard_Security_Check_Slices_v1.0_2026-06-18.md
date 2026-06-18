@@ -5,7 +5,7 @@
 - Status: Draft with initial scope decisions
 - Source: `windows/temp.txt`
 - Current app version baseline: v1.11.0
-- Latest implemented app version: v1.13.0
+- Latest implemented app version: v1.14.0
 - Prepared by: Codex
 
 ## 1. Request Understanding
@@ -280,6 +280,8 @@ Acceptance criteria:
 
 ### Slice 3: Standard Review Collector Set A
 
+Status: **Implemented in v1.14**
+
 Complexity: **L**
 
 Goal:
@@ -297,13 +299,13 @@ Includes:
 
 Acceptance criteria:
 
-- [ ] Registry startup entries are collected without editing the registry.
-- [ ] Startup folder entries are collected.
-- [ ] Browser policies are grouped by browser where possible.
-- [ ] Proxy settings are shown with plain-language explanation.
-- [ ] DNS settings are shown with adapter/source where possible.
-- [ ] Defender exclusions are grouped by exclusion type.
-- [ ] Access denied or unavailable sources are shown as skipped, not fatal.
+- [x] Registry startup entries are collected without editing the registry.
+- [x] Startup folder entries are collected.
+- [x] Browser policies are grouped by browser where possible.
+- [x] Proxy settings are shown with plain-language explanation.
+- [x] DNS settings are shown with adapter/source where possible.
+- [x] Defender exclusions are grouped by exclusion type.
+- [x] Access denied or unavailable sources are shown as skipped, not fatal.
 
 ### Slice 4: Standard Review Collector Set B
 

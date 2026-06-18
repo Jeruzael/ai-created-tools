@@ -17,10 +17,15 @@ from collections import defaultdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+try:
+    import winreg
+except ImportError:  # pragma: no cover - non-Windows fallback
+    winreg = None
+
 sys.setrecursionlimit(10000)
 
-APP_VERSION = "1.13.0"
-DOC_VERSION = "1.13"
+APP_VERSION = "1.14.0"
+DOC_VERSION = "1.14"
 APP_DIR = Path(__file__).resolve().parent
 RECORDS_DIR = APP_DIR / "scan_records"
 REPORTS_DIR = APP_DIR / "generated_reports"
@@ -955,13 +960,15 @@ def ensure_version_metadata():
         "documentation_version": DOC_VERSION,
         "last_updated": "2026-06-18",
         "revision_notes": (
-            "Added Security Check job lifecycle endpoints, local records, "
-            "progress polling, cancellation, and exit blocking while checks run."
+            "Added read-only Standard Review collectors for startup registry "
+            "entries, startup folders, browser policies, proxy/DNS settings, "
+            "and Microsoft Defender exclusions."
         ),
         "affected_areas": [
             "browser_dashboard",
             "security_check_ui",
             "security_check_api",
+            "security_check_collectors",
             "local_records",
             "safety_messaging",
             "documentation_versioning"
@@ -1120,7 +1127,7 @@ def security_check_steps():
             "id": "standard_locations",
             "label": "Reading standard security locations",
             "status": "Waiting",
-            "detail": "Collectors for registry, startup, browser policy, proxy, DNS, Defender, and tasks are planned for the next slice.",
+            "detail": "Waiting to read startup entries, browser policies, proxy and DNS settings, and Defender exclusions.",
         },
         {
             "id": "file_verification",
@@ -1137,24 +1144,453 @@ def security_check_steps():
     ]
 
 
-def security_check_summary(status="not_run"):
+def security_check_summary(status="not_run", findings=None, skipped_items=None):
+    findings = findings or []
+    skipped_items = skipped_items or []
     label = {
         "running": "Running",
         "completed": "Completed",
         "cancelled": "Cancelled",
         "failed": "Failed",
     }.get(status, "Not Run")
+    severity_counts = defaultdict(int)
+    for finding in findings:
+        severity_counts[finding.get("severity") or "Info"] += 1
     return {
         "overall_status": label,
-        "high_review": 0,
-        "medium_review": 0,
-        "low_review": 0,
-        "info": 0,
+        "high_review": severity_counts.get("High Review", 0),
+        "medium_review": severity_counts.get("Medium Review", 0),
+        "low_review": severity_counts.get("Low Review", 0),
+        "info": severity_counts.get("Info", 0),
         "unsigned_files": 0,
         "baseline_changes": "Future",
-        "findings_total": 0,
-        "collectors_connected": False,
+        "findings_total": len(findings),
+        "skipped_count": len(skipped_items),
+        "collectors_connected": True,
     }
+
+
+def security_finding(category, title, severity="Info", score=10, status="Found",
+                     review_reasons=None, explanation="", next_steps=None,
+                     evidence=None, source="local_standard_review"):
+    return {
+        "finding_id": uuid.uuid4().hex,
+        "category": category,
+        "title": title,
+        "severity": severity,
+        "score": int(score),
+        "status": status,
+        "plain_explanation": explanation,
+        "review_reasons": review_reasons or [],
+        "recommended_next_steps": next_steps or [
+            "Review the evidence before making changes.",
+            "Do not delete files or registry values based only on this report.",
+        ],
+        "evidence": evidence or {},
+        "source": source,
+        "first_seen": now_iso(),
+        "last_seen": now_iso(),
+    }
+
+
+def security_skip(category, message, status="Skipped", detail=None):
+    return {
+        "category": category,
+        "status": status,
+        "message": message,
+        "detail": detail,
+    }
+
+
+def registry_value_to_text(value):
+    if isinstance(value, (list, tuple)):
+        return "; ".join(str(item) for item in value)
+    if isinstance(value, bytes):
+        return value.hex()
+    return "" if value is None else str(value)
+
+
+def open_registry_key(root, subkey):
+    if winreg is None:
+        raise RuntimeError("Windows registry APIs are not available on this platform.")
+    return winreg.OpenKey(root, subkey, 0, winreg.KEY_READ)
+
+
+def collect_registry_values(root_label, root, subkey, category, explanation, severity="Low Review", score=25):
+    findings = []
+    skipped = []
+    if winreg is None:
+        return findings, [security_skip(category, "Windows registry APIs are not available on this platform.")]
+
+    try:
+        with open_registry_key(root, subkey) as key:
+            index = 0
+            while True:
+                try:
+                    name, value, value_type = winreg.EnumValue(key, index)
+                except OSError:
+                    break
+                index += 1
+                value_text = registry_value_to_text(value)
+                findings.append(security_finding(
+                    category=category,
+                    title=name or "(Default)",
+                    severity=severity,
+                    score=score,
+                    review_reasons=[f"{category} entry is present"],
+                    explanation=explanation,
+                    evidence={
+                        "registry_root": root_label,
+                        "registry_key": subkey,
+                        "value_name": name or "(Default)",
+                        "value_data": value_text,
+                        "value_type": str(value_type),
+                    },
+                    next_steps=[
+                        "Confirm the value name and command match software you recognize.",
+                        "Prefer app settings or official uninstallers before changing startup behavior.",
+                    ],
+                ))
+    except FileNotFoundError:
+        pass
+    except PermissionError as ex:
+        skipped.append(security_skip(category, f"Access denied reading {root_label}\\{subkey}.", "Access Denied", str(ex)))
+    except Exception as ex:
+        skipped.append(security_skip(category, f"Could not read {root_label}\\{subkey}.", "Error", str(ex)))
+
+    return findings, skipped
+
+
+def collect_registry_tree_values(root_label, root, subkey, category, browser_name, max_depth=3):
+    findings = []
+    skipped = []
+    if winreg is None:
+        return findings, [security_skip(category, "Windows registry APIs are not available on this platform.")]
+
+    def walk(current_subkey, depth):
+        try:
+            with open_registry_key(root, current_subkey) as key:
+                index = 0
+                while True:
+                    try:
+                        name, value, value_type = winreg.EnumValue(key, index)
+                    except OSError:
+                        break
+                    index += 1
+                    value_text = registry_value_to_text(value)
+                    reason = f"{browser_name} managed policy value is present"
+                    severity = "Medium Review" if any(token in current_subkey.lower() for token in ("extension", "proxy", "homepage", "search")) else "Low Review"
+                    findings.append(security_finding(
+                        category=category,
+                        title=f"{browser_name}: {name or '(Default)'}",
+                        severity=severity,
+                        score=45 if severity == "Medium Review" else 30,
+                        review_reasons=[reason],
+                        explanation=(
+                            "Browser policies can force settings such as extensions, homepage, search, startup pages, or proxy behavior. "
+                            "They may be normal on managed work devices, but they should be reviewed on personal computers."
+                        ),
+                        evidence={
+                            "browser": browser_name,
+                            "registry_root": root_label,
+                            "registry_key": current_subkey,
+                            "value_name": name or "(Default)",
+                            "value_data": value_text,
+                            "value_type": str(value_type),
+                        },
+                        next_steps=[
+                            "Check whether this computer is managed by work, school, or security software.",
+                            "Review forced extensions, homepage, search, and proxy policy values carefully.",
+                        ],
+                    ))
+
+                if depth >= max_depth:
+                    return
+                sub_index = 0
+                while True:
+                    try:
+                        child = winreg.EnumKey(key, sub_index)
+                    except OSError:
+                        break
+                    sub_index += 1
+                    walk(current_subkey + "\\" + child, depth + 1)
+        except FileNotFoundError:
+            return
+        except PermissionError as ex:
+            skipped.append(security_skip(category, f"Access denied reading {root_label}\\{current_subkey}.", "Access Denied", str(ex)))
+        except Exception as ex:
+            skipped.append(security_skip(category, f"Could not read {root_label}\\{current_subkey}.", "Error", str(ex)))
+
+    walk(subkey, 0)
+    return findings, skipped
+
+
+def collect_startup_registry_entries():
+    locations = [
+        ("HKCU", winreg.HKEY_CURRENT_USER if winreg else None, r"Software\Microsoft\Windows\CurrentVersion\Run"),
+        ("HKCU", winreg.HKEY_CURRENT_USER if winreg else None, r"Software\Microsoft\Windows\CurrentVersion\RunOnce"),
+        ("HKLM", winreg.HKEY_LOCAL_MACHINE if winreg else None, r"Software\Microsoft\Windows\CurrentVersion\Run"),
+        ("HKLM", winreg.HKEY_LOCAL_MACHINE if winreg else None, r"Software\Microsoft\Windows\CurrentVersion\RunOnce"),
+        ("HKLM", winreg.HKEY_LOCAL_MACHINE if winreg else None, r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Run"),
+    ]
+    findings = []
+    skipped = []
+    explanation = "This registry location can start a program automatically when Windows starts or when the user signs in."
+    for root_label, root, subkey in locations:
+        rows, issues = collect_registry_values(root_label, root, subkey, "Registry Startup", explanation)
+        findings.extend(rows)
+        skipped.extend(issues)
+    return findings, skipped
+
+
+def collect_startup_folder_entries():
+    findings = []
+    skipped = []
+    folders = [
+        ("Current user startup folder", os.path.join(os.environ.get("APPDATA", ""), r"Microsoft\Windows\Start Menu\Programs\Startup")),
+        ("All users startup folder", os.path.join(os.environ.get("ProgramData", ""), r"Microsoft\Windows\Start Menu\Programs\Startup")),
+    ]
+    for label, folder in folders:
+        if not folder or not os.path.isdir(folder):
+            continue
+        try:
+            for entry in os.scandir(folder):
+                findings.append(security_finding(
+                    category="Startup Folder",
+                    title=entry.name,
+                    severity="Low Review",
+                    score=25,
+                    review_reasons=["Startup folder item is present"],
+                    explanation="Files or shortcuts in this folder can start when the user signs in.",
+                    evidence={
+                        "folder_label": label,
+                        "folder_path": folder,
+                        "file_path": entry.path,
+                        "is_directory": entry.is_dir(follow_symlinks=False),
+                    },
+                    next_steps=[
+                        "Confirm the shortcut or file belongs to software you recognize.",
+                        "Use the app's startup settings or Windows Startup Apps settings before deleting shortcuts.",
+                    ],
+                ))
+        except PermissionError as ex:
+            skipped.append(security_skip("Startup Folder", f"Access denied reading {folder}.", "Access Denied", str(ex)))
+        except Exception as ex:
+            skipped.append(security_skip("Startup Folder", f"Could not read {folder}.", "Error", str(ex)))
+    return findings, skipped
+
+
+def collect_browser_policies():
+    policies = [
+        ("Google Chrome", "HKCU", winreg.HKEY_CURRENT_USER if winreg else None, r"Software\Policies\Google\Chrome"),
+        ("Google Chrome", "HKLM", winreg.HKEY_LOCAL_MACHINE if winreg else None, r"Software\Policies\Google\Chrome"),
+        ("Microsoft Edge", "HKCU", winreg.HKEY_CURRENT_USER if winreg else None, r"Software\Policies\Microsoft\Edge"),
+        ("Microsoft Edge", "HKLM", winreg.HKEY_LOCAL_MACHINE if winreg else None, r"Software\Policies\Microsoft\Edge"),
+    ]
+    findings = []
+    skipped = []
+    browser_counts = defaultdict(int)
+    browser_skips = defaultdict(int)
+    for browser, root_label, root, subkey in policies:
+        rows, issues = collect_registry_tree_values(root_label, root, subkey, "Browser Policy", browser)
+        findings.extend(rows)
+        skipped.extend(issues)
+        browser_counts[browser] += len(rows)
+        browser_skips[browser] += len(issues)
+    for browser in sorted({item[0] for item in policies}):
+        if browser_counts[browser] == 0 and browser_skips[browser] == 0:
+            findings.append(security_finding(
+                category="Browser Policy",
+                title=f"{browser}: No managed policies reported",
+                severity="Info",
+                score=0,
+                status="No Obvious Issue",
+                review_reasons=["No managed browser policy values were found in the standard locations"],
+                explanation=(
+                    "No Chrome or Edge managed policy values were found for this browser in the standard current-user "
+                    "or local-machine policy registry locations."
+                ),
+                evidence={
+                    "browser": browser,
+                    "locations_checked": [
+                        f"{root_label}\\{subkey}"
+                        for checked_browser, root_label, _root, subkey in policies
+                        if checked_browser == browser
+                    ],
+                },
+                next_steps=[
+                    "No action is needed for this browser policy source unless you expected work, school, or security software policies.",
+                ],
+            ))
+    return findings, skipped
+
+
+def collect_proxy_settings():
+    findings = []
+    skipped = []
+    subkey = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+    rows, issues = collect_registry_values(
+        "HKCU",
+        winreg.HKEY_CURRENT_USER if winreg else None,
+        subkey,
+        "Proxy Settings",
+        "Proxy settings can affect where web traffic goes. They can be normal for work, school, VPNs, or privacy tools, but unknown settings should be reviewed.",
+        severity="Info",
+        score=10,
+    )
+    skipped.extend(issues)
+    interesting = {"ProxyEnable", "ProxyServer", "AutoConfigURL", "AutoDetect", "ProxyOverride"}
+    filtered = [row for row in rows if row.get("evidence", {}).get("value_name") in interesting]
+    for row in filtered:
+        name = row["evidence"].get("value_name", "")
+        value = row["evidence"].get("value_data", "")
+        if name in ("ProxyServer", "AutoConfigURL") and value:
+            row["severity"] = "Medium Review"
+            row["score"] = 45
+            row["review_reasons"] = ["Proxy or PAC setting is configured"]
+        row["title"] = name
+    findings.extend(filtered)
+    if not filtered and not skipped:
+        findings.append(security_finding(
+            category="Proxy Settings",
+            title="No user proxy settings reported",
+            severity="Info",
+            score=0,
+            status="No Obvious Issue",
+            explanation="No common current-user proxy settings were found in the standard Windows Internet Settings location.",
+            evidence={"registry_root": "HKCU", "registry_key": subkey},
+            review_reasons=["No proxy setting was found in this location"],
+        ))
+    return findings, skipped
+
+
+def collect_dns_settings():
+    command = r"""
+Get-DnsClientServerAddress -AddressFamily IPv4,IPv6 |
+Select-Object InterfaceAlias,InterfaceIndex,AddressFamily,ServerAddresses |
+ConvertTo-Json -Depth 5
+"""
+    findings = []
+    skipped = []
+    try:
+        rows = run_powershell_json(command, timeout_seconds=20)
+        for row in rows:
+            servers = row.get("ServerAddresses") or []
+            if isinstance(servers, str):
+                servers = [servers]
+            title = f"{row.get('InterfaceAlias') or 'Network adapter'} {row.get('AddressFamily') or ''}".strip()
+            findings.append(security_finding(
+                category="DNS Settings",
+                title=title,
+                severity="Info",
+                score=10 if servers else 0,
+                status="Found" if servers else "No Obvious Issue",
+                review_reasons=["DNS server values are configured"] if servers else ["No DNS server values reported for this adapter"],
+                explanation="DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+                evidence={
+                    "interface_alias": row.get("InterfaceAlias"),
+                    "interface_index": row.get("InterfaceIndex"),
+                    "address_family": row.get("AddressFamily"),
+                    "dns_servers": servers,
+                },
+                next_steps=[
+                    "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+                    "Unknown DNS settings should be reviewed before changing network configuration.",
+                ],
+            ))
+    except Exception as ex:
+        skipped.append(security_skip("DNS Settings", "Could not read DNS client server addresses.", "Error", str(ex)))
+    return findings, skipped
+
+
+def collect_defender_exclusions():
+    command = r"""
+$pref = Get-MpPreference
+[PSCustomObject]@{
+    ExclusionPath = @($pref.ExclusionPath)
+    ExclusionProcess = @($pref.ExclusionProcess)
+    ExclusionExtension = @($pref.ExclusionExtension)
+    ExclusionIpAddress = @($pref.ExclusionIpAddress)
+} | ConvertTo-Json -Depth 5
+"""
+    findings = []
+    skipped = []
+    try:
+        rows = run_powershell_json(command, timeout_seconds=25)
+        data = rows[0] if rows else {}
+        mapping = [
+            ("Excluded Path", "ExclusionPath", data.get("ExclusionPath") or []),
+            ("Excluded Process", "ExclusionProcess", data.get("ExclusionProcess") or []),
+            ("Excluded Extension", "ExclusionExtension", data.get("ExclusionExtension") or []),
+            ("Excluded IP Address", "ExclusionIpAddress", data.get("ExclusionIpAddress") or []),
+        ]
+        for label, field, values in mapping:
+            if isinstance(values, str):
+                values = [values]
+            for value in values:
+                if value in (None, ""):
+                    continue
+                value_text = str(value)
+                lower = value_text.lower()
+                broad = lower in ("c:\\", "c:", "c:\\users", "c:\\users\\") or lower.endswith("\\appdata") or value_text in ("*.exe", ".exe", "exe")
+                findings.append(security_finding(
+                    category="Microsoft Defender Exclusions",
+                    title=f"{label}: {value_text}",
+                    severity="Medium Review" if broad else "Low Review",
+                    score=55 if broad else 35,
+                    status="Found",
+                    review_reasons=["Defender exclusion is configured"] + (["Broad-looking exclusion"] if broad else []),
+                    explanation="Defender exclusions tell Microsoft Defender what not to scan. Some are normal for developer tools, game engines, or business software, but broad or unfamiliar exclusions can weaken protection.",
+                    evidence={
+                        "exclusion_type": label,
+                        "field": field,
+                        "value": value_text,
+                        "broad_exclusion": broad,
+                    },
+                    next_steps=[
+                        "Confirm the exclusion belongs to software you trust and still use.",
+                        "Do not remove exclusions blindly; some apps require them, but broad exclusions deserve review.",
+                    ],
+                ))
+        if not findings:
+            findings.append(security_finding(
+                category="Microsoft Defender Exclusions",
+                title="No Defender exclusions reported",
+                severity="Info",
+                score=0,
+                status="No Obvious Issue",
+                explanation="Microsoft Defender did not report configured exclusions through Get-MpPreference.",
+                evidence={"source": "Get-MpPreference"},
+                review_reasons=["No exclusions reported"],
+            ))
+    except Exception as ex:
+        skipped.append(security_skip("Microsoft Defender Exclusions", "Could not read Microsoft Defender exclusions. Defender may be unavailable, disabled, or managed by policy.", "Error", str(ex)))
+    return findings, skipped
+
+
+def collect_standard_security_review(cancel_event=None):
+    findings = []
+    skipped = []
+    collectors = [
+        ("Registry Startup", collect_startup_registry_entries),
+        ("Startup Folder", collect_startup_folder_entries),
+        ("Browser Policy", collect_browser_policies),
+        ("Proxy Settings", collect_proxy_settings),
+        ("DNS Settings", collect_dns_settings),
+        ("Microsoft Defender Exclusions", collect_defender_exclusions),
+    ]
+    for label, collector in collectors:
+        if cancel_event and cancel_event.is_set():
+            raise ScanCancelled("Security Check cancelled by user.")
+        try:
+            rows, issues = collector()
+            findings.extend(rows)
+            skipped.extend(issues)
+        except ScanCancelled:
+            raise
+        except Exception as ex:
+            skipped.append(security_skip(label, f"{label} collector failed.", "Error", str(ex)))
+    return findings, skipped
 
 
 def build_scan_result_payload(root, root_node, scanner: DiskScanner):
@@ -1727,41 +2163,45 @@ class DashboardApp:
             return self._security_cancelled(active)
 
         try:
-            self._set_security_step(active, "prepare", "Running", "Preparing local lifecycle state. No security collectors are running yet.")
+            self._set_security_step(active, "prepare", "Running", "Preparing local Security Check state.")
             if wait_or_cancel():
                 raise ScanCancelled("Security Check cancelled by user.")
-            self._set_security_step(active, "prepare", "Complete", "Local lifecycle state prepared.")
+            self._set_security_step(active, "prepare", "Complete", "Local Security Check state prepared.")
 
-            self._set_security_step(active, "registry_backup", "Running", "Recording whether the user explicitly opted into future registry backups.")
+            self._set_security_step(active, "registry_backup", "Running", "Recording whether the user explicitly opted into registry backups.")
             if wait_or_cancel():
                 raise ScanCancelled("Security Check cancelled by user.")
             backup_detail = (
-                "User opted into registry backups for a future collector slice. No backup file was created in this lifecycle slice."
+                "User opted into registry backups. Backup file creation is still planned for a later slice, so no backup file was created."
                 if active["options"]["registry_backup_opt_in"]
                 else "User did not opt into registry backups."
             )
             self._set_security_step(active, "registry_backup", "Complete", backup_detail)
 
-            self._set_security_step(active, "standard_locations", "Skipped", "Standard Review collectors are not connected until the next implementation slice.")
-            if wait_or_cancel(0.2):
-                raise ScanCancelled("Security Check cancelled by user.")
+            self._set_security_step(active, "standard_locations", "Running", "Reading standard Windows review locations in read-only mode.")
+            findings, skipped_items = collect_standard_security_review(active["cancel_event"])
+            with self.lock:
+                active["findings"] = findings
+                active["skipped_items"] = skipped_items
+                active["summary"] = security_check_summary("running", findings, skipped_items)
+            self._set_security_step(
+                active,
+                "standard_locations",
+                "Complete",
+                f"Collected {len(findings)} review item(s); skipped {len(skipped_items)} source(s).",
+            )
 
             self._set_security_step(active, "file_verification", "Skipped", "File signature and SHA-256 verification are not connected until a later implementation slice.")
             if wait_or_cancel(0.2):
                 raise ScanCancelled("Security Check cancelled by user.")
 
-            active["skipped_items"] = [
-                {
-                    "category": "collectors",
-                    "status": "Skipped",
-                    "message": "Security collectors are not connected in this lifecycle slice.",
-                },
-                {
+            with self.lock:
+                active["skipped_items"].append({
                     "category": "reports",
                     "status": "Skipped",
                     "message": "Security report downloads are planned for a later slice.",
-                },
-            ]
+                })
+                active["summary"] = security_check_summary("running", active["findings"], active["skipped_items"])
         except ScanCancelled as ex:
             status = "cancelled"
             error = str(ex)
@@ -1794,7 +2234,7 @@ class DashboardApp:
             "status": status,
             "safety_acknowledged": active["safety_acknowledged"],
             "options": active["options"],
-            "summary": security_check_summary(status),
+            "summary": security_check_summary(status, active["findings"], active["skipped_items"]),
             "findings": active["findings"],
             "skipped_items": active["skipped_items"],
             "errors": active["errors"],
@@ -2312,6 +2752,15 @@ summary {{ cursor: pointer; padding: 6px; }}
     padding: 14px;
     background: #fff;
 }}
+.security-detail-panel pre {{
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: #f6f8fb;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 10px;
+    margin: 8px 0 0;
+}}
 .security-badge {{
     display: inline-block;
     border-radius: 999px;
@@ -2536,15 +2985,15 @@ summary {{ cursor: pointer; padding: 6px; }}
     <section id="tab-security" class="tab-panel hidden">
         <section class="action-alert info">
             <h2>Before You Run a Security Check</h2>
-            <p>This future review area is for Windows security-related evidence such as startup entries, browser policies, proxy settings, Defender exclusions, scheduled tasks, file signatures, and SHA-256 hashes.</p>
-            <p>It is designed as a local read-only review workflow. Findings will mean review this, not this is malware.</p>
+            <p>This local review area reads Windows security-related indicators such as startup entries, browser policies, proxy settings, DNS settings, and Defender exclusions.</p>
+            <p>It is designed as a local read-only review workflow. Findings mean review this, not this is malware. Scheduled tasks, file signatures, hashes, and reports are later slices.</p>
         </section>
 
         <div class="security-layout">
             <div>
                 <section class="section">
                     <h2>Security Check Setup</h2>
-                    <p>Choose how the local review should run. Standard Review is the planned first implementation path.</p>
+                    <p>Choose how the local review should run. Standard Review is the active read-only collector set.</p>
                     <label style="margin-top:10px"><input id="ackSecurityCheck" type="checkbox" style="width:auto"> I understand this is a review report and not a malware verdict.</label>
 
                     <h3>Check Mode</h3>
@@ -2552,7 +3001,7 @@ summary {{ cursor: pointer; padding: 6px; }}
                         <label class="security-mode">
                             <input type="radio" name="securityMode" value="standard" checked>
                             <strong>Standard Review</strong>
-                            <span class="muted">Startup, browser policy, proxy/DNS, Defender exclusions, scheduled tasks, signatures, hashes, and suspicious command patterns.</span>
+                            <span class="muted">Startup entries, browser policies, proxy/DNS settings, and Defender exclusions.</span>
                         </label>
                         <label class="security-mode">
                             <input type="radio" name="securityMode" value="advanced" disabled>
@@ -2596,20 +3045,20 @@ summary {{ cursor: pointer; padding: 6px; }}
                         <div class="metric"><div class="label">Overall Status</div><div class="value">Not Run</div></div>
                         <div class="metric"><div class="label">High Review</div><div class="value">0</div></div>
                         <div class="metric"><div class="label">Medium Review</div><div class="value">0</div></div>
-                        <div class="metric"><div class="label">Unsigned Files</div><div class="value">0</div></div>
-                        <div class="metric"><div class="label">Baseline Changes</div><div class="value">Future</div></div>
+                        <div class="metric"><div class="label">Low Review</div><div class="value">0</div></div>
+                        <div class="metric"><div class="label">Skipped Sources</div><div class="value">0</div></div>
                     </div>
                 </section>
 
                 <section class="section">
                     <h2>Findings Review</h2>
-                    <p class="muted">No security check has run yet. Future findings will appear here as review items with evidence, not malware verdicts.</p>
+                    <p class="muted">Run a Security Check to review startup entries, browser policies, proxy and DNS settings, and Defender exclusions. Findings are review items with evidence, not malware verdicts.</p>
                     <div class="form-grid">
                         <label>Search
-                            <input id="securityFindingFilter" placeholder="Finding, file, publisher, path, hash, registry key..." disabled>
+                            <input id="securityFindingFilter" placeholder="Finding, category, setting, path, registry key...">
                         </label>
                         <label>Severity
-                            <select id="securitySeverityFilter" disabled>
+                            <select id="securitySeverityFilter">
                                 <option>All severities</option>
                                 <option>High Review</option>
                                 <option>Medium Review</option>
@@ -2621,7 +3070,7 @@ summary {{ cursor: pointer; padding: 6px; }}
                     <div class="table-wrap" style="margin-top:12px">
                         <table>
                             <thead><tr><th>Severity</th><th>Score</th><th>Category</th><th>Item</th><th>Reason</th><th>Action</th></tr></thead>
-                            <tbody id="securityFindingsRows"><tr><td colspan="6">No security findings yet. Run a future Security Check to populate this table.</td></tr></tbody>
+                            <tbody id="securityFindingsRows"><tr><td colspan="6">No security findings yet. Run a Security Check to populate this table.</td></tr></tbody>
                         </table>
                     </div>
                 </section>
@@ -2629,7 +3078,7 @@ summary {{ cursor: pointer; padding: 6px; }}
                 <section class="section">
                     <h2>Finding Details</h2>
                     <div id="securityFindingDetail" class="security-detail-panel">
-                        <p class="muted">Select a future finding to see plain-language explanation, technical evidence, file verification, and safe next steps.</p>
+                        <p class="muted">Select a finding to see plain-language explanation, technical evidence, and safe next steps.</p>
                         <span class="security-badge">What this is</span>
                         <span class="security-badge">Why it matters</span>
                         <span class="security-badge">Technical evidence</span>
@@ -2640,13 +3089,13 @@ summary {{ cursor: pointer; padding: 6px; }}
         </div>
 
         <section class="section">
-            <h2>Planned Category Blocks</h2>
-            <p>These blocks are reserved for later implementation slices. Empty states should stay calm and clear when a source is unavailable or has no findings.</p>
-            <div class="category-list">
-                <div class="category-item"><strong>Registry Startup</strong><p>Run keys and startup-folder entries.</p><span class="security-badge future">future collector</span></div>
-                <div class="category-item"><strong>Browser Policy Review</strong><p>Chrome and Edge managed settings, forced extensions, homepage, search, and proxy policies.</p><span class="security-badge future">future collector</span></div>
-                <div class="category-item"><strong>Proxy And DNS Review</strong><p>Proxy, PAC script, DNS server, and hosts-file indicators.</p><span class="security-badge future">future collector</span></div>
-                <div class="category-item"><strong>Microsoft Defender Exclusions</strong><p>Excluded paths, processes, extensions, and IP addresses.</p><span class="security-badge future">future collector</span></div>
+            <h2>Review Categories</h2>
+            <p>These blocks summarize the current Standard Review collectors. Empty or skipped sources are shown calmly so the run can still finish.</p>
+            <div id="securityCategoryBlocks" class="category-list">
+                <div class="category-item"><strong>Registry Startup</strong><p>Run keys and startup-folder entries.</p><span class="security-badge">ready</span></div>
+                <div class="category-item"><strong>Browser Policy Review</strong><p>Chrome and Edge managed settings, forced extensions, homepage, search, and proxy policies.</p><span class="security-badge">ready</span></div>
+                <div class="category-item"><strong>Proxy And DNS Review</strong><p>Proxy, PAC script, and DNS server indicators.</p><span class="security-badge">ready</span></div>
+                <div class="category-item"><strong>Microsoft Defender Exclusions</strong><p>Excluded paths, processes, extensions, and IP addresses.</p><span class="security-badge">ready</span></div>
                 <div class="category-item"><strong>Scheduled Tasks Review</strong><p>Task actions, triggers, authors, hidden tasks, and suspicious command patterns.</p><span class="security-badge future">future collector</span></div>
                 <div class="category-item"><strong>File Verification</strong><p>File existence, Authenticode signatures, publishers, and SHA-256 hashes.</p><span class="security-badge future">future collector</span></div>
             </div>
@@ -2855,7 +3304,7 @@ summary {{ cursor: pointer; padding: 6px; }}
     </section>
 </main>
 <script>
-const state = {{ currentRecord: null, processes: [], lastScanStatusKey: null, lastSecurityStatusKey: null, scanActive: false, securityCheckActive: false, isShuttingDown: false }};
+const state = {{ currentRecord: null, currentSecurityStatus: null, selectedSecurityFindingId: null, processes: [], lastScanStatusKey: null, lastSecurityStatusKey: null, scanActive: false, securityCheckActive: false, isShuttingDown: false }};
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));
 
@@ -2970,9 +3419,9 @@ function showTab(name) {{
             'Unfamiliar processes are not automatically malware.'
         ]);
     }} else if (name === 'security') {{
-        showActionAlert('info', 'Security Check Shell Opened', 'This tab reserves the planned local read-only security review workflow.', [
-            'Collectors are not connected in this slice.',
-            'Future findings will be review items, not malware verdicts.',
+        showActionAlert('info', 'Security Check Opened', 'This tab runs a local read-only Standard Review of selected Windows security indicators.', [
+            'It reviews startup entries, browser policies, proxy/DNS settings, and Defender exclusions.',
+            'Findings are review items, not malware verdicts.',
             'Registry backups require explicit opt-in.'
         ]);
     }}
@@ -3007,37 +3456,157 @@ function renderSecurityProgress(steps = []) {{
 function renderSecuritySummary(summary = {{}}) {{
     $('securitySummary').innerHTML = [
         metric('Overall Status', summary.overall_status || 'Not Run'),
+        metric('Findings', summary.findings_total || 0),
         metric('High Review', summary.high_review || 0),
         metric('Medium Review', summary.medium_review || 0),
-        metric('Unsigned Files', summary.unsigned_files || 0),
-        metric('Baseline Changes', summary.baseline_changes || 'Future')
+        metric('Low Review', summary.low_review || 0),
+        metric('Skipped Sources', summary.skipped_count || 0)
     ].join('');
+}}
+
+function findingSearchText(finding) {{
+    return [
+        finding.severity,
+        finding.category,
+        finding.title,
+        finding.status,
+        (finding.review_reasons || []).join(' '),
+        finding.plain_explanation,
+        JSON.stringify(finding.evidence || {{}})
+    ].join(' ').toLowerCase();
+}}
+
+function filteredSecurityFindings(status) {{
+    const findings = status?.findings || [];
+    const query = ($('securityFindingFilter')?.value || '').trim().toLowerCase();
+    const severity = $('securitySeverityFilter')?.value || 'All severities';
+    return findings.filter(finding => {{
+        const severityMatches = severity === 'All severities' || finding.severity === severity;
+        const queryMatches = !query || findingSearchText(finding).includes(query);
+        return severityMatches && queryMatches;
+    }});
+}}
+
+function renderSecurityCategoryBlocks(status) {{
+    const findings = status?.findings || [];
+    const skipped = status?.skipped_items || [];
+    const categories = [
+        ['Registry Startup', 'Run keys and startup-folder entries.'],
+        ['Startup Folder', 'Current-user and all-users startup folder entries.'],
+        ['Browser Policy', 'Chrome and Edge managed policy values grouped by browser where available.'],
+        ['Proxy Settings', 'Windows current-user proxy and PAC script settings.'],
+        ['DNS Settings', 'Network adapter DNS server settings.'],
+        ['Microsoft Defender Exclusions', 'Defender excluded paths, processes, extensions, and IP addresses.']
+    ];
+    $('securityCategoryBlocks').innerHTML = categories.map(([name, description]) => {{
+        const matches = findings.filter(finding => finding.category === name);
+        const categorySkipped = skipped.filter(item => item.category === name);
+        const groups = new Set();
+        matches.forEach(finding => {{
+            const evidence = finding.evidence || {{}};
+            if (evidence.browser) groups.add(evidence.browser);
+            if (evidence.exclusion_type) groups.add(evidence.exclusion_type);
+            if (evidence.interface_alias) groups.add(evidence.interface_alias);
+            if (evidence.registry_root) groups.add(evidence.registry_root);
+        }});
+        const groupText = groups.size ? `<p class="muted">Groups: ${{esc(Array.from(groups).join(', '))}}</p>` : '';
+        const skippedText = categorySkipped.length ? `<p class="muted">Skipped: ${{esc(categorySkipped.length)}}</p>` : '';
+        return `<div class="category-item"><strong>${{esc(name)}}: ${{matches.length}}</strong><p>${{esc(description)}}</p>${{groupText}}${{skippedText}}</div>`;
+    }}).join('') + `
+        <div class="category-item"><strong>Scheduled Tasks Review</strong><p>Task actions, triggers, authors, hidden tasks, and suspicious command patterns.</p><span class="security-badge future">future collector</span></div>
+        <div class="category-item"><strong>File Verification</strong><p>File existence, Authenticode signatures, publishers, and SHA-256 hashes.</p><span class="security-badge future">future collector</span></div>
+    `;
+}}
+
+function renderSecurityFindings(status) {{
+    const findings = filteredSecurityFindings(status);
+    if (!findings.length) {{
+        const hasAny = (status?.findings || []).length > 0;
+        $('securityFindingsRows').innerHTML = `<tr><td colspan="6">${{hasAny ? 'No findings match the current filter.' : 'No findings were collected yet. Run a Security Check or review skipped sources below.'}}</td></tr>`;
+        renderSecurityRunDetail(status);
+        return;
+    }}
+    $('securityFindingsRows').innerHTML = findings.map(finding => {{
+        const reasons = (finding.review_reasons || []).join('; ') || finding.status || 'Review item';
+        return `<tr>
+            <td>${{esc(finding.severity || 'Info')}}</td>
+            <td>${{esc(finding.score ?? 0)}}</td>
+            <td>${{esc(finding.category || 'Uncategorized')}}</td>
+            <td>${{esc(finding.title || 'Untitled')}}</td>
+            <td>${{esc(reasons)}}</td>
+            <td><button type="button" data-security-finding="${{esc(finding.finding_id)}}">Details</button></td>
+        </tr>`;
+    }}).join('');
+
+    if (state.selectedSecurityFindingId && findings.some(finding => finding.finding_id === state.selectedSecurityFindingId)) {{
+        renderSecurityFindingDetail(status, state.selectedSecurityFindingId);
+    }} else {{
+        renderSecurityRunDetail(status);
+    }}
+}}
+
+function renderSecurityRunDetail(status) {{
+    if (!status || !status.check_id) {{
+        $('securityFindingDetail').innerHTML = '<p class="muted">Select a finding to see plain-language explanation, technical evidence, and safe next steps.</p><span class="security-badge">What this is</span><span class="security-badge">Why it matters</span><span class="security-badge">Technical evidence</span><span class="security-badge">Safe next steps</span>';
+        return;
+    }}
+    const skipped = (status.skipped_items || []).map(item => `${{item.category}} (${{item.status || 'Skipped'}}): ${{item.message}}${{item.detail ? ' - ' + item.detail : ''}}`).join('\\n');
+    $('securityFindingDetail').innerHTML = `
+        <h3>Security Check Record</h3>
+        <p class="muted">This run collected read-only Standard Review items. These are review signals, not malware verdicts.</p>
+        <p><strong>Status:</strong> ${{esc(status.status)}}<br><strong>Started:</strong> ${{esc(status.started_at)}}<br><strong>Completed:</strong> ${{esc(status.completed_at || 'Still running')}}<br><strong>Record:</strong> <code>${{esc(status.record_path || 'Not saved yet')}}</code></p>
+        <h3>Skipped Sources</h3>
+        <pre>${{esc(skipped || 'No skipped source details yet.')}}</pre>
+    `;
+}}
+
+function renderSecurityFindingDetail(status, findingId) {{
+    const finding = (status?.findings || []).find(item => item.finding_id === findingId);
+    if (!finding) {{
+        renderSecurityRunDetail(status);
+        return;
+    }}
+    state.selectedSecurityFindingId = findingId;
+    const reasons = (finding.review_reasons || []).map(item => `<li>${{esc(item)}}</li>`).join('') || '<li>No specific reason recorded.</li>';
+    const nextSteps = (finding.recommended_next_steps || []).map(item => `<li>${{esc(item)}}</li>`).join('') || '<li>Review the evidence before making changes.</li>';
+    const evidence = Object.entries(finding.evidence || {{}})
+        .map(([key, value]) => `${{key}}: ${{Array.isArray(value) ? value.join(', ') : (typeof value === 'object' && value !== null ? JSON.stringify(value) : value)}}`)
+        .join('\\n');
+    $('securityFindingDetail').innerHTML = `
+        <h3>${{esc(finding.title || 'Finding Detail')}}</h3>
+        <span class="security-badge">${{esc(finding.severity || 'Info')}}</span>
+        <span class="security-badge">${{esc(finding.category || 'Uncategorized')}}</span>
+        <p>${{esc(finding.plain_explanation || 'Review this item with the evidence shown below.')}}</p>
+        <h3>Why It Matters</h3>
+        <ul>${{reasons}}</ul>
+        <h3>Technical Evidence</h3>
+        <pre>${{esc(evidence || 'No technical evidence recorded.')}}</pre>
+        <h3>Safe Next Steps</h3>
+        <ul>${{nextSteps}}</ul>
+        <p class="muted">Do not delete files, remove registry values, or change Defender/network settings based only on this review item.</p>
+    `;
 }}
 
 function renderSecurityCheckStatus(status) {{
     if (!status || !status.check_id) {{
+        state.currentSecurityStatus = null;
+        state.selectedSecurityFindingId = null;
         $('securityStatus').textContent = 'No Security Check running.';
         renderSecurityProgress();
         renderSecuritySummary();
-        $('securityFindingsRows').innerHTML = '<tr><td colspan="6">No security findings yet. Run a Security Check to populate lifecycle status.</td></tr>';
-        $('securityFindingDetail').innerHTML = '<p class="muted">Select a future finding to see plain-language explanation, technical evidence, file verification, and safe next steps.</p><span class="security-badge">What this is</span><span class="security-badge">Why it matters</span><span class="security-badge">Technical evidence</span><span class="security-badge">Safe next steps</span>';
+        renderSecurityCategoryBlocks(null);
+        $('securityFindingsRows').innerHTML = '<tr><td colspan="6">No security findings yet. Run a Security Check to populate this table.</td></tr>';
+        renderSecurityRunDetail(null);
         return;
     }}
 
+    state.currentSecurityStatus = status;
     renderSecurityProgress(status.steps || []);
     renderSecuritySummary(status.summary || {{}});
     const options = status.options || {{}};
-    const skipped = (status.skipped_items || []).map(item => `${{item.category}}: ${{item.message}}`).join('<br>');
     $('securityStatus').innerHTML = `Security Check <code>${{esc(status.check_id)}}</code><br>Status: <strong>${{esc(status.status)}}</strong> | Mode: ${{esc(status.mode || 'standard')}} | Registry backup opt-in: ${{options.registry_backup_opt_in ? 'yes' : 'no'}}`;
-    $('securityFindingsRows').innerHTML = '<tr><td colspan="6">No findings yet. Collector slices are not connected, so this lifecycle run only saved progress and skipped-source details.</td></tr>';
-    $('securityFindingDetail').innerHTML = `
-        <h3>Lifecycle Record</h3>
-        <p class="muted">This Security Check run created a local lifecycle record. It does not contain collector findings yet.</p>
-        <p><strong>Status:</strong> ${{esc(status.status)}}<br><strong>Started:</strong> ${{esc(status.started_at)}}<br><strong>Completed:</strong> ${{esc(status.completed_at || 'Still running')}}<br><strong>Record:</strong> <code>${{esc(status.record_path || 'Not saved yet')}}</code></p>
-        <h3>Skipped Sources</h3>
-        <p class="muted">${{skipped || 'No skipped source details yet.'}}</p>
-        <p class="muted">This is still not a malware verdict and no system settings were changed.</p>
-    `;
+    renderSecurityCategoryBlocks(status);
+    renderSecurityFindings(status);
 }}
 
 async function startSecurityCheck() {{
@@ -3049,7 +3618,7 @@ async function startSecurityCheck() {{
     showActionAlert('info', 'Security Check Starting', 'The dashboard is asking the local server to start a read-only lifecycle job.', [
         `Mode: ${{payload.mode}}`,
         `Registry backup opt-in: ${{payload.registryBackup ? 'yes' : 'no'}}`,
-        'This slice saves lifecycle records only. Real collectors are still planned.'
+        'This run reads startup entries, browser policies, proxy/DNS settings, and Defender exclusions without changing settings.'
     ]);
     try {{
         const status = await api('/api/security-checks', {{ method: 'POST', body: JSON.stringify(payload) }});
@@ -3062,7 +3631,7 @@ async function startSecurityCheck() {{
         showTab('security');
         showActionAlert('success', 'Security Check Started', 'Lifecycle progress is now visible in the Security Check tab.', [
             `Check ID: ${{status.check_id}}`,
-            'No registry keys, files, scheduled tasks, Defender settings, browser policies, or logs are collected in this slice.'
+            'Scheduled tasks, file signatures, event logs, and report downloads are still planned for later slices.'
         ]);
     }} catch (error) {{
         showActionAlert('error', 'Security Check Failed To Start', error.message, [
@@ -3115,7 +3684,7 @@ async function pollSecurityStatus() {{
                     `Check ID: ${{status.check_id}}`,
                     `Record: ${{status.record_path || 'Unavailable'}}`,
                     status.error ? `Error: ${{status.error}}` : 'A local lifecycle record was saved.',
-                    'Collector findings are not available until the next implementation slices.'
+                    `Findings collected: ${{status.summary?.findings_total || 0}}; skipped sources: ${{status.summary?.skipped_count || 0}}.`
                 ]);
             }}
         }}
@@ -3946,6 +4515,17 @@ $('exitApp').addEventListener('click', exitApp);
 $('ackSecurityCheck').addEventListener('change', updateSecurityCheckStartState);
 $('startSecurityCheck').addEventListener('click', startSecurityCheck);
 $('cancelSecurityCheck').addEventListener('click', cancelSecurityCheck);
+$('securityFindingsRows').addEventListener('click', event => {{
+    const button = event.target.closest('button[data-security-finding]');
+    if (!button || !state.currentSecurityStatus) return;
+    renderSecurityFindingDetail(state.currentSecurityStatus, button.dataset.securityFinding);
+}});
+$('securityFindingFilter').addEventListener('input', () => {{
+    if (state.currentSecurityStatus) renderSecurityFindings(state.currentSecurityStatus);
+}});
+$('securitySeverityFilter').addEventListener('change', () => {{
+    if (state.currentSecurityStatus) renderSecurityFindings(state.currentSecurityStatus);
+}});
 $('processFilter').addEventListener('input', renderProcesses);
 $('processPublisherFilter').addEventListener('change', renderProcesses);
 $('processGroupBy').addEventListener('change', renderProcesses);
@@ -3988,7 +4568,7 @@ pollSecurityStatus();
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
-    server_version = "DiskUsageDashboard/1.13"
+    server_version = "DiskUsageDashboard/1.14"
 
     def log_message(self, format, *args):
         return

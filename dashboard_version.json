@@ -1,12 +1,13 @@
 {
-  "app_version": "1.13.0",
-  "documentation_version": "1.13",
+  "app_version": "1.14.0",
+  "documentation_version": "1.14",
   "last_updated": "2026-06-18",
-  "revision_notes": "Added Security Check job lifecycle endpoints, local records, progress polling, cancellation, and exit blocking while checks run.",
+  "revision_notes": "Added read-only Standard Review collectors for startup registry entries, startup folders, browser policies, proxy/DNS settings, and Microsoft Defender exclusions.",
   "affected_areas": [
     "browser_dashboard",
     "security_check_ui",
     "security_check_api",
+    "security_check_collectors",
     "local_records",
     "safety_messaging",
     "documentation_versioning"
