@@ -1,32 +1,38 @@
-Implemented the next slice: Security Check v1.17, Slice 6 Risk Scoring and Plain-Language Explanations.
+Implemented the next slice: Security Check v1.18, Slice 7 Findings Review UI and Detail Panel.
 
   What changed:
 
-  - Every Security Check finding now gets a normalized 0-100 review score.
-  - Severity is assigned by score band: Info, Low Review, Medium Review, High Review.
-  - Every finding now includes:
-      - What this is
-      - Why it matters
-      - Why it was flagged
-      - What to check next
-      - What not to do
-      - score explanation
+  - Added expanded Security Check filters:
+      - search
+      - severity
+      - category
+      - status
+      - signal type: unsigned files, command indicators, user-writable paths
+      - disabled baseline placeholder
 
-  - The detail panel now shows those sections separately from technical evidence.
-  - Score explanations explicitly say higher scores mean more suspicious patterns, not proof of malware.
-  - Info and No Obvious Issue findings remain supported for known-normal/informational items.
+  - Summary cards now include review status/category-oriented counts like Needs Review, No Obvious Issue, and
+    Categories.
+
+  - Finding rows are now clickable and keyboard-accessible with Enter/Space.
+  - Selected finding rows are visually highlighted.
+  - Long paths, command lines, hashes, registry values, and evidence wrap better.
+  - Category blocks show calm empty states when no findings exist.
+  - Technical Evidence is now collapsible and separated from the plain-language explanation.
 
   Verification passed:
 
   - python -m py_compile windows\DiskUsageHtmlReport.py
-  - Fresh v1.17 Security Check completed with 421 findings.
-  - missing_sections: 0
-  - bad_scores: 0
-  - No Obvious Issue findings still present.
-  - API still rejects Security Check start without acknowledgement: 400.
   - Served browser JavaScript parses successfully.
+  - API still rejects Security Check start without acknowledgement: 400.
+  - Fresh v1.18 Security Check completed with 421 findings.
+  - Filter-relevant data verified:
+      - statuses: File Missing, Found, Needs Review, No Obvious Issue, Verified
+      - command signal findings: 22
+      - unsigned files: 1
+      - user-writable path signals: 18
+
   - Legacy --scan-once still works.
 
-  The v1.17 server is running at:
+  The v1.18 server is running at:
 
   http://127.0.0.1:8765/

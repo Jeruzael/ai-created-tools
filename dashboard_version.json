@@ -1,8 +1,8 @@
 {
-  "app_version": "1.17.0",
-  "documentation_version": "1.17",
+  "app_version": "1.18.0",
+  "documentation_version": "1.18",
   "last_updated": "2026-06-18",
-  "revision_notes": "Added normalized risk scoring, score-band explanations, and structured plain-language finding details.",
+  "revision_notes": "Improved the Security Check findings review UI with expanded filters, keyboard-selectable rows, richer summaries, and collapsible technical evidence.",
   "affected_areas": [
     "browser_dashboard",
     "security_check_ui",

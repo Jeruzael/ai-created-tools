@@ -27,8 +27,8 @@ except ImportError:  # pragma: no cover - non-Windows fallback
 
 sys.setrecursionlimit(10000)
 
-APP_VERSION = "1.17.0"
-DOC_VERSION = "1.17"
+APP_VERSION = "1.18.0"
+DOC_VERSION = "1.18"
 APP_DIR = Path(__file__).resolve().parent
 RECORDS_DIR = APP_DIR / "scan_records"
 REPORTS_DIR = APP_DIR / "generated_reports"
@@ -963,8 +963,9 @@ def ensure_version_metadata():
         "documentation_version": DOC_VERSION,
         "last_updated": "2026-06-18",
         "revision_notes": (
-            "Added normalized risk scoring, score-band explanations, and "
-            "structured plain-language finding details."
+            "Improved the Security Check findings review UI with expanded "
+            "filters, keyboard-selectable rows, richer summaries, and "
+            "collapsible technical evidence."
         ),
         "affected_areas": [
             "browser_dashboard",
@@ -3506,6 +3507,30 @@ summary {{ cursor: pointer; padding: 6px; }}
     padding: 10px;
     margin: 8px 0 0;
 }}
+.security-detail-panel details {{
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 10px;
+    background: #fbfcff;
+}}
+.security-detail-panel summary {{
+    cursor: pointer;
+    font-weight: 700;
+}}
+.security-finding-row {{
+    cursor: pointer;
+}}
+.security-finding-row:focus {{
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}}
+.security-finding-row.selected {{
+    background: #edf6ff;
+}}
+.security-finding-row td {{
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}}
 .security-badge {{
     display: inline-block;
     border-radius: 999px;
@@ -3773,7 +3798,7 @@ summary {{ cursor: pointer; padding: 6px; }}
                 <section class="section">
                     <h2>Security Check Progress</h2>
                     <div id="securityStatus" class="status-line">No Security Check running.</div>
-                    <p class="muted">This lifecycle slice records progress and saves a local Security Check record. Real collectors are still planned for the next slices.</p>
+                    <p class="muted">This local read-only check records progress, findings, skipped sources, and verification evidence without changing system settings.</p>
                     <div id="securityProgress" class="security-progress">
                         <div class="security-step"><span>Preparing local review</span><span class="security-step-status">Waiting</span></div>
                         <div class="security-step"><span>Reading standard security locations</span><span class="security-step-status">Waiting</span></div>
@@ -3788,9 +3813,9 @@ summary {{ cursor: pointer; padding: 6px; }}
                     <h2>Security Summary</h2>
                     <div id="securitySummary" class="grid">
                         <div class="metric"><div class="label">Overall Status</div><div class="value">Not Run</div></div>
-                        <div class="metric"><div class="label">High Review</div><div class="value">0</div></div>
-                        <div class="metric"><div class="label">Medium Review</div><div class="value">0</div></div>
-                        <div class="metric"><div class="label">Low Review</div><div class="value">0</div></div>
+                        <div class="metric"><div class="label">Findings</div><div class="value">0</div></div>
+                        <div class="metric"><div class="label">Needs Review</div><div class="value">0</div></div>
+                        <div class="metric"><div class="label">No Obvious Issue</div><div class="value">0</div></div>
                         <div class="metric"><div class="label">Skipped Sources</div><div class="value">0</div></div>
                     </div>
                 </section>
@@ -3809,6 +3834,29 @@ summary {{ cursor: pointer; padding: 6px; }}
                                 <option>Medium Review</option>
                                 <option>Low Review</option>
                                 <option>Info</option>
+                            </select>
+                        </label>
+                        <label>Category
+                            <select id="securityCategoryFilter">
+                                <option>All categories</option>
+                            </select>
+                        </label>
+                        <label>Status
+                            <select id="securityStatusFilter">
+                                <option>All statuses</option>
+                            </select>
+                        </label>
+                        <label>Signal
+                            <select id="securitySignalFilter">
+                                <option>All signals</option>
+                                <option value="unsigned">Unsigned files</option>
+                                <option value="command">Command indicators</option>
+                                <option value="userWritable">User-writable paths</option>
+                            </select>
+                        </label>
+                        <label>Baseline
+                            <select id="securityBaselineFilter" disabled>
+                                <option>Baseline comparison later</option>
                             </select>
                         </label>
                     </div>
@@ -4199,13 +4247,24 @@ function renderSecurityProgress(steps = []) {{
     `).join('');
 }}
 
-function renderSecuritySummary(summary = {{}}) {{
+function uniqueCount(items) {{
+    return new Set(items.filter(Boolean)).size;
+}}
+
+function renderSecuritySummary(summary = {{}}, status = null) {{
+    const findings = status?.findings || [];
+    const needsReview = findings.filter(finding => finding.status === 'Needs Review').length;
+    const noObvious = findings.filter(finding => finding.status === 'No Obvious Issue').length;
+    const categories = uniqueCount(findings.map(finding => finding.category));
     $('securitySummary').innerHTML = [
         metric('Overall Status', summary.overall_status || 'Not Run'),
         metric('Findings', summary.findings_total || 0),
+        metric('Needs Review', needsReview),
+        metric('No Obvious Issue', noObvious),
         metric('High Review', summary.high_review || 0),
         metric('Medium Review', summary.medium_review || 0),
         metric('Low Review', summary.low_review || 0),
+        metric('Categories', categories),
         metric('Unsigned Files', summary.unsigned_files || 0),
         metric('Skipped Sources', summary.skipped_count || 0)
     ].join('');
@@ -4223,14 +4282,49 @@ function findingSearchText(finding) {{
     ].join(' ').toLowerCase();
 }}
 
+function updateSelectOptions(selectId, values, allLabel) {{
+    const select = $(selectId);
+    if (!select) return;
+    const current = select.value || allLabel;
+    const options = [allLabel, ...Array.from(new Set(values.filter(Boolean))).sort()];
+    select.innerHTML = options.map(value => `<option>${{esc(value)}}</option>`).join('');
+    select.value = options.includes(current) ? current : allLabel;
+}}
+
+function renderSecurityFilterOptions(status) {{
+    const findings = status?.findings || [];
+    updateSelectOptions('securityCategoryFilter', findings.map(finding => finding.category), 'All categories');
+    updateSelectOptions('securityStatusFilter', findings.map(finding => finding.status), 'All statuses');
+}}
+
+function findingHasUserWritablePath(finding) {{
+    const text = findingSearchText(finding);
+    return text.includes('\\\\appdata\\\\') || text.includes('\\\\temp\\\\') || text.includes('\\\\downloads\\\\') || text.includes('\\\\users\\\\public\\\\');
+}}
+
+function signalMatchesSecurityFinding(finding, signal) {{
+    if (!signal || signal === 'All signals') return true;
+    const evidence = finding.evidence || {{}};
+    if (signal === 'unsigned') return finding.category === 'File Verification' && evidence.signature_status === 'NotSigned';
+    if (signal === 'command') return Array.isArray(evidence.command_review_indicators) && evidence.command_review_indicators.length > 0;
+    if (signal === 'userWritable') return findingHasUserWritablePath(finding);
+    return true;
+}}
+
 function filteredSecurityFindings(status) {{
     const findings = status?.findings || [];
     const query = ($('securityFindingFilter')?.value || '').trim().toLowerCase();
     const severity = $('securitySeverityFilter')?.value || 'All severities';
+    const category = $('securityCategoryFilter')?.value || 'All categories';
+    const findingStatus = $('securityStatusFilter')?.value || 'All statuses';
+    const signal = $('securitySignalFilter')?.value || 'All signals';
     return findings.filter(finding => {{
         const severityMatches = severity === 'All severities' || finding.severity === severity;
+        const categoryMatches = category === 'All categories' || finding.category === category;
+        const statusMatches = findingStatus === 'All statuses' || finding.status === findingStatus;
+        const signalMatches = signalMatchesSecurityFinding(finding, signal);
         const queryMatches = !query || findingSearchText(finding).includes(query);
-        return severityMatches && queryMatches;
+        return severityMatches && categoryMatches && statusMatches && signalMatches && queryMatches;
     }});
 }}
 
@@ -4264,7 +4358,8 @@ function renderSecurityCategoryBlocks(status) {{
         }});
         const groupText = groups.size ? `<p class="muted">Groups: ${{esc(Array.from(groups).join(', '))}}</p>` : '';
         const skippedText = categorySkipped.length ? `<p class="muted">Skipped: ${{esc(categorySkipped.length)}}</p>` : '';
-        return `<div class="category-item"><strong>${{esc(name)}}: ${{matches.length}}</strong><p>${{esc(description)}}</p>${{groupText}}${{skippedText}}</div>`;
+        const emptyText = (!matches.length && !categorySkipped.length) ? '<p class="muted">No findings in this category for the current run.</p>' : '';
+        return `<div class="category-item"><strong>${{esc(name)}}: ${{matches.length}}</strong><p>${{esc(description)}}</p>${{groupText}}${{skippedText}}${{emptyText}}</div>`;
     }}).join('');
 }}
 
@@ -4278,7 +4373,8 @@ function renderSecurityFindings(status) {{
     }}
     $('securityFindingsRows').innerHTML = findings.map(finding => {{
         const reasons = (finding.review_reasons || []).join('; ') || finding.status || 'Review item';
-        return `<tr>
+        const selected = finding.finding_id === state.selectedSecurityFindingId ? ' selected' : '';
+        return `<tr class="security-finding-row${{selected}}" tabindex="0" role="button" aria-label="Open finding details" data-security-finding="${{esc(finding.finding_id)}}">
             <td>${{esc(finding.severity || 'Info')}}</td>
             <td>${{esc(finding.score ?? 0)}}</td>
             <td>${{esc(finding.category || 'Uncategorized')}}</td>
@@ -4341,8 +4437,10 @@ function renderSecurityFindingDetail(status, findingId) {{
         <ul>${{nextSteps}}</ul>
         <h3>What Not To Do</h3>
         <p>${{esc(sections.what_not_to_do || 'Do not delete files, disable entries, or change settings based only on this review item.')}}</p>
-        <h3>Technical Evidence</h3>
-        <pre>${{esc(evidence || 'No technical evidence recorded.')}}</pre>
+        <details>
+            <summary>Technical Evidence</summary>
+            <pre>${{esc(evidence || 'No technical evidence recorded.')}}</pre>
+        </details>
         <p class="muted">This is not a malware verdict. Use trusted security tools and vendor documentation for final decisions.</p>
     `;
 }}
@@ -4354,6 +4452,7 @@ function renderSecurityCheckStatus(status) {{
         $('securityStatus').textContent = 'No Security Check running.';
         renderSecurityProgress();
         renderSecuritySummary();
+        renderSecurityFilterOptions(null);
         renderSecurityCategoryBlocks(null);
         $('securityFindingsRows').innerHTML = '<tr><td colspan="6">No security findings yet. Run a Security Check to populate this table.</td></tr>';
         renderSecurityRunDetail(null);
@@ -4362,7 +4461,8 @@ function renderSecurityCheckStatus(status) {{
 
     state.currentSecurityStatus = status;
     renderSecurityProgress(status.steps || []);
-    renderSecuritySummary(status.summary || {{}});
+    renderSecuritySummary(status.summary || {{}}, status);
+    renderSecurityFilterOptions(status);
     const options = status.options || {{}};
     $('securityStatus').innerHTML = `Security Check <code>${{esc(status.check_id)}}</code><br>Status: <strong>${{esc(status.status)}}</strong> | Mode: ${{esc(status.mode || 'standard')}} | Registry backup opt-in: ${{options.registry_backup_opt_in ? 'yes' : 'no'}}`;
     renderSecurityCategoryBlocks(status);
@@ -5276,14 +5376,32 @@ $('ackSecurityCheck').addEventListener('change', updateSecurityCheckStartState);
 $('startSecurityCheck').addEventListener('click', startSecurityCheck);
 $('cancelSecurityCheck').addEventListener('click', cancelSecurityCheck);
 $('securityFindingsRows').addEventListener('click', event => {{
-    const button = event.target.closest('button[data-security-finding]');
-    if (!button || !state.currentSecurityStatus) return;
-    renderSecurityFindingDetail(state.currentSecurityStatus, button.dataset.securityFinding);
+    const target = event.target.closest('[data-security-finding]');
+    if (!target || !state.currentSecurityStatus) return;
+    renderSecurityFindingDetail(state.currentSecurityStatus, target.dataset.securityFinding);
+    renderSecurityFindings(state.currentSecurityStatus);
+}});
+$('securityFindingsRows').addEventListener('keydown', event => {{
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const target = event.target.closest('[data-security-finding]');
+    if (!target || !state.currentSecurityStatus) return;
+    event.preventDefault();
+    renderSecurityFindingDetail(state.currentSecurityStatus, target.dataset.securityFinding);
+    renderSecurityFindings(state.currentSecurityStatus);
 }});
 $('securityFindingFilter').addEventListener('input', () => {{
     if (state.currentSecurityStatus) renderSecurityFindings(state.currentSecurityStatus);
 }});
 $('securitySeverityFilter').addEventListener('change', () => {{
+    if (state.currentSecurityStatus) renderSecurityFindings(state.currentSecurityStatus);
+}});
+$('securityCategoryFilter').addEventListener('change', () => {{
+    if (state.currentSecurityStatus) renderSecurityFindings(state.currentSecurityStatus);
+}});
+$('securityStatusFilter').addEventListener('change', () => {{
+    if (state.currentSecurityStatus) renderSecurityFindings(state.currentSecurityStatus);
+}});
+$('securitySignalFilter').addEventListener('change', () => {{
     if (state.currentSecurityStatus) renderSecurityFindings(state.currentSecurityStatus);
 }});
 $('processFilter').addEventListener('input', renderProcesses);
@@ -5328,7 +5446,7 @@ pollSecurityStatus();
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
-    server_version = "DiskUsageDashboard/1.17"
+    server_version = "DiskUsageDashboard/1.18"
 
     def log_message(self, format, *args):
         return

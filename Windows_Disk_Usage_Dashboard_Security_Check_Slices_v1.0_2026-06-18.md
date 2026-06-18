@@ -5,7 +5,7 @@
 - Status: Draft with initial scope decisions
 - Source: `windows/temp.txt`
 - Current app version baseline: v1.11.0
-- Latest implemented app version: v1.17.0
+- Latest implemented app version: v1.18.0
 - Prepared by: Codex
 
 ## 1. Request Understanding
@@ -388,6 +388,8 @@ Acceptance criteria:
 
 ### Slice 7: Findings Review UI And Detail Panel
 
+Status: **Implemented in v1.18**
+
 Complexity: **L**
 
 Goal:
@@ -406,13 +408,13 @@ Includes:
 
 Acceptance criteria:
 
-- [ ] Summary cards show counts by review status/category.
-- [ ] Findings table supports search and filter controls.
-- [ ] Rows are clickable and keyboard-accessible.
-- [ ] Selected finding opens the detail panel.
-- [ ] Long paths, command lines, hashes, and registry values wrap.
-- [ ] Empty states appear for categories with no findings.
-- [ ] Detail panel separates plain-language explanation from technical evidence.
+- [x] Summary cards show counts by review status/category.
+- [x] Findings table supports search and filter controls.
+- [x] Rows are clickable and keyboard-accessible.
+- [x] Selected finding opens the detail panel.
+- [x] Long paths, command lines, hashes, and registry values wrap.
+- [x] Empty states appear for categories with no findings.
+- [x] Detail panel separates plain-language explanation from technical evidence.
 
 ### Slice 8: Reports
 
