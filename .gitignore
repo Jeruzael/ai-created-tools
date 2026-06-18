@@ -4,20 +4,40 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+build/
+dist/
+*.egg-info/
 
 # Generated dashboard output and private scan records
 generated_reports/
 scan_records/
+security_check_records/
+security_reports/
+registry_backups/
+baselines/
+allowlist.local.json
 DiskUsageDashboard.html
 *_Dashboard.html
 *scan-once.html
 
 # Local logs and temporary outputs
 *.log
+*.tmp
+temp.txt
 temp-*.txt
 
 # Local scan/report artifacts that may contain private paths
 C_Drive_DiskUsageReport.txt
+
+# Local secrets/config
+.env
+.env.*
+*.local
 
 # OS/editor noise
 .DS_Store
@@ -25,4 +45,3 @@ Thumbs.db
 desktop.ini
 .vscode/
 .idea/
-
