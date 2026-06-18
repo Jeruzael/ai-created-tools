@@ -1,6 +1,6 @@
 # Windows Disk Usage Dashboard
 
-Version: `1.19.0`
+Version: `1.20.0`
 
 This folder contains a local Windows browser dashboard for disk usage review, scan history, process review, local read-only security review workflows, and safe cleanup guidance.
 
@@ -46,7 +46,7 @@ This is usually faster and safer than scanning the full `C:\` drive.
 - It does not delete, move, rename, compress, quarantine, upload, or modify files.
 - It does not stop, kill, disable, or modify running processes.
 - It does not modify registry keys, Defender settings, browser policies, DNS, proxy settings, startup items, scheduled tasks, services, processes, or files.
-- Event log, Sysmon, baseline, and allowlist collectors are still later slices.
+- Event log, Sysmon, and allowlist collectors are still later slices.
 - Large files are not automatically safe to delete.
 - Unknown processes are not automatically malware.
 - Keep generated reports private because they can contain local paths and filenames.
@@ -58,7 +58,7 @@ This is usually faster and safer than scanning the full `C:\` drive.
 - `Results`: review biggest folders, file types, biggest files, tree view, and skipped paths. Use Copy directory buttons to copy folder paths for manual review.
 - `Scan Health`: inside Results, explains whether any skipped paths may have been caused by locked files, running apps, permissions, changing paths, or reparse points.
 - `Processes`: review running programs and local technical indicators. Filter to Needs Review, filter by review reason or publisher, group by publisher or memory use, view grouped trees, use the Verify guide for signature/hash checks, download grouped/verification reports, and select a process row or Details button to open the technical panel. Drag the divider between Running Programs and Process Details to resize both panes.
-- `Security Check`: run a local read-only Standard Review. In v1.19 it records progress, supports cancellation, blocks exit while active, saves local records, shows scored review findings with expanded filters, keyboard-selectable rows, plain-language sections, and collapsible technical evidence for startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, services summary, command/name indicators, and referenced file verification, and downloads local reports from completed or cancelled records.
+- `Security Check`: run a local read-only Standard Review. In v1.20 it records progress, supports cancellation, blocks exit while active, saves local records, shows scored review findings with expanded filters, keyboard-selectable rows, plain-language sections, and collapsible technical evidence for startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, services summary, command/name indicators, and referenced file verification, downloads local reports from completed or cancelled records, and compares later runs against explicit local baselines.
 - `History`: open previous scan records. Opened records switch to Results and show the loaded scan path, scan ID, and timestamps.
 - `Manual`: read safe usage guidance, scan setting explanations, use cases, cleanup workflow, and do's/don'ts.
 - `About`: view version and local privacy notes.
@@ -88,6 +88,7 @@ Use `--force` only when you intentionally want to overwrite an existing output f
 - Generated reports are stored in `generated_reports/`.
 - Scan records are stored in `scan_records/`.
 - Security Check records are stored in `security_check_records/`.
+- Security Check baselines are stored in `baselines/`.
 - These generated folders are ignored by git because they may contain private local paths, command lines, registry values, hashes, and installed software details.
 
 ## Scan Health

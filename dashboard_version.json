@@ -1,14 +1,15 @@
 {
-  "app_version": "1.19.0",
-  "documentation_version": "1.19",
+  "app_version": "1.20.0",
+  "documentation_version": "1.20",
   "last_updated": "2026-06-18",
-  "revision_notes": "Enabled local Security Check report downloads for full reports, findings-only reports, verification reports, and explicit technical JSON exports.",
+  "revision_notes": "Added local Security Check baseline creation and comparison with new, changed, unchanged, and removed item labels.",
   "affected_areas": [
     "browser_dashboard",
     "security_check_ui",
     "security_check_api",
     "security_check_collectors",
     "security_check_reports",
+    "security_check_baselines",
     "local_records",
     "safety_messaging",
     "documentation_versioning"

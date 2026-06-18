@@ -1,35 +1,41 @@
-Implemented Slice 8: Security Check reports, plus the .gitignore safety update.
+Implemented the next slice: v1.20 Baseline Creation And Comparison.
 
-  Changed:
+  What changed:
 
-  - Added private/generated Security Check paths to .gitignore:16, including windows/security_check_records/.
-  - Bumped app/docs to v1.19.0 in windows/DiskUsageHtmlReport.py:30.
-  - Enabled Security Check report buttons for completed/cancelled checks:
-      - Full HTML report
-      - Findings-only HTML report
-      - Verification HTML report
-      - Explicit Technical JSON export
+  - .gitignore already includes private/generated paths:
+      - windows/security_check_records/
+      - windows/security_reports/
+      - windows/registry_backups/
+      - windows/baselines/
+      - windows/allowlist.local.json
 
-  - Reports are browser-generated local downloads from the current Security Check record and include privacy/safety
-    wording.
+  - Added local Security Check baselines stored under windows/baselines/.
+  - Added API support to list baselines and create a baseline from a completed Security Check.
+  - Added optional baseline comparison when starting a later Security Check.
+  - Added UI for:
+      - selecting a baseline before a run
+      - creating a baseline from the current completed run
+      - viewing baseline counts and comparison rows
+      - filtering findings by new, changed, or unchanged
 
-  - Updated README docs, version metadata, and marked Slice 8 implemented in windows/
-    Windows_Disk_Usage_Dashboard_Security_Check_Slices_v1.0_2026-06-18.md:421.
+  - Added baseline comparison into the local report downloads.
+  - Bumped app/docs metadata to v1.20.0.
+  - Marked Slice 9 implemented in the Security Check roadmap.
 
   Verification passed:
 
   python -m py_compile .\windows\DiskUsageHtmlReport.py
-  python .\windows\DiskUsageHtmlReport.py --help
+  node --check runtime\dashboard-v120-script.js
 
-  Also verified:
+  Also passed:
 
-  - dashboard HTML renders with App v1.19.0
-  - report UI is present
-  - embedded JS syntax check passed
+  - dashboard render check for v1.20
+  - synthetic baseline comparison smoke test
+  - /api/security-baselines endpoint check
 
-  The v1.19 dashboard is running here:
+  The updated v1.20 dashboard is running here:
 
-  http://127.0.0.1:8766/
+  http://127.0.0.1:8767/
 
-  Note: there is also an older listener on 8765, so use 8766 for this updated run. The repo still has no commits yet
-  and all project files are untracked, which matches the previous onboarding state.
+  Ports 8765 and 8766 still have older dashboard instances listening, so use 8767 for this version. Next roadmap
+  slice is Slice 10: Advanced Review Collectors.

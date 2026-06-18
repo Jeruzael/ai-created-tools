@@ -27,12 +27,13 @@ except ImportError:  # pragma: no cover - non-Windows fallback
 
 sys.setrecursionlimit(10000)
 
-APP_VERSION = "1.19.0"
-DOC_VERSION = "1.19"
+APP_VERSION = "1.20.0"
+DOC_VERSION = "1.20"
 APP_DIR = Path(__file__).resolve().parent
 RECORDS_DIR = APP_DIR / "scan_records"
 REPORTS_DIR = APP_DIR / "generated_reports"
 SECURITY_RECORDS_DIR = APP_DIR / "security_check_records"
+BASELINES_DIR = APP_DIR / "baselines"
 VERSION_FILE = APP_DIR / "dashboard_version.json"
 
 
@@ -954,6 +955,7 @@ def ensure_app_dirs():
     RECORDS_DIR.mkdir(exist_ok=True)
     REPORTS_DIR.mkdir(exist_ok=True)
     SECURITY_RECORDS_DIR.mkdir(exist_ok=True)
+    BASELINES_DIR.mkdir(exist_ok=True)
 
 
 def ensure_version_metadata():
@@ -963,9 +965,8 @@ def ensure_version_metadata():
         "documentation_version": DOC_VERSION,
         "last_updated": "2026-06-18",
         "revision_notes": (
-            "Enabled local Security Check report downloads for full reports, "
-            "findings-only reports, verification reports, and explicit "
-            "technical JSON exports."
+            "Added local Security Check baseline creation and comparison "
+            "with new, changed, unchanged, and removed item labels."
         ),
         "affected_areas": [
             "browser_dashboard",
@@ -973,6 +974,7 @@ def ensure_version_metadata():
             "security_check_api",
             "security_check_collectors",
             "security_check_reports",
+            "security_check_baselines",
             "local_records",
             "safety_messaging",
             "documentation_versioning"
@@ -1079,6 +1081,10 @@ def security_check_record_path(check_id: str) -> Path:
     return SECURITY_RECORDS_DIR / f"{check_id}.json"
 
 
+def security_baseline_path(baseline_id: str) -> Path:
+    return BASELINES_DIR / f"{baseline_id}.json"
+
+
 def load_scan_records():
     ensure_app_dirs()
     records = []
@@ -1111,6 +1117,176 @@ def load_security_check_records():
         key=lambda item: item.get("started_at") or item.get("completed_at") or "",
         reverse=True
     )
+
+
+def baseline_public_summary(baseline):
+    return {
+        "baseline_id": baseline.get("baseline_id"),
+        "label": baseline.get("label") or baseline.get("baseline_id"),
+        "created_at": baseline.get("created_at"),
+        "source_check_id": baseline.get("source_check_id"),
+        "source_completed_at": baseline.get("source_completed_at"),
+        "item_count": baseline.get("item_count", 0),
+        "schema_version": baseline.get("schema_version"),
+        "app_version": baseline.get("app_version"),
+    }
+
+
+def load_security_baselines(include_private=False):
+    ensure_app_dirs()
+    baselines = []
+    for path in BASELINES_DIR.glob("*.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            baselines.append(data if include_private else baseline_public_summary(data))
+        except Exception:
+            continue
+
+    return sorted(
+        baselines,
+        key=lambda item: item.get("created_at") or "",
+        reverse=True
+    )
+
+
+def load_security_baseline(baseline_id: str):
+    clean_id = re.sub(r"[^0-9a-fA-F]", "", str(baseline_id or ""))
+    if not clean_id:
+        raise FileNotFoundError("Security baseline was not found.")
+    path = security_baseline_path(clean_id)
+    if not path.exists():
+        raise FileNotFoundError("Security baseline was not found.")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def stable_json_digest(value) -> str:
+    payload = json.dumps(value, sort_keys=True, ensure_ascii=False, default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def baseline_finding_identity(finding):
+    evidence = finding.get("evidence") or {}
+    identity_fields = {
+        "category": finding.get("category"),
+        "title": finding.get("title"),
+        "source": finding.get("source"),
+    }
+    for key in (
+        "registry_root",
+        "registry_key",
+        "value_name",
+        "browser",
+        "interface_alias",
+        "exclusion_type",
+        "task_name",
+        "task_path",
+        "service_name",
+        "file_path",
+        "referenced_path",
+        "command_line",
+        "sha256",
+    ):
+        if evidence.get(key):
+            identity_fields[key] = evidence.get(key)
+    return stable_json_digest(identity_fields)
+
+
+def baseline_finding_content(finding):
+    evidence = finding.get("evidence") or {}
+    return stable_json_digest({
+        "category": finding.get("category"),
+        "title": finding.get("title"),
+        "severity": finding.get("severity"),
+        "score": finding.get("score"),
+        "status": finding.get("status"),
+        "review_reasons": finding.get("review_reasons") or [],
+        "evidence": evidence,
+    })
+
+
+def baseline_fingerprint_for_finding(finding):
+    return {
+        "key": baseline_finding_identity(finding),
+        "content_hash": baseline_finding_content(finding),
+        "category": finding.get("category") or "Uncategorized",
+        "title": finding.get("title") or "Untitled",
+        "severity": finding.get("severity") or "Info",
+        "status": finding.get("status") or "Found",
+        "score": finding.get("score", 0),
+    }
+
+
+def create_security_baseline_from_record(record, label):
+    if record.get("status") != "completed":
+        raise ValueError("Create a baseline only from a completed Security Check record.")
+    findings = record.get("findings") or []
+    baseline_id = uuid.uuid4().hex
+    fingerprints = [baseline_fingerprint_for_finding(finding) for finding in findings]
+    baseline = {
+        "baseline_id": baseline_id,
+        "schema_version": "security-baseline-v1",
+        "label": str(label or "").strip()[:120] or f"Baseline {now_iso()}",
+        "created_at": now_iso(),
+        "source_check_id": record.get("check_id"),
+        "source_started_at": record.get("started_at"),
+        "source_completed_at": record.get("completed_at"),
+        "app_version": APP_VERSION,
+        "item_count": len(fingerprints),
+        "findings_summary": record.get("summary") or {},
+        "fingerprints": fingerprints,
+    }
+    security_baseline_path(baseline_id).write_text(json.dumps(baseline, indent=2), encoding="utf-8")
+    return baseline_public_summary(baseline)
+
+
+def apply_security_baseline_comparison(findings, baseline):
+    baseline_items = {item.get("key"): item for item in baseline.get("fingerprints", []) if item.get("key")}
+    current_keys = set()
+    summary = {
+        "baseline_id": baseline.get("baseline_id"),
+        "baseline_label": baseline.get("label") or baseline.get("baseline_id"),
+        "baseline_created_at": baseline.get("created_at"),
+        "compared_at": now_iso(),
+        "current_count": len(findings),
+        "baseline_count": len(baseline_items),
+        "new": 0,
+        "changed": 0,
+        "unchanged": 0,
+        "removed": 0,
+        "removed_items": [],
+        "explanation": "Baseline changes are review labels only. New or changed items are not automatically harmful.",
+    }
+
+    for finding in findings:
+        fingerprint = baseline_fingerprint_for_finding(finding)
+        key = fingerprint["key"]
+        current_keys.add(key)
+        baseline_item = baseline_items.get(key)
+        if baseline_item is None:
+            label = "new"
+        elif baseline_item.get("content_hash") != fingerprint["content_hash"]:
+            label = "changed"
+        else:
+            label = "unchanged"
+        summary[label] += 1
+        finding["baseline_status"] = label
+        finding["baseline_reference"] = {
+            "baseline_id": baseline.get("baseline_id"),
+            "baseline_label": summary["baseline_label"],
+        }
+
+    removed = [item for key, item in baseline_items.items() if key not in current_keys]
+    summary["removed"] = len(removed)
+    summary["removed_items"] = [
+        {
+            "category": item.get("category") or "Uncategorized",
+            "title": item.get("title") or "Untitled",
+            "severity": item.get("severity") or "Info",
+            "status": "removed",
+        }
+        for item in removed
+    ]
+    return summary
 
 
 def security_check_steps():
@@ -1148,7 +1324,7 @@ def security_check_steps():
     ]
 
 
-def security_check_summary(status="not_run", findings=None, skipped_items=None):
+def security_check_summary(status="not_run", findings=None, skipped_items=None, baseline_comparison=None):
     findings = findings or []
     skipped_items = skipped_items or []
     label = {
@@ -1172,7 +1348,11 @@ def security_check_summary(status="not_run", findings=None, skipped_items=None):
         "low_review": severity_counts.get("Low Review", 0),
         "info": severity_counts.get("Info", 0),
         "unsigned_files": unsigned_files,
-        "baseline_changes": "Future",
+        "baseline_changes": (
+            (baseline_comparison or {}).get("new", 0)
+            + (baseline_comparison or {}).get("changed", 0)
+            + (baseline_comparison or {}).get("removed", 0)
+        ) if baseline_comparison else 0,
         "findings_total": len(findings),
         "skipped_count": len(skipped_items),
         "collectors_connected": True,
@@ -2837,9 +3017,18 @@ class DashboardApp:
         if mode != "standard":
             raise ValueError("Only Standard Review is available in this implementation slice.")
 
+        baseline_id = str(data.get("baselineId", "") or "").strip()
+        baseline = None
+        baseline_summary = None
+        if baseline_id:
+            baseline = load_security_baseline(baseline_id)
+            baseline_summary = baseline_public_summary(baseline)
+
         options = {
             "registry_backup_opt_in": bool(data.get("registryBackup", False)),
-            "baseline_compare": False,
+            "baseline_compare": bool(baseline_id),
+            "baseline_id": baseline_summary.get("baseline_id") if baseline_summary else None,
+            "baseline_label": baseline_summary.get("label") if baseline_summary else None,
             "wmi_check": False,
             "event_log_correlation": False,
             "sysmon_correlation": False,
@@ -2860,6 +3049,7 @@ class DashboardApp:
             "findings": [],
             "skipped_items": [],
             "errors": [],
+            "baseline_comparison": None,
             "steps": security_check_steps(),
             "record_path": str(security_check_record_path(check_id).resolve()),
             "app_version": APP_VERSION,
@@ -2943,7 +3133,15 @@ class DashboardApp:
 
             with self.lock:
                 active["findings"] = normalize_security_findings(active["findings"])
-                active["summary"] = security_check_summary("running", active["findings"], active["skipped_items"])
+                if active["options"].get("baseline_id"):
+                    baseline = load_security_baseline(active["options"]["baseline_id"])
+                    active["baseline_comparison"] = apply_security_baseline_comparison(active["findings"], baseline)
+                active["summary"] = security_check_summary(
+                    "running",
+                    active["findings"],
+                    active["skipped_items"],
+                    active.get("baseline_comparison"),
+                )
         except ScanCancelled as ex:
             status = "cancelled"
             error = str(ex)
@@ -2980,11 +3178,18 @@ class DashboardApp:
             "findings": active["findings"],
             "skipped_items": active["skipped_items"],
             "errors": active["errors"],
+            "baseline_comparison": active.get("baseline_comparison"),
             "steps": active["steps"],
             "record_path": active["record_path"],
             "app_version": APP_VERSION,
             "error": error,
         }
+        record["summary"] = security_check_summary(
+            status,
+            active["findings"],
+            active["skipped_items"],
+            active.get("baseline_comparison"),
+        )
 
         try:
             security_check_record_path(active["check_id"]).write_text(json.dumps(record, indent=2), encoding="utf-8")
@@ -3031,6 +3236,22 @@ class DashboardApp:
         if not path.exists():
             raise FileNotFoundError("Security Check record was not found.")
         return json.loads(path.read_text(encoding="utf-8"))
+
+    def security_baselines(self):
+        return {"baselines": load_security_baselines()}
+
+    def create_security_baseline(self, data):
+        if self.active_security_check and self.active_security_check.get("status") == "running":
+            raise RuntimeError("Cancel or wait for the current Security Check to finish before creating a baseline.")
+        if not bool(data.get("acknowledgeKnownGood", False)):
+            raise ValueError("Baseline creation requires confirmation that the current record has been reviewed.")
+        check_id = str(data.get("checkId", "") or "").strip()
+        if not check_id:
+            raise ValueError("A completed Security Check record is required to create a baseline.")
+        record = self.security_check_record(check_id)
+        label = data.get("label") or f"Baseline from {record.get('completed_at') or record.get('started_at')}"
+        baseline = create_security_baseline_from_record(record, label)
+        return {"baseline": baseline, "baselines": load_security_baselines()}
 
     def request_shutdown(self):
         with self.lock:
@@ -3752,7 +3973,7 @@ summary {{ cursor: pointer; padding: 6px; }}
         <section class="action-alert info">
             <h2>Before You Run a Security Check</h2>
             <p>This local review area reads Windows security-related indicators such as startup entries, browser policies, proxy settings, DNS settings, Defender exclusions, scheduled tasks, services summary, and referenced file verification.</p>
-            <p>It is designed as a local read-only review workflow. Findings mean review this, not this is malware. Reports are generated locally from completed or cancelled Security Check records. Event logs, Sysmon data, baselines, and allowlists are later slices.</p>
+            <p>It is designed as a local read-only review workflow. Findings mean review this, not this is malware. Reports and baselines are generated locally from completed Security Check records. Event logs, Sysmon data, and allowlists are later slices.</p>
         </section>
 
         <div class="security-layout">
@@ -3779,7 +4000,11 @@ summary {{ cursor: pointer; padding: 6px; }}
                     <h3>Options</h3>
                     <div class="security-option-list">
                         <label><input id="securityRegistryBackup" type="checkbox"> Create registry backups before reading selected registry locations</label>
-                        <label class="muted"><input type="checkbox" disabled> Compare against previous baseline <span class="security-badge future">future slice</span></label>
+                        <label>Compare against baseline
+                            <select id="securityBaselineSelect">
+                                <option value="">No baseline comparison</option>
+                            </select>
+                        </label>
                         <label class="muted"><input type="checkbox" disabled> Include WMI persistence check <span class="security-badge future">future slice</span></label>
                         <label class="muted"><input type="checkbox" disabled> Include Event Log correlation <span class="security-badge future">future slice</span></label>
                         <label class="muted"><input type="checkbox" disabled> Include optional Sysmon data if installed <span class="security-badge future">future slice</span></label>
@@ -3813,6 +4038,27 @@ summary {{ cursor: pointer; padding: 6px; }}
                         <div class="metric"><div class="label">Needs Review</div><div class="value">0</div></div>
                         <div class="metric"><div class="label">No Obvious Issue</div><div class="value">0</div></div>
                         <div class="metric"><div class="label">Skipped Sources</div><div class="value">0</div></div>
+                    </div>
+                </section>
+
+                <section class="section">
+                    <h2>Baseline Comparison</h2>
+                    <p class="muted">Create a baseline only after reviewing that the current completed Security Check looks normal. New, changed, or removed labels are comparison signals, not proof that something is harmful.</p>
+                    <div class="actions">
+                        <button id="refreshSecurityBaselines">Refresh baselines</button>
+                        <button id="createSecurityBaseline" disabled>Create baseline from current run</button>
+                    </div>
+                    <div id="securityBaselineSummary" class="grid" style="margin-top:12px">
+                        <div class="metric"><div class="label">Baseline</div><div class="value">None</div></div>
+                        <div class="metric"><div class="label">New</div><div class="value">0</div></div>
+                        <div class="metric"><div class="label">Changed</div><div class="value">0</div></div>
+                        <div class="metric"><div class="label">Removed</div><div class="value">0</div></div>
+                    </div>
+                    <div class="table-wrap" style="margin-top:12px">
+                        <table>
+                            <thead><tr><th>Status</th><th>Category</th><th>Item</th><th>Meaning</th></tr></thead>
+                            <tbody id="securityBaselineRows"><tr><td colspan="4">No baseline comparison loaded.</td></tr></tbody>
+                        </table>
                     </div>
                 </section>
 
@@ -3851,8 +4097,11 @@ summary {{ cursor: pointer; padding: 6px; }}
                             </select>
                         </label>
                         <label>Baseline
-                            <select id="securityBaselineFilter" disabled>
-                                <option>Baseline comparison later</option>
+                            <select id="securityBaselineFilter">
+                                <option>All baseline labels</option>
+                                <option value="new">New</option>
+                                <option value="changed">Changed</option>
+                                <option value="unchanged">Unchanged</option>
                             </select>
                         </label>
                     </div>
@@ -4094,7 +4343,7 @@ summary {{ cursor: pointer; padding: 6px; }}
     </section>
 </main>
 <script>
-const state = {{ currentRecord: null, currentSecurityStatus: null, selectedSecurityFindingId: null, processes: [], lastScanStatusKey: null, lastSecurityStatusKey: null, scanActive: false, securityCheckActive: false, isShuttingDown: false }};
+const state = {{ currentRecord: null, currentSecurityStatus: null, selectedSecurityFindingId: null, securityBaselines: [], processes: [], lastScanStatusKey: null, lastSecurityStatusKey: null, scanActive: false, securityCheckActive: false, isShuttingDown: false }};
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));
 
@@ -4214,6 +4463,7 @@ function showTab(name) {{
             'Findings are review items, not malware verdicts.',
             'Registry backups require explicit opt-in.'
         ]);
+        refreshSecurityBaselines(false);
     }}
 }}
 
@@ -4262,8 +4512,123 @@ function renderSecuritySummary(summary = {{}}, status = null) {{
         metric('Low Review', summary.low_review || 0),
         metric('Categories', categories),
         metric('Unsigned Files', summary.unsigned_files || 0),
+        metric('Baseline Changes', summary.baseline_changes || 0),
         metric('Skipped Sources', summary.skipped_count || 0)
     ].join('');
+}}
+
+function formatBaselineLabel(baseline) {{
+    if (!baseline) return 'No baseline comparison';
+    const label = baseline.label || baseline.baseline_id || 'Baseline';
+    const count = baseline.item_count ?? 0;
+    const created = baseline.created_at ? ` - ${{baseline.created_at}}` : '';
+    return `${{label}} (${{count}} items)${{created}}`;
+}}
+
+function renderSecurityBaselineControls() {{
+    const select = $('securityBaselineSelect');
+    if (!select) return;
+    const current = select.value || '';
+    const options = ['<option value="">No baseline comparison</option>'].concat(
+        state.securityBaselines.map(baseline => `<option value="${{esc(baseline.baseline_id)}}">${{esc(formatBaselineLabel(baseline))}}</option>`)
+    );
+    select.innerHTML = options.join('');
+    select.value = state.securityBaselines.some(baseline => baseline.baseline_id === current) ? current : '';
+}}
+
+function renderSecurityBaselineComparison(status) {{
+    const comparison = status?.baseline_comparison || null;
+    const currentRows = asArray(status?.findings)
+        .filter(finding => finding.baseline_status)
+        .map(finding => {{
+            const label = finding.baseline_status;
+            return `<tr><td>${{esc(label)}}</td><td>${{esc(finding.category || 'Uncategorized')}}</td><td>${{esc(finding.title || 'Untitled')}}</td><td>${{baselineMeaning(label)}}</td></tr>`;
+        }});
+    const removedRows = asArray(comparison?.removed_items).map(item =>
+        `<tr><td>removed</td><td>${{esc(item.category || 'Uncategorized')}}</td><td>${{esc(item.title || 'Untitled')}}</td><td>${{baselineMeaning('removed')}}</td></tr>`
+    );
+
+    if (!comparison) {{
+        $('securityBaselineSummary').innerHTML = [
+            metric('Baseline', 'None'),
+            metric('New', 0),
+            metric('Changed', 0),
+            metric('Removed', 0)
+        ].join('');
+        $('securityBaselineRows').innerHTML = '<tr><td colspan="4">No baseline comparison loaded.</td></tr>';
+    }} else {{
+        $('securityBaselineSummary').innerHTML = [
+            metric('Baseline', comparison.baseline_label || comparison.baseline_id || 'Selected'),
+            metric('New', comparison.new || 0),
+            metric('Changed', comparison.changed || 0),
+            metric('Unchanged', comparison.unchanged || 0),
+            metric('Removed', comparison.removed || 0)
+        ].join('');
+        $('securityBaselineRows').innerHTML = currentRows.concat(removedRows).join('') || '<tr><td colspan="4">No differences were recorded for this comparison.</td></tr>';
+    }}
+
+    const createButton = $('createSecurityBaseline');
+    if (createButton) createButton.disabled = !securityReportReady(status) || status.status !== 'completed';
+}}
+
+function baselineMeaning(label) {{
+    if (label === 'new') return 'This item was not present in the selected baseline. This does not mean it is harmful.';
+    if (label === 'changed') return 'This item matched the baseline identity but some evidence or scoring changed. Review the evidence.';
+    if (label === 'unchanged') return 'This item matched the selected baseline.';
+    if (label === 'removed') return 'This baseline item was not seen in the current run. It may have been removed, renamed, inaccessible, or not collected this time.';
+    return 'Baseline comparison label.';
+}}
+
+async function refreshSecurityBaselines(showAlert = true) {{
+    try {{
+        const data = await api('/api/security-baselines');
+        state.securityBaselines = data.baselines || [];
+        renderSecurityBaselineControls();
+        if (showAlert) {{
+            showActionAlert('success', 'Baselines Refreshed', 'Local Security Check baselines were loaded from this computer.', [
+                `Baselines available: ${{state.securityBaselines.length}}`
+            ]);
+        }}
+    }} catch (error) {{
+        showActionAlert('error', 'Baseline Load Failed', error.message, [
+            'Baseline files stay local under the app folder.'
+        ]);
+    }}
+}}
+
+async function createSecurityBaseline() {{
+    const status = state.currentSecurityStatus;
+    if (!securityReportReady(status) || status.status !== 'completed') {{
+        showActionAlert('warning', 'Baseline Unavailable', 'Create a baseline only from a completed Security Check record.', [
+            'Run a Security Check and review the results first.'
+        ]);
+        return;
+    }}
+    const confirmed = confirm('Create Security Baseline?\\n\\nOnly create a baseline after reviewing that this Security Check represents a known-good state. New or changed items in later comparisons are review signals, not proof of harm.');
+    if (!confirmed) {{
+        showActionAlert('info', 'Baseline Creation Cancelled', 'No baseline was created.', [
+            'Create a baseline only after reviewing the current system state.'
+        ]);
+        return;
+    }}
+    const label = prompt('Baseline label', `Baseline from ${{status.completed_at || status.started_at || status.check_id}}`) || '';
+    try {{
+        const data = await api('/api/security-baselines', {{
+            method: 'POST',
+            body: JSON.stringify({{ checkId: status.check_id, label, acknowledgeKnownGood: true }})
+        }});
+        state.securityBaselines = data.baselines || [];
+        renderSecurityBaselineControls();
+        showActionAlert('success', 'Security Baseline Created', 'A local baseline was created from the completed Security Check record.', [
+            `Baseline: ${{data.baseline?.label || data.baseline?.baseline_id}}`,
+            `Items: ${{data.baseline?.item_count || 0}}`,
+            'Future Security Checks can compare against this baseline.'
+        ]);
+    }} catch (error) {{
+        showActionAlert('error', 'Baseline Creation Failed', error.message, [
+            'Only completed Security Check records can become baselines.'
+        ]);
+    }}
 }}
 
 function findingSearchText(finding) {{
@@ -4272,6 +4637,7 @@ function findingSearchText(finding) {{
         finding.category,
         finding.title,
         finding.status,
+        finding.baseline_status,
         (finding.review_reasons || []).join(' '),
         finding.plain_explanation,
         JSON.stringify(finding.evidence || {{}})
@@ -4314,13 +4680,15 @@ function filteredSecurityFindings(status) {{
     const category = $('securityCategoryFilter')?.value || 'All categories';
     const findingStatus = $('securityStatusFilter')?.value || 'All statuses';
     const signal = $('securitySignalFilter')?.value || 'All signals';
+    const baseline = $('securityBaselineFilter')?.value || 'All baseline labels';
     return findings.filter(finding => {{
         const severityMatches = severity === 'All severities' || finding.severity === severity;
         const categoryMatches = category === 'All categories' || finding.category === category;
         const statusMatches = findingStatus === 'All statuses' || finding.status === findingStatus;
         const signalMatches = signalMatchesSecurityFinding(finding, signal);
+        const baselineMatches = baseline === 'All baseline labels' || finding.baseline_status === baseline;
         const queryMatches = !query || findingSearchText(finding).includes(query);
-        return severityMatches && categoryMatches && statusMatches && signalMatches && queryMatches;
+        return severityMatches && categoryMatches && statusMatches && signalMatches && baselineMatches && queryMatches;
     }});
 }}
 
@@ -4369,12 +4737,13 @@ function renderSecurityFindings(status) {{
     }}
     $('securityFindingsRows').innerHTML = findings.map(finding => {{
         const reasons = (finding.review_reasons || []).join('; ') || finding.status || 'Review item';
+        const baseline = finding.baseline_status ? `<br><span class="security-badge">${{esc(finding.baseline_status)}}</span>` : '';
         const selected = finding.finding_id === state.selectedSecurityFindingId ? ' selected' : '';
         return `<tr class="security-finding-row${{selected}}" tabindex="0" role="button" aria-label="Open finding details" data-security-finding="${{esc(finding.finding_id)}}">
             <td>${{esc(finding.severity || 'Info')}}</td>
             <td>${{esc(finding.score ?? 0)}}</td>
             <td>${{esc(finding.category || 'Uncategorized')}}</td>
-            <td>${{esc(finding.title || 'Untitled')}}</td>
+            <td>${{esc(finding.title || 'Untitled')}}${{baseline}}</td>
             <td>${{esc(reasons)}}</td>
             <td><button type="button" data-security-finding="${{esc(finding.finding_id)}}">Details</button></td>
         </tr>`;
@@ -4501,6 +4870,7 @@ ${{bodyHtml}}
 
 function securitySummaryHtml(status) {{
     const summary = status.summary || {{}};
+    const comparison = status.baseline_comparison || null;
     return `
 <h2>Run Summary</h2>
 <p><strong>Check ID:</strong> <code>${{esc(status.check_id)}}</code><br>
@@ -4508,7 +4878,8 @@ function securitySummaryHtml(status) {{
 <strong>Mode:</strong> ${{esc(status.mode || 'standard')}}<br>
 <strong>Started:</strong> ${{esc(status.started_at || 'Unavailable')}}<br>
 <strong>Completed:</strong> ${{esc(status.completed_at || 'Unavailable')}}<br>
-<strong>App version:</strong> ${{esc(status.app_version || 'Unavailable')}}</p>
+<strong>App version:</strong> ${{esc(status.app_version || 'Unavailable')}}<br>
+<strong>Baseline:</strong> ${{esc(comparison ? (comparison.baseline_label || comparison.baseline_id) : 'None')}}</p>
 <p>
 <span class="badge">Findings: ${{esc(summary.findings_total || 0)}}</span>
 <span class="badge">High Review: ${{esc(summary.high_review || 0)}}</span>
@@ -4516,6 +4887,7 @@ function securitySummaryHtml(status) {{
 <span class="badge">Low Review: ${{esc(summary.low_review || 0)}}</span>
 <span class="badge">Info: ${{esc(summary.info || 0)}}</span>
 <span class="badge">Unsigned files: ${{esc(summary.unsigned_files || 0)}}</span>
+<span class="badge">Baseline changes: ${{esc(summary.baseline_changes || 0)}}</span>
 <span class="badge">Skipped: ${{esc(summary.skipped_count || 0)}}</span>
 </p>`;
 }}
@@ -4550,6 +4922,29 @@ function securitySkippedHtml(status) {{
 <tbody>${{rows || '<tr><td colspan="4">No skipped source details recorded.</td></tr>'}}</tbody></table>`;
 }}
 
+function securityBaselineComparisonHtml(status) {{
+    const comparison = status.baseline_comparison || null;
+    if (!comparison) {{
+        return '<h2>Baseline Comparison</h2><p>No baseline comparison was selected for this run.</p>';
+    }}
+    const currentRows = asArray(status.findings)
+        .filter(finding => finding.baseline_status)
+        .map(finding => `<tr><td>${{esc(finding.baseline_status)}}</td><td>${{esc(finding.category || 'Uncategorized')}}</td><td>${{esc(finding.title || 'Untitled')}}</td><td>${{esc(baselineMeaning(finding.baseline_status))}}</td></tr>`);
+    const removedRows = asArray(comparison.removed_items).map(item =>
+        `<tr><td>removed</td><td>${{esc(item.category || 'Uncategorized')}}</td><td>${{esc(item.title || 'Untitled')}}</td><td>${{esc(baselineMeaning('removed'))}}</td></tr>`
+    );
+    return `<h2>Baseline Comparison</h2>
+<p><strong>Baseline:</strong> ${{esc(comparison.baseline_label || comparison.baseline_id)}}<br>
+<strong>Compared at:</strong> ${{esc(comparison.compared_at || 'Unavailable')}}<br>
+<span class="badge">New: ${{esc(comparison.new || 0)}}</span>
+<span class="badge">Changed: ${{esc(comparison.changed || 0)}}</span>
+<span class="badge">Unchanged: ${{esc(comparison.unchanged || 0)}}</span>
+<span class="badge">Removed: ${{esc(comparison.removed || 0)}}</span></p>
+<p class="muted">${{esc(comparison.explanation || 'Baseline labels are review signals only.')}}</p>
+<table><thead><tr><th>Status</th><th>Category</th><th>Item</th><th>Meaning</th></tr></thead>
+<tbody>${{currentRows.concat(removedRows).join('') || '<tr><td colspan="4">No baseline differences recorded.</td></tr>'}}</tbody></table>`;
+}}
+
 function securityStepsHtml(status) {{
     const rows = asArray(status.steps).map(step => `<tr><td>${{esc(step.label || step.id || 'Step')}}</td><td>${{esc(step.status || 'Unknown')}}</td><td>${{esc(step.detail || '')}}</td></tr>`).join('');
     return `<h2>Lifecycle Steps</h2>
@@ -4561,6 +4956,7 @@ function buildSecurityFullReportHtml(status) {{
     const findings = asArray(status.findings);
     return securityReportShell('Security Check Full Report', `
 ${{securitySummaryHtml(status)}}
+${{securityBaselineComparisonHtml(status)}}
 <h2>Findings</h2>
 ${{securityFindingRows(findings, true)}}
 ${{securitySkippedHtml(status)}}
@@ -4573,6 +4969,7 @@ ${{securityStepsHtml(status)}}
 function buildSecurityFindingsReportHtml(status) {{
     return securityReportShell('Security Check Findings Only Report', `
 ${{securitySummaryHtml(status)}}
+${{securityBaselineComparisonHtml(status)}}
 <h2>Findings</h2>
 ${{securityFindingRows(asArray(status.findings), false)}}
 <h2>What To Do Next</h2>
@@ -4598,6 +4995,7 @@ function buildSecurityVerificationReportHtml(status) {{
     const findings = asArray(status.findings).filter(verificationRelevantFinding);
     return securityReportShell('Security Check Verification Report', `
 ${{securitySummaryHtml(status)}}
+${{securityBaselineComparisonHtml(status)}}
 <h2>File And Signature Verification Findings</h2>
 ${{securityFindingRows(findings, true)}}
 <h2>Verification Guidance</h2>
@@ -4672,6 +5070,7 @@ function renderSecurityCheckStatus(status) {{
         state.currentSecurityStatus = null;
         state.selectedSecurityFindingId = null;
         setSecurityReportButtons(null);
+        renderSecurityBaselineComparison(null);
         $('securityStatus').textContent = 'No Security Check running.';
         renderSecurityProgress();
         renderSecuritySummary();
@@ -4689,6 +5088,7 @@ function renderSecurityCheckStatus(status) {{
     const options = status.options || {{}};
     $('securityStatus').innerHTML = `Security Check <code>${{esc(status.check_id)}}</code><br>Status: <strong>${{esc(status.status)}}</strong> | Mode: ${{esc(status.mode || 'standard')}} | Registry backup opt-in: ${{options.registry_backup_opt_in ? 'yes' : 'no'}}`;
     renderSecurityCategoryBlocks(status);
+    renderSecurityBaselineComparison(status);
     renderSecurityFindings(status);
     setSecurityReportButtons(status);
 }}
@@ -4697,11 +5097,13 @@ async function startSecurityCheck() {{
     const payload = {{
         acknowledgeSafety: $('ackSecurityCheck').checked,
         mode: selectedSecurityMode(),
-        registryBackup: $('securityRegistryBackup').checked
+        registryBackup: $('securityRegistryBackup').checked,
+        baselineId: $('securityBaselineSelect').value || ''
     }};
     showActionAlert('info', 'Security Check Starting', 'The dashboard is asking the local server to start a read-only lifecycle job.', [
         `Mode: ${{payload.mode}}`,
         `Registry backup opt-in: ${{payload.registryBackup ? 'yes' : 'no'}}`,
+        `Baseline comparison: ${{payload.baselineId ? 'enabled' : 'none'}}`,
         'This run reads startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, services summary, and referenced files without changing settings.'
     ]);
     try {{
@@ -4715,6 +5117,7 @@ async function startSecurityCheck() {{
         showTab('security');
         showActionAlert('success', 'Security Check Started', 'Lifecycle progress is now visible in the Security Check tab.', [
             `Check ID: ${{status.check_id}}`,
+            status.options?.baseline_compare ? `Comparing against baseline: ${{status.options.baseline_label || status.options.baseline_id}}` : 'No baseline comparison selected.',
             'Signature status and SHA-256 are collected for referenced files when available. Reports are available after the run completes.'
         ]);
     }} catch (error) {{
@@ -4949,6 +5352,8 @@ async function loadInitial() {{
         const info = await api('/api/state');
         $('versionInfo').textContent = JSON.stringify(info.version, null, 2);
         $('driveSelect').innerHTML = info.drives.map(d => `<option value="${{esc(d.path)}}">${{esc(d.label)}}</option>`).join('');
+        state.securityBaselines = info.security_baselines || [];
+        renderSecurityBaselineControls();
         if (info.drives.length) $('rootPath').value = info.drives.find(d => d.path === 'C:\\\\')?.path || info.drives[0].path;
         if (info.latest_record) renderResult(info.latest_record);
         const latestSecurityStatus = info.active_security_check?.check_id ? info.active_security_check : info.latest_security_check;
@@ -5600,6 +6005,8 @@ $('downloadSecurityFullReport').addEventListener('click', () => downloadSecurity
 $('downloadSecurityFindingsReport').addEventListener('click', () => downloadSecurityReport('findings'));
 $('downloadSecurityVerificationReport').addEventListener('click', () => downloadSecurityReport('verification'));
 $('downloadSecurityJsonReport').addEventListener('click', downloadSecurityJsonReport);
+$('refreshSecurityBaselines').addEventListener('click', () => refreshSecurityBaselines(true));
+$('createSecurityBaseline').addEventListener('click', createSecurityBaseline);
 $('exitApp').addEventListener('click', exitApp);
 $('ackSecurityCheck').addEventListener('change', updateSecurityCheckStartState);
 $('startSecurityCheck').addEventListener('click', startSecurityCheck);
@@ -5631,6 +6038,9 @@ $('securityStatusFilter').addEventListener('change', () => {{
     if (state.currentSecurityStatus) renderSecurityFindings(state.currentSecurityStatus);
 }});
 $('securitySignalFilter').addEventListener('change', () => {{
+    if (state.currentSecurityStatus) renderSecurityFindings(state.currentSecurityStatus);
+}});
+$('securityBaselineFilter').addEventListener('change', () => {{
     if (state.currentSecurityStatus) renderSecurityFindings(state.currentSecurityStatus);
 }});
 $('processFilter').addEventListener('input', renderProcesses);
@@ -5693,6 +6103,7 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             elif path == "/api/state":
                 records = load_scan_records()
                 security_records = load_security_check_records()
+                security_baselines = load_security_baselines()
                 json_response(self, {
                     "version": APP_STATE.version_metadata,
                     "drives": get_available_drives(),
@@ -5700,11 +6111,14 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                     "active_scan": APP_STATE.scan_status(),
                     "latest_security_check": security_records[0] if security_records else None,
                     "active_security_check": APP_STATE.security_check_status(),
+                    "security_baselines": security_baselines,
                 })
             elif path == "/api/scans/active":
                 json_response(self, APP_STATE.scan_status())
             elif path == "/api/security-checks/active":
                 json_response(self, APP_STATE.security_check_status())
+            elif path == "/api/security-baselines":
+                json_response(self, APP_STATE.security_baselines())
             elif path.startswith("/api/security-checks/"):
                 check_id = path.rsplit("/", 1)[-1]
                 json_response(self, APP_STATE.security_check_record(check_id))
@@ -5737,6 +6151,8 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 json_response(self, APP_STATE.start_security_check(data), status=201)
             elif path == "/api/security-checks/cancel":
                 json_response(self, APP_STATE.cancel_security_check())
+            elif path == "/api/security-baselines":
+                json_response(self, APP_STATE.create_security_baseline(data), status=201)
             elif path == "/api/shutdown":
                 if not self.is_local_request():
                     json_response(self, {"error": "Shutdown is only allowed from localhost."}, status=403)

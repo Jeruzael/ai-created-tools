@@ -5,7 +5,7 @@
 - Status: Draft with initial scope decisions
 - Source: `windows/temp.txt`
 - Current app version baseline: v1.11.0
-- Latest implemented app version: v1.19.0
+- Latest implemented app version: v1.20.0
 - Prepared by: Codex
 
 ## 1. Request Understanding
@@ -71,8 +71,8 @@ Complexity scale used:
 - Registry backup means exporting selected keys for user recovery/reference, not modifying registry values.
 - Registry backups require explicit user opt-in before each Security Check. They must not be created silently or enabled by default.
 - First implementation should not install Sysmon, change Defender settings, edit browser policies, disable startup items, delete files, or quarantine anything.
-- The UI should reserve future areas for advanced checks and baseline comparison, but first implementation should not attempt every advanced data source.
-- Baseline comparison is postponed until Standard Review results are stable. Best practice is to let users create a baseline only after they review the current system state and intentionally mark it as a known-good reference.
+- The UI should reserve future areas for advanced checks, but first implementation should not attempt every advanced data source.
+- Baseline comparison is available after Standard Review results are stable. Best practice is to let users create a baseline only after they review the current system state and intentionally mark it as a known-good reference.
 - Known-safe allowlisting is postponed until scoring and evidence display have been validated.
 - Technical JSON is generated only when the user explicitly clicks `Download Technical JSON`.
 - The user accepts local storage of security reports because reports may contain sensitive paths, usernames, installed software names, command lines, hashes, and registry values.
@@ -82,7 +82,7 @@ Complexity scale used:
 Resolved decisions:
 
 - Registry backup: user must explicitly opt in before each Security Check.
-- Baseline comparison: postpone implementation. Best practice is to reserve UI space early, then add baseline creation/comparison after Standard Review is reliable. A baseline should only be created after the user or technical reviewer confirms the current state is known-good.
+- Baseline comparison: implemented after Standard Review and reporting became available. A baseline should only be created after the user or technical reviewer confirms the current state is known-good.
 - Known-safe allowlist: postpone until scoring and evidence display are stable.
 - Technical JSON: include only when the user clicks `Download Technical JSON`.
 
@@ -448,6 +448,8 @@ Acceptance criteria:
 
 ### Slice 9: Baseline Creation And Comparison
 
+Status: **Implemented in v1.20**
+
 Complexity: **XL**
 
 Goal:
@@ -465,12 +467,12 @@ Includes:
 
 Acceptance criteria:
 
-- [ ] User can create a local baseline after reviewing current state.
-- [ ] User can compare a later scan against a selected baseline.
-- [ ] New, changed, removed, and unchanged items are clearly labeled.
-- [ ] UI explains that changed does not mean harmful.
-- [ ] Baseline data is stored locally.
-- [ ] Baseline comparison is included in reports.
+- [x] User can create a local baseline after reviewing current state.
+- [x] User can compare a later scan against a selected baseline.
+- [x] New, changed, removed, and unchanged items are clearly labeled.
+- [x] UI explains that changed does not mean harmful.
+- [x] Baseline data is stored locally.
+- [x] Baseline comparison is included in reports.
 
 Recommendation:
 
