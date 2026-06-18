@@ -1,18 +1,22 @@
- Implemented the next slice: Security Check v1.14 Standard Review Collector Set A.
+Implemented the next slice: Security Check v1.15, Slice 4 Standard Review Collector Set B.
 
-  Changes made:
+  What changed:
 
-  - Added read-only collectors for startup registry entries, Startup folders, Chrome/Edge browser policies, proxy
-    settings, DNS settings, and Microsoft Defender exclusions.
+  - Added read-only scheduled task collection.
+  - Added scoped Windows services summary.
+  - Added autoruns-style command/name review indicators for:
+      - encoded/hidden PowerShell patterns
+      - script/command host utilities like mshta, wscript, regsvr32, rundll32
+      - shell-launched commands
+      - web URLs
+      - user-writable/temp locations
+      - Windows-like executable names outside expected Windows system folders
 
-  - Wired collectors into the Security Check background lifecycle.
-  - Findings now save into local security records and render in the browser table with selectable Details.
-  - Detail panel now shows plain-language explanation, technical evidence, review reasons, and safe next steps.
-  - Access denied/unavailable sources are recorded as skipped instead of failing the check.
-  - Browser policies now show “no managed policies reported” info items when none are found, so users know the source
-    was reviewed.
+  - Applied those indicators to startup registry entries, Startup folder entries, scheduled task actions, and
+    automatic service commands.
 
-  - Updated docs/version metadata to v1.14.
+  - Updated Security Check UI category blocks and safety text.
+  - Updated docs and metadata to v1.15.
 
   Key files updated:
 
@@ -20,17 +24,20 @@
   - README.md
   - windows/README.md
   - windows/dashboard_version.json
-  - windows/Windows_Disk_Usage_Dashboard_AppRequirements_v1.14_2026-06-18.md
+  - windows/Windows_Disk_Usage_Dashboard_AppRequirements_v1.15_2026-06-18.md
   - windows/Windows_Disk_Usage_Dashboard_Security_Check_Slices_v1.0_2026-06-18.md
 
   Verification passed:
 
   - python -m py_compile windows\DiskUsageHtmlReport.py
-  - Served browser JS parse check passed.
+  - Fresh Security Check completed on v1.15 with 326 findings.
+  - Scheduled task collector returned 283 scheduled-task findings.
+  - Services summary returned successfully.
+  - No collector failed; only report downloads remain skipped as planned.
   - API rejected Security Check start without acknowledgement: 400.
-  - Fresh v1.14 Security Check completed with 42 findings across expected categories.
+  - Served browser JavaScript parsed successfully.
   - Legacy --scan-once report generation still works.
 
-  The v1.14 server is currently running here:
+  The v1.15 server is currently running at:
 
   http://127.0.0.1:8765/

@@ -5,7 +5,7 @@
 - Status: Draft with initial scope decisions
 - Source: `windows/temp.txt`
 - Current app version baseline: v1.11.0
-- Latest implemented app version: v1.14.0
+- Latest implemented app version: v1.15.0
 - Prepared by: Codex
 
 ## 1. Request Understanding
@@ -309,6 +309,8 @@ Acceptance criteria:
 
 ### Slice 4: Standard Review Collector Set B
 
+Status: **Implemented in v1.15**
+
 Complexity: **L**
 
 Goal:
@@ -324,11 +326,11 @@ Includes:
 
 Acceptance criteria:
 
-- [ ] Scheduled tasks show task name, trigger, action, arguments, author, last run, next run, and review reasons when available.
-- [ ] Suspicious command patterns are detected and shown with the matched pattern.
-- [ ] Suspicious Windows-like names outside expected paths are flagged as review items.
-- [ ] Findings use `Needs Review` language, not malware language.
-- [ ] Collector failures are isolated by category.
+- [x] Scheduled tasks show task name, trigger, action, arguments, author, last run, next run, and review reasons when available.
+- [x] Suspicious command patterns are detected and shown with the matched pattern.
+- [x] Suspicious Windows-like names outside expected paths are flagged as review items.
+- [x] Findings use `Needs Review` language, not malware language.
+- [x] Collector failures are isolated by category.
 
 ### Slice 5: File Verification
 

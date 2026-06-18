@@ -5,7 +5,7 @@
 - Status: Draft
 - Prepared for: Future UI redesign and feature planning prompts
 - Prepared by: Codex
-- Current app version described: v1.14.0
+- Current app version described: v1.15.0
 - Source reviewed: `windows/DiskUsageHtmlReport.py`
 
 ## Purpose
@@ -60,7 +60,7 @@ Top header:
 
 - Left side:
   - Title: `Windows Disk Usage Dashboard`
-  - Subtitle: `Local read-only scan and process review tool. App v1.14.0, docs v1.14.`
+  - Subtitle: `Local read-only scan and process review tool. App v1.15.0, docs v1.15.`
 - Right side:
   - `Exit App` button styled as a danger action.
   - Small helper text: `Server: 127.0.0.1 only` and `Reports stay on this computer.`
@@ -258,7 +258,7 @@ Downloaded process reports:
 
 ## Tab: Security Check
 
-The Security Check tab is currently a v1.14 local read-only Standard Review workflow. It can start, poll, cancel, save a local record, and show collected review findings for startup entries, browser policies, proxy/DNS settings, and Microsoft Defender exclusions.
+The Security Check tab is currently a v1.15 local read-only Standard Review workflow. It can start, poll, cancel, save a local record, and show collected review findings for startup entries, browser policies, proxy/DNS settings, Microsoft Defender exclusions, scheduled tasks, scoped services summary, and command/name review indicators.
 
 Current shell elements:
 
@@ -273,7 +273,7 @@ Current shell elements:
 - Empty findings table with disabled filters.
 - Selectable findings table with plain-language reasons, severity, category, and Details buttons.
 - Finding detail panel with explanation, review reasons, technical evidence, and safe next steps.
-- Review category blocks for Registry Startup, Startup Folder, Browser Policy, Proxy Settings, DNS Settings, and Defender Exclusions, with Scheduled Tasks and File Verification still marked as future collectors.
+- Review category blocks for Registry Startup, Startup Folder, Browser Policy, Proxy Settings, DNS Settings, Defender Exclusions, Scheduled Tasks, and Windows Services Summary, with File Verification still marked as a future collector.
 - Disabled report buttons for future security reports and technical JSON.
 - Local lifecycle record details after a run completes or is cancelled.
 
@@ -283,7 +283,7 @@ Important behavior:
 - Exit is disabled while the lifecycle job is running.
 - The user can cancel the lifecycle job.
 - Completed and cancelled lifecycle jobs are saved under the app's local security-check records directory.
-- No registry keys, files, scheduled tasks, Defender settings, browser policies, or logs are read yet.
+- No files, event logs, Sysmon data, baselines, allowlists, or downloadable security reports are generated yet.
 
 ## Tab: History
 
@@ -505,7 +505,7 @@ Results tab: scan summary, scan health, biggest folders, file types, biggest fil
 
 Processes tab: process refresh, grouped report download, verification report download, Verify link, process filters, publisher tooltip, compact summary cards, grouped tree, clickable process table, draggable split pane with Process Details, and a Verification Guide for digital signatures and SHA-256 hashes.
 
-Security Check tab: v1.14 local read-only Standard Review workflow. It has safety acknowledgement, Standard Review mode, disabled Advanced/future options, explicit registry-backup opt-in, progress polling, cancellation, local record details, selectable findings, grouped category blocks, skipped-source details, and disabled report buttons. It reviews startup entries, browser policies, proxy/DNS settings, and Defender exclusions without changing system settings.
+Security Check tab: v1.15 local read-only Standard Review workflow. It has safety acknowledgement, Standard Review mode, disabled Advanced/future options, explicit registry-backup opt-in, progress polling, cancellation, local record details, selectable findings, grouped category blocks, skipped-source details, and disabled report buttons. It reviews startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, services summary, and command/name indicators without changing system settings.
 
 History tab: table of saved scans with Open action.
 

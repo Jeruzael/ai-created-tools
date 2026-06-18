@@ -1,0 +1,3667 @@
+{
+  "check_id": "e499ed33e13f4c9ebe66eb837642ade9",
+  "schema_version": "security-check-lifecycle-v1",
+  "mode": "standard",
+  "started_at": "2026-06-18T11:30:58",
+  "completed_at": "2026-06-18T11:31:12",
+  "duration_seconds": 13,
+  "status": "completed",
+  "safety_acknowledged": true,
+  "options": {
+    "registry_backup_opt_in": false,
+    "baseline_compare": false,
+    "wmi_check": false,
+    "event_log_correlation": false,
+    "sysmon_correlation": false
+  },
+  "summary": {
+    "overall_status": "Completed",
+    "high_review": 0,
+    "medium_review": 70,
+    "low_review": 16,
+    "info": 20,
+    "unsigned_files": 0,
+    "baseline_changes": "Future",
+    "findings_total": 106,
+    "skipped_count": 2,
+    "collectors_connected": true
+  },
+  "findings": [
+    {
+      "finding_id": "6e20839208d44c238d6f347b8c93fcd3",
+      "category": "Registry Startup",
+      "title": "Adobe Acrobat Synchronizer",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "Adobe Acrobat Synchronizer",
+        "value_data": "\"C:\\Program Files\\Adobe\\Acrobat DC\\Acrobat\\AdobeCollabSync.exe\"",
+        "value_type": "1"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:30:59",
+      "last_seen": "2026-06-18T11:30:59"
+    },
+    {
+      "finding_id": "111fb3c8e0b143bd9da946bfd6ac6952",
+      "category": "Registry Startup",
+      "title": "Synapse3",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "Synapse3",
+        "value_data": "C:\\Program Files (x86)\\Razer\\Synapse3\\WPFUI\\Framework\\Razer Synapse 3 Host\\Razer Synapse 3.exe /StartMinimized",
+        "value_type": "1"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:30:59",
+      "last_seen": "2026-06-18T11:30:59"
+    },
+    {
+      "finding_id": "ff5573f392af41c980d0a098c9f0d40d",
+      "category": "Registry Startup",
+      "title": "RzAppEngine",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "RzAppEngine",
+        "value_data": "\"C:\\Program Files\\Razer\\RzAppEngine\\rzappengine.exe\" --start-hidden --url-params=apps=7.1-surround-sound&autoStart=1",
+        "value_type": "1"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:30:59",
+      "last_seen": "2026-06-18T11:30:59"
+    },
+    {
+      "finding_id": "afd19391ee06472284d67c4a50f2c229",
+      "category": "Registry Startup",
+      "title": "utweb",
+      "severity": "Medium Review",
+      "score": 55,
+      "status": "Needs Review",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present",
+        "Needs Review: command references a user-writable or temporary location"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "utweb",
+        "value_data": "\"C:\\Users\\HomePC\\AppData\\Roaming\\uTorrent Web\\utweb.exe\" /MINIMIZED",
+        "value_type": "1",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: command references a user-writable or temporary location",
+            "matched_text": "\\AppData\\",
+            "explanation": "Autorun commands from user-writable or temporary locations are easier to change than protected program folders.",
+            "severity": "Medium Review",
+            "score": 55
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:30:59",
+      "last_seen": "2026-06-18T11:30:59"
+    },
+    {
+      "finding_id": "2a0b36aee5744e06aef712b0b75126ff",
+      "category": "Registry Startup",
+      "title": "AF_uuid_514912",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "AF_uuid_514912",
+        "value_data": "73cf255f-51c4-4d55-84d5-a3bd7f1189b9",
+        "value_type": "1"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:30:59",
+      "last_seen": "2026-06-18T11:30:59"
+    },
+    {
+      "finding_id": "a124a6ce4397411db5db0fcb3cc5bece",
+      "category": "Registry Startup",
+      "title": "AF_counter_514912",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "AF_counter_514912",
+        "value_data": "9",
+        "value_type": "1"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:30:59",
+      "last_seen": "2026-06-18T11:30:59"
+    },
+    {
+      "finding_id": "d6ce7e5a55384aecbf131f39e90c42af",
+      "category": "Registry Startup",
+      "title": "Docker Desktop",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "Docker Desktop",
+        "value_data": "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe",
+        "value_type": "1"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:30:59",
+      "last_seen": "2026-06-18T11:30:59"
+    },
+    {
+      "finding_id": "e5029b173baf429fbf3c5da7d1768797",
+      "category": "Registry Startup",
+      "title": "Steam",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "Steam",
+        "value_data": "\"C:\\Program Files (x86)\\Steam\\steam.exe\" -silent",
+        "value_type": "1"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:30:59",
+      "last_seen": "2026-06-18T11:30:59"
+    },
+    {
+      "finding_id": "5eb73b9128a8461093f7d712bb2a780a",
+      "category": "Registry Startup",
+      "title": "RiotClient",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "RiotClient",
+        "value_data": "C:\\Riot Games\\Riot Client\\RiotClientServices.exe --launch-background-mode",
+        "value_type": "1"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:30:59",
+      "last_seen": "2026-06-18T11:30:59"
+    },
+    {
+      "finding_id": "6876b7b36d4f468bafbac496dda839ed",
+      "category": "Registry Startup",
+      "title": "Opera GX Stable",
+      "severity": "Medium Review",
+      "score": 55,
+      "status": "Needs Review",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present",
+        "Needs Review: command references a user-writable or temporary location"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "Opera GX Stable",
+        "value_data": "\"C:\\Users\\HomePC\\AppData\\Local\\Programs\\Opera GX\\opera.exe\" --autostart",
+        "value_type": "1",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: command references a user-writable or temporary location",
+            "matched_text": "\\AppData\\",
+            "explanation": "Autorun commands from user-writable or temporary locations are easier to change than protected program folders.",
+            "severity": "Medium Review",
+            "score": 55
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:30:59",
+      "last_seen": "2026-06-18T11:30:59"
+    },
+    {
+      "finding_id": "3fa609085ba04dd1b736da2f9d237114",
+      "category": "Registry Startup",
+      "title": "MicrosoftEdgeAutoLaunch_92867D842B4849A6D57B3FDF3B4FE076",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "MicrosoftEdgeAutoLaunch_92867D842B4849A6D57B3FDF3B4FE076",
+        "value_data": "\"C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe\" --win-session-start",
+        "value_type": "1"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:30:59",
+      "last_seen": "2026-06-18T11:30:59"
+    },
+    {
+      "finding_id": "ef66462fa24c42fdae98e9856b924078",
+      "category": "Registry Startup",
+      "title": "Viber",
+      "severity": "Medium Review",
+      "score": 55,
+      "status": "Needs Review",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present",
+        "Needs Review: command references a user-writable or temporary location"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "Viber",
+        "value_data": "\"C:\\Users\\HomePC\\AppData\\Local\\Viber\\Viber.exe\" AutoStart",
+        "value_type": "1",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: command references a user-writable or temporary location",
+            "matched_text": "\\AppData\\",
+            "explanation": "Autorun commands from user-writable or temporary locations are easier to change than protected program folders.",
+            "severity": "Medium Review",
+            "score": 55
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:30:59",
+      "last_seen": "2026-06-18T11:30:59"
+    },
+    {
+      "finding_id": "e5dc492395834215a191786116bae500",
+      "category": "Registry Startup",
+      "title": "Discord",
+      "severity": "Medium Review",
+      "score": 55,
+      "status": "Needs Review",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present",
+        "Needs Review: command references a user-writable or temporary location"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "Discord",
+        "value_data": "\"C:\\Users\\HomePC\\AppData\\Local\\Discord\\Update.exe\" --processStart Discord.exe",
+        "value_type": "1",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: command references a user-writable or temporary location",
+            "matched_text": "\\AppData\\",
+            "explanation": "Autorun commands from user-writable or temporary locations are easier to change than protected program folders.",
+            "severity": "Medium Review",
+            "score": 55
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:30:59",
+      "last_seen": "2026-06-18T11:30:59"
+    },
+    {
+      "finding_id": "fadf14ab9c2243019950d3e46d298349",
+      "category": "Registry Startup",
+      "title": "Opera GX Browser Assistant",
+      "severity": "Medium Review",
+      "score": 55,
+      "status": "Needs Review",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present",
+        "Needs Review: command references a user-writable or temporary location"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "Opera GX Browser Assistant",
+        "value_data": "C:\\Users\\HomePC\\AppData\\Local\\Programs\\Opera GX\\assistant\\browser_assistant.exe",
+        "value_type": "1",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: command references a user-writable or temporary location",
+            "matched_text": "\\AppData\\",
+            "explanation": "Autorun commands from user-writable or temporary locations are easier to change than protected program folders.",
+            "severity": "Medium Review",
+            "score": 55
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:30:59",
+      "last_seen": "2026-06-18T11:30:59"
+    },
+    {
+      "finding_id": "17ff4fc73bea463492ec3a8d2299bd73",
+      "category": "Registry Startup",
+      "title": "SecurityHealth",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKLM",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "SecurityHealth",
+        "value_data": "%windir%\\system32\\SecurityHealthSystray.exe",
+        "value_type": "2"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:30:59",
+      "last_seen": "2026-06-18T11:30:59"
+    },
+    {
+      "finding_id": "282a4c75c9af46288b233db681e7cd78",
+      "category": "Registry Startup",
+      "title": "RTHDVCPL",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKLM",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "RTHDVCPL",
+        "value_data": "\"C:\\Program Files\\Realtek\\Audio\\HDA\\RAVCpl64.exe\" -s",
+        "value_type": "1"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:30:59",
+      "last_seen": "2026-06-18T11:30:59"
+    },
+    {
+      "finding_id": "05ae5b01a9f34ae8b7b8a6a286e15e00",
+      "category": "Registry Startup",
+      "title": "RZSurroundHelper",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKLM",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "RZSurroundHelper",
+        "value_data": "C:\\WINDOWS\\system32\\RZSurroundHelper.exe",
+        "value_type": "1"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:30:59",
+      "last_seen": "2026-06-18T11:30:59"
+    },
+    {
+      "finding_id": "061fd92a748c4c2ebb8ad8b1db45ec45",
+      "category": "Registry Startup",
+      "title": "Riot Vanguard",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKLM",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "Riot Vanguard",
+        "value_data": "\"C:\\Program Files\\Riot Vanguard\\vgtray.exe\"",
+        "value_type": "1"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:30:59",
+      "last_seen": "2026-06-18T11:30:59"
+    },
+    {
+      "finding_id": "cfd7f745ac81408ea91522fb48391d38",
+      "category": "Startup Folder",
+      "title": "desktop.ini",
+      "severity": "Medium Review",
+      "score": 55,
+      "status": "Needs Review",
+      "plain_explanation": "Files or shortcuts in this folder can start when the user signs in.",
+      "review_reasons": [
+        "Startup folder item is present",
+        "Needs Review: command references a user-writable or temporary location"
+      ],
+      "recommended_next_steps": [
+        "Confirm the shortcut or file belongs to software you recognize.",
+        "Use the app's startup settings or Windows Startup Apps settings before deleting shortcuts."
+      ],
+      "evidence": {
+        "folder_label": "Current user startup folder",
+        "folder_path": "C:\\Users\\HomePC\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
+        "file_path": "C:\\Users\\HomePC\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\desktop.ini",
+        "is_directory": false,
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: command references a user-writable or temporary location",
+            "matched_text": "\\AppData\\",
+            "explanation": "Autorun commands from user-writable or temporary locations are easier to change than protected program folders.",
+            "severity": "Medium Review",
+            "score": 55
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:30:59",
+      "last_seen": "2026-06-18T11:30:59"
+    },
+    {
+      "finding_id": "71a907fe026e4f5b8f716b8d8d03671a",
+      "category": "Startup Folder",
+      "title": "Send to OneNote.lnk",
+      "severity": "Medium Review",
+      "score": 55,
+      "status": "Needs Review",
+      "plain_explanation": "Files or shortcuts in this folder can start when the user signs in.",
+      "review_reasons": [
+        "Startup folder item is present",
+        "Needs Review: command references a user-writable or temporary location"
+      ],
+      "recommended_next_steps": [
+        "Confirm the shortcut or file belongs to software you recognize.",
+        "Use the app's startup settings or Windows Startup Apps settings before deleting shortcuts."
+      ],
+      "evidence": {
+        "folder_label": "Current user startup folder",
+        "folder_path": "C:\\Users\\HomePC\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
+        "file_path": "C:\\Users\\HomePC\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Send to OneNote.lnk",
+        "is_directory": false,
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: command references a user-writable or temporary location",
+            "matched_text": "\\AppData\\",
+            "explanation": "Autorun commands from user-writable or temporary locations are easier to change than protected program folders.",
+            "severity": "Medium Review",
+            "score": 55
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:30:59",
+      "last_seen": "2026-06-18T11:30:59"
+    },
+    {
+      "finding_id": "4ccec9e34d36467db9a483f9ad72e1ae",
+      "category": "Startup Folder",
+      "title": "desktop.ini",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "Files or shortcuts in this folder can start when the user signs in.",
+      "review_reasons": [
+        "Startup folder item is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the shortcut or file belongs to software you recognize.",
+        "Use the app's startup settings or Windows Startup Apps settings before deleting shortcuts."
+      ],
+      "evidence": {
+        "folder_label": "All users startup folder",
+        "folder_path": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
+        "file_path": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\desktop.ini",
+        "is_directory": false
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:30:59",
+      "last_seen": "2026-06-18T11:30:59"
+    },
+    {
+      "finding_id": "5f20a2dbae9b4fe7b9e614a6f44cc02a",
+      "category": "Browser Policy",
+      "title": "Google Chrome: No managed policies reported",
+      "severity": "Info",
+      "score": 0,
+      "status": "No Obvious Issue",
+      "plain_explanation": "No Chrome or Edge managed policy values were found for this browser in the standard current-user or local-machine policy registry locations.",
+      "review_reasons": [
+        "No managed browser policy values were found in the standard locations"
+      ],
+      "recommended_next_steps": [
+        "No action is needed for this browser policy source unless you expected work, school, or security software policies."
+      ],
+      "evidence": {
+        "browser": "Google Chrome",
+        "locations_checked": [
+          "HKCU\\Software\\Policies\\Google\\Chrome",
+          "HKLM\\Software\\Policies\\Google\\Chrome"
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:30:59",
+      "last_seen": "2026-06-18T11:30:59"
+    },
+    {
+      "finding_id": "41f8cce2c8c74b2a9aaa1dcd638ed00a",
+      "category": "Browser Policy",
+      "title": "Microsoft Edge: No managed policies reported",
+      "severity": "Info",
+      "score": 0,
+      "status": "No Obvious Issue",
+      "plain_explanation": "No Chrome or Edge managed policy values were found for this browser in the standard current-user or local-machine policy registry locations.",
+      "review_reasons": [
+        "No managed browser policy values were found in the standard locations"
+      ],
+      "recommended_next_steps": [
+        "No action is needed for this browser policy source unless you expected work, school, or security software policies."
+      ],
+      "evidence": {
+        "browser": "Microsoft Edge",
+        "locations_checked": [
+          "HKCU\\Software\\Policies\\Microsoft\\Edge",
+          "HKLM\\Software\\Policies\\Microsoft\\Edge"
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:30:59",
+      "last_seen": "2026-06-18T11:30:59"
+    },
+    {
+      "finding_id": "c941add98d524d119ee119eac483a23b",
+      "category": "Proxy Settings",
+      "title": "ProxyEnable",
+      "severity": "Info",
+      "score": 10,
+      "status": "Found",
+      "plain_explanation": "Proxy settings can affect where web traffic goes. They can be normal for work, school, VPNs, or privacy tools, but unknown settings should be reviewed.",
+      "review_reasons": [
+        "Proxy Settings entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings",
+        "value_name": "ProxyEnable",
+        "value_data": "0",
+        "value_type": "4"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:30:59",
+      "last_seen": "2026-06-18T11:30:59"
+    },
+    {
+      "finding_id": "9939919fe9e2445eb40a571ee93ab8bd",
+      "category": "DNS Settings",
+      "title": "Ethernet 2 2",
+      "severity": "Info",
+      "score": 10,
+      "status": "Found",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "DNS server values are configured"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Ethernet 2",
+        "interface_index": 21,
+        "address_family": 2,
+        "dns_servers": [
+          "10.30.0.1",
+          "0.0.0.0"
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:01",
+      "last_seen": "2026-06-18T11:31:01"
+    },
+    {
+      "finding_id": "dc8cd8434f02428b871773f658cf343c",
+      "category": "DNS Settings",
+      "title": "Ethernet 2 23",
+      "severity": "Info",
+      "score": 0,
+      "status": "No Obvious Issue",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "No DNS server values reported for this adapter"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Ethernet 2",
+        "interface_index": 21,
+        "address_family": 23,
+        "dns_servers": []
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:01",
+      "last_seen": "2026-06-18T11:31:01"
+    },
+    {
+      "finding_id": "c467f16afc0b480aa5e3b6176756142d",
+      "category": "DNS Settings",
+      "title": "Ethernet 2",
+      "severity": "Info",
+      "score": 10,
+      "status": "Found",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "DNS server values are configured"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Ethernet",
+        "interface_index": 13,
+        "address_family": 2,
+        "dns_servers": [
+          "192.168.254.254"
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:01",
+      "last_seen": "2026-06-18T11:31:01"
+    },
+    {
+      "finding_id": "22057622e99247ff8c9959b13d197481",
+      "category": "DNS Settings",
+      "title": "Ethernet 23",
+      "severity": "Info",
+      "score": 0,
+      "status": "No Obvious Issue",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "No DNS server values reported for this adapter"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Ethernet",
+        "interface_index": 13,
+        "address_family": 23,
+        "dns_servers": []
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:01",
+      "last_seen": "2026-06-18T11:31:01"
+    },
+    {
+      "finding_id": "e0c327e30e3e4573bf6dbac4937df642",
+      "category": "DNS Settings",
+      "title": "Ethernet 3 2",
+      "severity": "Info",
+      "score": 0,
+      "status": "No Obvious Issue",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "No DNS server values reported for this adapter"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Ethernet 3",
+        "interface_index": 17,
+        "address_family": 2,
+        "dns_servers": []
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:01",
+      "last_seen": "2026-06-18T11:31:01"
+    },
+    {
+      "finding_id": "d2a5e1dffcdb45db96ec27b553576172",
+      "category": "DNS Settings",
+      "title": "Ethernet 3 23",
+      "severity": "Info",
+      "score": 10,
+      "status": "Found",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "DNS server values are configured"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Ethernet 3",
+        "interface_index": 17,
+        "address_family": 23,
+        "dns_servers": [
+          "fec0:0:0:ffff::1",
+          "fec0:0:0:ffff::2",
+          "fec0:0:0:ffff::3"
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:01",
+      "last_seen": "2026-06-18T11:31:01"
+    },
+    {
+      "finding_id": "1959d9974b9a42beb610c2de4bf40bc5",
+      "category": "DNS Settings",
+      "title": "Local Area Connection* 11 2",
+      "severity": "Info",
+      "score": 0,
+      "status": "No Obvious Issue",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "No DNS server values reported for this adapter"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Local Area Connection* 11",
+        "interface_index": 19,
+        "address_family": 2,
+        "dns_servers": []
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:01",
+      "last_seen": "2026-06-18T11:31:01"
+    },
+    {
+      "finding_id": "d9748c0c325845abb07a1b11853fdf20",
+      "category": "DNS Settings",
+      "title": "Local Area Connection* 11 23",
+      "severity": "Info",
+      "score": 10,
+      "status": "Found",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "DNS server values are configured"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Local Area Connection* 11",
+        "interface_index": 19,
+        "address_family": 23,
+        "dns_servers": [
+          "fec0:0:0:ffff::1",
+          "fec0:0:0:ffff::2",
+          "fec0:0:0:ffff::3"
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:01",
+      "last_seen": "2026-06-18T11:31:01"
+    },
+    {
+      "finding_id": "84f1f0b128674ece82042eb2af3f9c6d",
+      "category": "DNS Settings",
+      "title": "Local Area Connection* 12 2",
+      "severity": "Info",
+      "score": 0,
+      "status": "No Obvious Issue",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "No DNS server values reported for this adapter"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Local Area Connection* 12",
+        "interface_index": 8,
+        "address_family": 2,
+        "dns_servers": []
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:01",
+      "last_seen": "2026-06-18T11:31:01"
+    },
+    {
+      "finding_id": "f79396ddf5be467fb0994b9bf8fea354",
+      "category": "DNS Settings",
+      "title": "Local Area Connection* 12 23",
+      "severity": "Info",
+      "score": 10,
+      "status": "Found",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "DNS server values are configured"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Local Area Connection* 12",
+        "interface_index": 8,
+        "address_family": 23,
+        "dns_servers": [
+          "fec0:0:0:ffff::1",
+          "fec0:0:0:ffff::2",
+          "fec0:0:0:ffff::3"
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:01",
+      "last_seen": "2026-06-18T11:31:01"
+    },
+    {
+      "finding_id": "6d7999fcaf7341739d5912e4cbfb5847",
+      "category": "DNS Settings",
+      "title": "Wi-Fi 2",
+      "severity": "Info",
+      "score": 10,
+      "status": "Found",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "DNS server values are configured"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Wi-Fi",
+        "interface_index": 14,
+        "address_family": 2,
+        "dns_servers": [
+          "192.168.1.1"
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:01",
+      "last_seen": "2026-06-18T11:31:01"
+    },
+    {
+      "finding_id": "48265783068f42f5955be62400e14807",
+      "category": "DNS Settings",
+      "title": "Wi-Fi 23",
+      "severity": "Info",
+      "score": 10,
+      "status": "Found",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "DNS server values are configured"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Wi-Fi",
+        "interface_index": 14,
+        "address_family": 23,
+        "dns_servers": [
+          "fe80::1",
+          "fe80::1"
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:01",
+      "last_seen": "2026-06-18T11:31:01"
+    },
+    {
+      "finding_id": "1471d5b5f7574dd0ad23d01693db3091",
+      "category": "DNS Settings",
+      "title": "Loopback Pseudo-Interface 1 2",
+      "severity": "Info",
+      "score": 0,
+      "status": "No Obvious Issue",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "No DNS server values reported for this adapter"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Loopback Pseudo-Interface 1",
+        "interface_index": 1,
+        "address_family": 2,
+        "dns_servers": []
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:01",
+      "last_seen": "2026-06-18T11:31:01"
+    },
+    {
+      "finding_id": "1affd6f0f9d241589ba5a47879e36458",
+      "category": "DNS Settings",
+      "title": "Loopback Pseudo-Interface 1 23",
+      "severity": "Info",
+      "score": 10,
+      "status": "Found",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "DNS server values are configured"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Loopback Pseudo-Interface 1",
+        "interface_index": 1,
+        "address_family": 23,
+        "dns_servers": [
+          "fec0:0:0:ffff::1",
+          "fec0:0:0:ffff::2",
+          "fec0:0:0:ffff::3"
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:01",
+      "last_seen": "2026-06-18T11:31:01"
+    },
+    {
+      "finding_id": "96fa52e81a5942e7bd7a8e5ec5c57f2d",
+      "category": "DNS Settings",
+      "title": "vEthernet (WSL (Hyper-V firewall)) 2",
+      "severity": "Info",
+      "score": 0,
+      "status": "No Obvious Issue",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "No DNS server values reported for this adapter"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "vEthernet (WSL (Hyper-V firewall))",
+        "interface_index": 62,
+        "address_family": 2,
+        "dns_servers": []
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:01",
+      "last_seen": "2026-06-18T11:31:01"
+    },
+    {
+      "finding_id": "cf07589fdb314f45823582ee52a79088",
+      "category": "DNS Settings",
+      "title": "vEthernet (WSL (Hyper-V firewall)) 23",
+      "severity": "Info",
+      "score": 10,
+      "status": "Found",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "DNS server values are configured"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "vEthernet (WSL (Hyper-V firewall))",
+        "interface_index": 62,
+        "address_family": 23,
+        "dns_servers": [
+          "fec0:0:0:ffff::1",
+          "fec0:0:0:ffff::2",
+          "fec0:0:0:ffff::3"
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:01",
+      "last_seen": "2026-06-18T11:31:01"
+    },
+    {
+      "finding_id": "bfa7ad648a8247ea83a612501fa449f1",
+      "category": "Microsoft Defender Exclusions",
+      "title": "Excluded Path: C:\\Windows",
+      "severity": "Low Review",
+      "score": 35,
+      "status": "Found",
+      "plain_explanation": "Defender exclusions tell Microsoft Defender what not to scan. Some are normal for developer tools, game engines, or business software, but broad or unfamiliar exclusions can weaken protection.",
+      "review_reasons": [
+        "Defender exclusion is configured"
+      ],
+      "recommended_next_steps": [
+        "Confirm the exclusion belongs to software you trust and still use.",
+        "Do not remove exclusions blindly; some apps require them, but broad exclusions deserve review."
+      ],
+      "evidence": {
+        "exclusion_type": "Excluded Path",
+        "field": "ExclusionPath",
+        "value": "C:\\Windows",
+        "broad_exclusion": false
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:02",
+      "last_seen": "2026-06-18T11:31:02"
+    },
+    {
+      "finding_id": "bbd9a81ded084d5da6f0d982dfc1c59d",
+      "category": "Microsoft Defender Exclusions",
+      "title": "Excluded Path: C:\\Windows\\System32\\SppExtComObjHook.dll",
+      "severity": "Low Review",
+      "score": 35,
+      "status": "Found",
+      "plain_explanation": "Defender exclusions tell Microsoft Defender what not to scan. Some are normal for developer tools, game engines, or business software, but broad or unfamiliar exclusions can weaken protection.",
+      "review_reasons": [
+        "Defender exclusion is configured"
+      ],
+      "recommended_next_steps": [
+        "Confirm the exclusion belongs to software you trust and still use.",
+        "Do not remove exclusions blindly; some apps require them, but broad exclusions deserve review."
+      ],
+      "evidence": {
+        "exclusion_type": "Excluded Path",
+        "field": "ExclusionPath",
+        "value": "C:\\Windows\\System32\\SppExtComObjHook.dll",
+        "broad_exclusion": false
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:02",
+      "last_seen": "2026-06-18T11:31:02"
+    },
+    {
+      "finding_id": "a2b4c52b7d5744978e24fc5c6d931636",
+      "category": "Windows Service",
+      "title": "Windows services summary",
+      "severity": "Info",
+      "score": 0,
+      "status": "Found",
+      "plain_explanation": "Windows services are background components that can start with Windows. This slice records a summary and only creates individual review items for automatic services with command/name indicators.",
+      "review_reasons": [
+        "Windows services were summarized in read-only mode"
+      ],
+      "recommended_next_steps": [
+        "Review individual service findings only when command/name indicators appear.",
+        "Use Services, app settings, or vendor documentation before changing service startup behavior."
+      ],
+      "evidence": {
+        "services_total": 316,
+        "automatic_services": 95,
+        "running_services": 130
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "0bd902e786cd417191c6f7066975a9c9",
+      "category": "Windows Service",
+      "title": "AppX Deployment Service (AppXSVC)",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "AppXSvc",
+        "display_name": "AppX Deployment Service (AppXSVC)",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k wsappx -p",
+        "description": "Provides infrastructure support for deploying Store applications. This service is started on demand and if disabled Store applications will not be deployed to the system, and may not function properly.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "35aeeb6a01bf4eb08fd89a9e23700c65",
+      "category": "Windows Service",
+      "title": "Windows Audio Endpoint Builder",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "AudioEndpointBuilder",
+        "display_name": "Windows Audio Endpoint Builder",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\System32\\svchost.exe -k LocalSystemNetworkRestricted -p",
+        "description": "Manages audio devices for the Windows Audio service.  If this service is stopped, audio devices and effects will not function properly.  If this service is disabled, any services that explicitly depend on it will fail to start",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\System32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "db63892a92f2480abf10b231ff0051ad",
+      "category": "Windows Service",
+      "title": "Windows Audio",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "Audiosrv",
+        "display_name": "Windows Audio",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "NT AUTHORITY\\LocalService",
+        "path_name": "C:\\WINDOWS\\System32\\svchost.exe -k LocalServiceNetworkRestricted -p",
+        "description": "Manages audio for Windows-based programs.  If this service is stopped, audio devices and effects will not function properly.  If this service is disabled, any services that explicitly depend on it will fail to start",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\System32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "6ff6721c0ef041bb95206c0c767d57e1",
+      "category": "Windows Service",
+      "title": "Base Filtering Engine",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "BFE",
+        "display_name": "Base Filtering Engine",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "NT AUTHORITY\\LocalService",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k LocalServiceNoNetworkFirewall -p",
+        "description": "The Base Filtering Engine (BFE) is a service that manages firewall and Internet Protocol security (IPsec) policies and implements user mode filtering. Stopping or disabling the BFE service will significantly reduce the security of the system. It will also result in unpredictable behavior in IPsec management and firewall applications.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "0f380b93140548048859031d800684c9",
+      "category": "Windows Service",
+      "title": "Background Tasks Infrastructure Service",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "BrokerInfrastructure",
+        "display_name": "Background Tasks Infrastructure Service",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k DcomLaunch -p",
+        "description": "Windows infrastructure service that controls which background tasks can run on the system.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "cef8332bccc54dc9b68fd9fd85416735",
+      "category": "Windows Service",
+      "title": "Capability Access Manager Service",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "camsvc",
+        "display_name": "Capability Access Manager Service",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k osprivacy -p",
+        "description": "Provides facilities for managing UWP apps access to app capabilities as well as checking an app's access to specific app capabilities",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "fc72be3b15db4f4da3608707422982a4",
+      "category": "Windows Service",
+      "title": "Connected Devices Platform Service",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "CDPSvc",
+        "display_name": "Connected Devices Platform Service",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "NT AUTHORITY\\LocalService",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k LocalService -p",
+        "description": "This service is used for Connected Devices Platform scenarios",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "5f52bb7654b04edaa034b7541db2c20d",
+      "category": "Windows Service",
+      "title": "CoreMessaging",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "CoreMessagingRegistrar",
+        "display_name": "CoreMessaging",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "NT AUTHORITY\\LocalService",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k LocalServiceNoNetwork -p",
+        "description": "Manages communication between system components.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "f693c6d3111646989ac54b33a53c3816",
+      "category": "Windows Service",
+      "title": "Cryptographic Services",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "CryptSvc",
+        "display_name": "Cryptographic Services",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "NT Authority\\NetworkService",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k NetworkService -p",
+        "description": "Provides three management services: Catalog Database Service, which confirms the signatures of Windows files and allows new programs to be installed; Protected Root Service, which adds and removes Trusted Root Certification Authority certificates from this computer; and Automatic Root Certificate Update Service, which retrieves root certificates from Windows Update and enable scenarios such as SSL. If this service is stopped, these management services will not function properly. If this service is disabled, any services that explicitly depend on it will fail to start.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "d1d333196e7d4487bbc2f9822e003a52",
+      "category": "Windows Service",
+      "title": "DCOM Server Process Launcher",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "DcomLaunch",
+        "display_name": "DCOM Server Process Launcher",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k DcomLaunch -p",
+        "description": "The DCOMLAUNCH service launches COM and DCOM servers in response to object activation requests. If this service is stopped or disabled, programs using COM or DCOM will not function properly. It is strongly recommended that you have the DCOMLAUNCH service running.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "e2a3c63da7c84085a82827a95187134e",
+      "category": "Windows Service",
+      "title": "DHCP Client",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "Dhcp",
+        "display_name": "DHCP Client",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "NT Authority\\LocalService",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k LocalServiceNetworkRestricted -p",
+        "description": "Registers and updates IP addresses and DNS records for this computer. If this service is stopped, this computer will not receive dynamic IP addresses and DNS updates. If this service is disabled, any services that explicitly depend on it will fail to start.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "14f84c85e39346e79b8c6845c390bff2",
+      "category": "Windows Service",
+      "title": "Connected User Experiences and Telemetry",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "DiagTrack",
+        "display_name": "Connected User Experiences and Telemetry",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\System32\\svchost.exe -k utcsvc -p",
+        "description": "The Connected User Experiences and Telemetry service enables features that support in-application and connected user experiences. Additionally, this service manages the event driven collection and transmission of diagnostic and usage information (used to improve the experience and quality of the Windows Platform) when the diagnostics and usage privacy option settings are enabled under Feedback and Diagnostics.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\System32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "84e78395b7584a7aa5ccd1342c23e776",
+      "category": "Windows Service",
+      "title": "Display Policy Service",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "DispBrokerDesktopSvc",
+        "display_name": "Display Policy Service",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "NT AUTHORITY\\LocalService",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k LocalService -p",
+        "description": "Manages the connection and configuration of local and remote displays",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "b2edd9988c734045abbf178844725cc8",
+      "category": "Windows Service",
+      "title": "DNS Client",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "Dnscache",
+        "display_name": "DNS Client",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "NT AUTHORITY\\NetworkService",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k NetworkService -p",
+        "description": "The DNS Client service (dnscache) sends Domain Name System (DNS) queries, caches query results, and registers the computer's full name on the network. This service is not stoppable.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "589252de98ba44b7b94e91e7d81cedab",
+      "category": "Windows Service",
+      "title": "Delivery Optimization",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "DoSvc",
+        "display_name": "Delivery Optimization",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "NT Authority\\NetworkService",
+        "path_name": "C:\\WINDOWS\\System32\\svchost.exe -k NetworkService -p",
+        "description": "Performs content delivery optimization tasks",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\System32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "b12fbb0334fc4fedbf4e291b1d58565b",
+      "category": "Windows Service",
+      "title": "Diagnostic Policy Service",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "DPS",
+        "display_name": "Diagnostic Policy Service",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "NT AUTHORITY\\LocalService",
+        "path_name": "C:\\WINDOWS\\System32\\svchost.exe -k LocalServiceNoNetwork -p",
+        "description": "The Diagnostic Policy Service enables problem detection, troubleshooting and resolution for Windows components.  If this service is stopped, diagnostics will no longer function.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\System32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "b029082b076344f692fc9cb99ff4b656",
+      "category": "Windows Service",
+      "title": "Data Usage",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "DusmSvc",
+        "display_name": "Data Usage",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "NT Authority\\LocalService",
+        "path_name": "C:\\WINDOWS\\System32\\svchost.exe -k LocalServiceNetworkRestricted -p -s DusmSvc",
+        "description": "Network data usage, data limit, restrict background data, metered networks.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\System32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "e6dac24a76594a5fb8f3e26b2a61ba7f",
+      "category": "Windows Service",
+      "title": "Windows Event Log",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "EventLog",
+        "display_name": "Windows Event Log",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "NT AUTHORITY\\LocalService",
+        "path_name": "C:\\WINDOWS\\System32\\svchost.exe -k LocalServiceNetworkRestricted -p",
+        "description": "This service manages events and event logs. It supports logging events, querying events, subscribing to events, archiving event logs, and managing event metadata. It can display events in both XML and plain text format. Stopping this service may compromise security and reliability of the system.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\System32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "1aec0d7677e845329d4a77571a4d031d",
+      "category": "Windows Service",
+      "title": "COM+ Event System",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "EventSystem",
+        "display_name": "COM+ Event System",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "NT AUTHORITY\\LocalService",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k LocalServiceRedirectionGuard -p",
+        "description": "Supports System Event Notification Service (SENS), which provides automatic distribution of events to subscribing Component Object Model (COM) components. If the service is stopped, SENS will close and will not be able to provide logon and logoff notifications. If this service is disabled, any services that explicitly depend on it will fail to start.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "c9970030e6bf49008913f7b23fab1203",
+      "category": "Windows Service",
+      "title": "Windows Font Cache Service",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "FontCache",
+        "display_name": "Windows Font Cache Service",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "NT AUTHORITY\\LocalService",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k LocalService -p",
+        "description": "Optimizes performance of applications by caching commonly used font data. Applications will start this service if it is not already running. It can be disabled, though doing so will degrade application performance.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "4aadb0d9243142d98d13ff55e264c4d6",
+      "category": "Windows Service",
+      "title": "Windows Camera Frame Server",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "FrameServer",
+        "display_name": "Windows Camera Frame Server",
+        "state": "Stopped",
+        "start_mode": "Auto",
+        "start_name": "NT AUTHORITY\\LocalService",
+        "path_name": "C:\\WINDOWS\\System32\\svchost.exe -k Camera",
+        "description": "Enables multiple clients to access video frames from camera devices.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\System32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "ad2ebe9675774a469cf4236112387cbc",
+      "category": "Windows Service",
+      "title": "Windows Camera Frame Server Monitor",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "FrameServerMonitor",
+        "display_name": "Windows Camera Frame Server Monitor",
+        "state": "Stopped",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\System32\\svchost.exe -k CameraMonitor",
+        "description": "Monitors the health and state for the Windows Camera Frame Server service.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\System32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "3d53c5b841b04d72a90a5f08bf3ba21e",
+      "category": "Windows Service",
+      "title": "Group Policy Client",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "gpsvc",
+        "display_name": "Group Policy Client",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k GPSvcGroup",
+        "description": "The service is responsible for applying settings configured by administrators for the computer and users through the Group Policy component. If the service is disabled, the settings will not be applied and applications and components will not be manageable through Group Policy. Any components or applications that depend on the Group Policy component might not be functional if the service is disabled.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "609daf38231c47cd82ef54b656d62774",
+      "category": "Windows Service",
+      "title": "IKE and AuthIP IPsec Keying Modules",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "IKEEXT",
+        "display_name": "IKE and AuthIP IPsec Keying Modules",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k netsvcs -p",
+        "description": "The IKEEXT service hosts the Internet Key Exchange (IKE) and Authenticated Internet Protocol (AuthIP) keying modules. These keying modules are used for authentication and key exchange in Internet Protocol security (IPsec). Stopping or disabling the IKEEXT service will disable IKE and AuthIP key exchange with peer computers. IPsec is typically configured to use IKE or AuthIP; therefore, stopping or disabling the IKEEXT service might result in an IPsec failure and might compromise the security of the system. It is strongly recommended that you have the IKEEXT service running.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "d964e7a8cffd4526aee62785390a4f59",
+      "category": "Windows Service",
+      "title": "Inventory and Compatibility Appraisal service",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "InventorySvc",
+        "display_name": "Inventory and Compatibility Appraisal service",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k InvSvcGroup -p",
+        "description": "This service performs background system inventory, compatibility appraisal, and maintenance used by numerous system components.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "751d40adf3394cb5b13fcef85cb77f0a",
+      "category": "Windows Service",
+      "title": "IP Helper",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "iphlpsvc",
+        "display_name": "IP Helper",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\System32\\svchost.exe -k NetSvcs -p",
+        "description": "Provides tunnel connectivity using IPv6 transition technologies (6to4, ISATAP, Port Proxy, and Teredo), and IP-HTTPS. If this service is stopped, the computer will not have the enhanced connectivity benefits that these technologies offer.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\System32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "9d2e6a686c214014a78dbf36e5501576",
+      "category": "Windows Service",
+      "title": "Server",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "LanmanServer",
+        "display_name": "Server",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k netsvcs -p",
+        "description": "Supports file, print, and named-pipe sharing over the network for this computer. If this service is stopped, these functions will be unavailable. If this service is disabled, any services that explicitly depend on it will fail to start.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "63e092f088a34c37a4a71a5463fdbf39",
+      "category": "Windows Service",
+      "title": "Workstation",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "LanmanWorkstation",
+        "display_name": "Workstation",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "NT AUTHORITY\\NetworkService",
+        "path_name": "C:\\WINDOWS\\System32\\svchost.exe -k NetworkService -p",
+        "description": "Creates and maintains client network connections to remote servers using the SMB protocol. If this service is stopped, these connections will be unavailable. If this service is disabled, any services that explicitly depend on it will fail to start.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\System32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "caf65747ed3d4ba8a8d7e220072bd73e",
+      "category": "Windows Service",
+      "title": "Local Session Manager",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "LSM",
+        "display_name": "Local Session Manager",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k DcomLaunch -p",
+        "description": "Core Windows Service that manages local user sessions. Stopping or disabling this service will result in system instability.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "72936590bbfb498a928cfab28b859061",
+      "category": "Windows Service",
+      "title": "Downloaded Maps Manager",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "MapsBroker",
+        "display_name": "Downloaded Maps Manager",
+        "state": "Stopped",
+        "start_mode": "Auto",
+        "start_name": "NT AUTHORITY\\NetworkService",
+        "path_name": "C:\\WINDOWS\\System32\\svchost.exe -k NetworkService -p",
+        "description": "Windows service for application access to downloaded maps. This service is started on-demand by application accessing downloaded maps. Disabling this service will prevent apps from accessing maps.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\System32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "ebcdf98e4a9b4c4f84cfce16aa1f6f71",
+      "category": "Windows Service",
+      "title": "Windows Defender Firewall",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "mpssvc",
+        "display_name": "Windows Defender Firewall",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "NT Authority\\LocalService",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k LocalServiceNoNetworkFirewall -p",
+        "description": "Windows Defender Firewall helps protect your computer by preventing unauthorized users from gaining access to your computer through the Internet or a network.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "3853adf9de094063932b1614512b82e7",
+      "category": "Windows Service",
+      "title": "Network Store Interface Service",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "nsi",
+        "display_name": "Network Store Interface Service",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "NT Authority\\LocalService",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k LocalService -p",
+        "description": "This service delivers network notifications (e.g. interface addition/deleting etc) to user mode clients. Stopping this service will cause loss of network connectivity. If this service is disabled, any other services that explicitly depend on this service will fail to start.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "1590cca004c444a9bc36425d303328c4",
+      "category": "Windows Service",
+      "title": "Program Compatibility Assistant Service",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "PcaSvc",
+        "display_name": "Program Compatibility Assistant Service",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k LocalSystemNetworkRestricted -p",
+        "description": "This service provides support for the Program Compatibility Assistant (PCA).  PCA monitors programs installed and run by the user and detects known compatibility problems. If this service is stopped, PCA will not function properly.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "9b3351ad528844d989159bbf4adf67c7",
+      "category": "Windows Service",
+      "title": "Power",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "Power",
+        "display_name": "Power",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k DcomLaunch -p",
+        "description": "Manages power policy and power policy notification delivery.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "7a00ab00b03648a58a090bd4c392d98b",
+      "category": "Windows Service",
+      "title": "User Profile Service",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "ProfSvc",
+        "display_name": "User Profile Service",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k UserProfileService -p",
+        "description": "This service is responsible for loading and unloading user profiles. If this service is stopped or disabled, users will no longer be able to successfully sign in or sign out, apps might have problems getting to users' data, and components registered to receive profile event notifications won't receive them.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "5f41d1c04ff84355b2915b42245d6b79",
+      "category": "Windows Service",
+      "title": "RPC Endpoint Mapper",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "RpcEptMapper",
+        "display_name": "RPC Endpoint Mapper",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "NT AUTHORITY\\NetworkService",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k RPCSS -p",
+        "description": "Resolves RPC interfaces identifiers to transport endpoints. If this service is stopped or disabled, programs using Remote Procedure Call (RPC) services will not function properly.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "4f1eb4e410bd4fe988f0fc867a376884",
+      "category": "Windows Service",
+      "title": "Remote Procedure Call (RPC)",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "RpcSs",
+        "display_name": "Remote Procedure Call (RPC)",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "NT AUTHORITY\\NetworkService",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k rpcss -p",
+        "description": "The RPCSS service is the Service Control Manager for COM and DCOM servers. It performs object activations requests, object exporter resolutions and distributed garbage collection for COM and DCOM servers. If this service is stopped or disabled, programs using COM or DCOM will not function properly. It is strongly recommended that you have the RPCSS service running.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "518188396c904811af57aec7a64fd8e4",
+      "category": "Windows Service",
+      "title": "Security Accounts Manager",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "SamSs",
+        "display_name": "Security Accounts Manager",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\system32\\lsass.exe",
+        "description": "The startup of this service signals other services that the Security Accounts Manager (SAM) is ready to accept requests.  Disabling this service will prevent other services in the system from being notified when the SAM is ready, which may in turn cause those services to fail to start correctly. This service should not be disabled.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\lsass.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "2628173091d047e79bd63dd8427637db",
+      "category": "Windows Service",
+      "title": "Task Scheduler",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "Schedule",
+        "display_name": "Task Scheduler",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k netsvcs -p",
+        "description": "Enables a user to configure and schedule automated tasks on this computer. The service also hosts multiple Windows system-critical tasks. If this service is stopped or disabled, these tasks will not be run at their scheduled times. If this service is disabled, any services that explicitly depend on it will fail to start.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "6550da61a75c4d4e9b911247fbf64186",
+      "category": "Windows Service",
+      "title": "System Event Notification Service",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "SENS",
+        "display_name": "System Event Notification Service",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k netsvcsRedirectionGuard -p",
+        "description": "Monitors system events and notifies subscribers to COM+ Event System of these events.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "46dfbda5a33f424ab3cfab50fcf9f68b",
+      "category": "Windows Service",
+      "title": "Shell Hardware Detection",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "ShellHWDetection",
+        "display_name": "Shell Hardware Detection",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\System32\\svchost.exe -k netsvcs -p",
+        "description": "Provides notifications for AutoPlay hardware events.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\System32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "dd5eeac6ebdb4376bd59f5148dae0dcf",
+      "category": "Windows Service",
+      "title": "Print Spooler",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "Spooler",
+        "display_name": "Print Spooler",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\System32\\spoolsv.exe",
+        "description": "This service spools print jobs and handles interaction with the printer.  If you turn off this service, you won't be able to print or see your printers.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\System32\\spoolsv.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "2fbc42dab9804d0f8ffa30b56450bb09",
+      "category": "Windows Service",
+      "title": "State Repository Service",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "StateRepository",
+        "display_name": "State Repository Service",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k appmodel -p",
+        "description": "Provides required infrastructure support for the application model.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "d3dc1842e7ec44d98fcd7f30aee97473",
+      "category": "Windows Service",
+      "title": "Windows Image Acquisition (WIA)",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "StiSvc",
+        "display_name": "Windows Image Acquisition (WIA)",
+        "state": "Stopped",
+        "start_mode": "Auto",
+        "start_name": "NT Authority\\LocalService",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k imgsvc",
+        "description": "Provides image acquisition services for scanners and cameras",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "0dedee30d0c94f188283549ccf7d5ae1",
+      "category": "Windows Service",
+      "title": "Storage Service",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "StorSvc",
+        "display_name": "Storage Service",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\System32\\svchost.exe -k LocalSystemNetworkRestricted -p",
+        "description": "Provides enabling services for storage settings and external storage expansion",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\System32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "6456ab2009f3496bb3707fd336e4a521",
+      "category": "Windows Service",
+      "title": "SysMain",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "SysMain",
+        "display_name": "SysMain",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k LocalSystemNetworkRestricted -p",
+        "description": "Maintains and improves system performance over time.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "62eae32e29c5480db3e75b2302158fdd",
+      "category": "Windows Service",
+      "title": "System Events Broker",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "SystemEventsBroker",
+        "display_name": "System Events Broker",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k DcomLaunch -p",
+        "description": "Coordinates execution of background work for WinRT application. If this service is stopped or disabled, then background work might not be triggered.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "b216f8af7da24cf9a6cad69f260402c0",
+      "category": "Windows Service",
+      "title": "Text Input Management Service",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "TextInputManagementService",
+        "display_name": "Text Input Management Service",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\System32\\svchost.exe -k LocalSystemNetworkRestricted -p",
+        "description": "Enables text input, expressive input, touch keyboard, handwriting, and IMEs.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\System32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "d558c0202a034c0ebc3997f63dde08c9",
+      "category": "Windows Service",
+      "title": "Themes",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "Themes",
+        "display_name": "Themes",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\System32\\svchost.exe -k netsvcs -p",
+        "description": "Provides user experience theme management.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\System32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "3e273289947b498d88000e6f74572b02",
+      "category": "Windows Service",
+      "title": "Distributed Link Tracking Client",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "TrkWks",
+        "display_name": "Distributed Link Tracking Client",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\System32\\svchost.exe -k LocalSystemNetworkRestricted -p",
+        "description": "Maintains links between NTFS files within a computer or across computers in a network.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\System32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "fb33f5bdaae841649fab215f7b2935b0",
+      "category": "Windows Service",
+      "title": "User Manager",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "UserManager",
+        "display_name": "User Manager",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k netsvcs -p",
+        "description": "User Manager provides the runtime components required for multi-user interaction.  If this service is stopped, some applications may not operate correctly.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "e41d61addf984896b5d2aea2f07af01d",
+      "category": "Windows Service",
+      "title": "Update Orchestrator Service",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "UsoSvc",
+        "display_name": "Update Orchestrator Service",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k netsvcs -p",
+        "description": "Manages Windows Updates. If stopped, your devices will not be able to download and install the latest updates.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "2aed85813a3e47e0be90cd045fdcae3b",
+      "category": "Windows Service",
+      "title": "Windows Connection Manager",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "Wcmsvc",
+        "display_name": "Windows Connection Manager",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "NT Authority\\LocalService",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k LocalServiceNetworkRestricted -p -s Wcmsvc",
+        "description": "Makes automatic connect and disconnect decisions based on the network connectivity options currently available to the PC and enables management of network connectivity based on Group Policy settings.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "e78f1f5efa7846c4a5b9c3a8f11b77b1",
+      "category": "Windows Service",
+      "title": "Windows Health and Optimized Experiences",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "whesvc",
+        "display_name": "Windows Health and Optimized Experiences",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k whesvc -p",
+        "description": "Monitors the device for a better user experience",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "9507e2bfbcdd432291188016772d32c1",
+      "category": "Windows Service",
+      "title": "Windows Management Instrumentation",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "Winmgmt",
+        "display_name": "Windows Management Instrumentation",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "localSystem",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k netsvcs -p",
+        "description": "Provides a common interface and object model to access management information about operating system, devices, applications and services. If this service is stopped, most Windows-based software will not function properly. If this service is disabled, any services that explicitly depend on it will fail to start.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "76634c063e7a4989b5e4d45d1412d573",
+      "category": "Windows Service",
+      "title": "WLAN AutoConfig",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "WlanSvc",
+        "display_name": "WLAN AutoConfig",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k LocalSystemNetworkRestricted -p",
+        "description": "The WLANSVC service provides the logic required to configure, discover, connect to, and disconnect from a wireless local area network (WLAN) as defined by IEEE 802.11 standards. It also contains the logic to turn your computer into a software access point so that other devices or computers can connect to your computer wirelessly using a WLAN adapter that can support this. Stopping or disabling the WLANSVC service will make all WLAN adapters on your computer inaccessible from the Windows networking UI. It is strongly recommended that you have the WLANSVC service running if your computer has a WLAN adapter.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "861ea42196744a16b277c66b55eec08d",
+      "category": "Windows Service",
+      "title": "Windows Push Notifications System Service",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "WpnService",
+        "display_name": "Windows Push Notifications System Service",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "LocalSystem",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k netsvcs -p",
+        "description": "This service runs in session 0 and hosts the notification platform and connection provider which handles the connection between the device and WNS server.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "f6433be283644783b395d105609cf8e3",
+      "category": "Windows Service",
+      "title": "WSAIFabricSvc",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "WSAIFabricSvc",
+        "display_name": "WSAIFabricSvc",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "NT AUTHORITY\\LocalService",
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k WSAIFabricSvcGroup -p",
+        "description": "Provides support to communicate with AIFabric in Local service context over COM.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "cbf0ac5479794df8b0f4cd94cc01b83e",
+      "category": "Windows Service",
+      "title": "Security Center",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "wscsvc",
+        "display_name": "Security Center",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": "NT AUTHORITY\\LocalService",
+        "path_name": "C:\\WINDOWS\\System32\\svchost.exe -k LocalServiceNetworkRestricted -p",
+        "description": "The WSCSVC (Windows Security Center) service monitors and reports security health settings on the computer.  The health settings include firewall (on/off), antivirus (on/off/out of date), antispyware (on/off/out of date), Windows Update (automatically/manually download and install updates), User Account Control (on/off), and Internet settings (recommended/not recommended). The service provides COM APIs for independent software vendors to register and record the state of their products to the Security Center service.  The Security and Maintenance UI uses the service to provide systray alerts and a graphical view of the security health states in the Security and Maintenance control panel.  Network Access Protection (NAP) uses the service to report the security health states of clients to the NAP Network Policy Server to make network quarantine decisions.  The service also has a public API that allows external consumers to programmatically retrieve the aggregated security health state of the system.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\System32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "076f627766a447fd935168c68f7c140e",
+      "category": "Windows Service",
+      "title": "cbdhsvc_72f05",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "cbdhsvc_72f05",
+        "display_name": "cbdhsvc_72f05",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": null,
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k ClipboardSvcGroup -p",
+        "description": "This user service is used for Clipboard scenarios",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "e0577f0f5e454b4ba3839490e17e9b40",
+      "category": "Windows Service",
+      "title": "CDPUserSvc_72f05",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "CDPUserSvc_72f05",
+        "display_name": "CDPUserSvc_72f05",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": null,
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k UnistackSvcGroup",
+        "description": "This user service is used for Connected Devices Platform scenarios",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "bde5d8cad9eb4daab6940a9aa49de69a",
+      "category": "Windows Service",
+      "title": "webthreatdefusersvc_72f05",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "webthreatdefusersvc_72f05",
+        "display_name": "webthreatdefusersvc_72f05",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": null,
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k LocalSystemNetworkRestricted -p",
+        "description": "Web Threat Defense User Service helps protect your computer by warning the user when unauthorized entities attempt to gain access to their credentials",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    },
+    {
+      "finding_id": "756d70118d02478481f8e3a111e7552b",
+      "category": "Windows Service",
+      "title": "WpnUserService_72f05",
+      "severity": "Medium Review",
+      "score": 60,
+      "status": "Needs Review",
+      "plain_explanation": "This automatic Windows service has a command path or arguments that deserve review. This is not a malware verdict.",
+      "review_reasons": [
+        "Automatic service command has review indicators",
+        "Needs Review: Windows-like executable name outside expected Windows system folders"
+      ],
+      "recommended_next_steps": [
+        "Confirm the service belongs to software you recognize.",
+        "Do not disable services blindly; changing services can break Windows or installed apps."
+      ],
+      "evidence": {
+        "service_name": "WpnUserService_72f05",
+        "display_name": "WpnUserService_72f05",
+        "state": "Running",
+        "start_mode": "Auto",
+        "start_name": null,
+        "path_name": "C:\\WINDOWS\\system32\\svchost.exe -k UnistackSvcGroup",
+        "description": "This service hosts Windows notification platform which provides support for local and push notifications. Supported notifications are tile, toast and raw.",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": "C:\\WINDOWS\\system32\\svchost.exe",
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:31:12",
+      "last_seen": "2026-06-18T11:31:12"
+    }
+  ],
+  "skipped_items": [
+    {
+      "category": "Scheduled Task",
+      "status": "Error",
+      "message": "Could not read scheduled tasks.",
+      "detail": "Expecting ',' delimiter: line 8559 column 291 (char 338106)"
+    },
+    {
+      "category": "reports",
+      "status": "Skipped",
+      "message": "Security report downloads are planned for a later slice."
+    }
+  ],
+  "errors": [],
+  "steps": [
+    {
+      "id": "prepare",
+      "label": "Preparing local review",
+      "status": "Complete",
+      "detail": "Local Security Check state prepared."
+    },
+    {
+      "id": "registry_backup",
+      "label": "Recording registry backup opt-in",
+      "status": "Complete",
+      "detail": "User did not opt into registry backups."
+    },
+    {
+      "id": "standard_locations",
+      "label": "Reading standard security locations",
+      "status": "Complete",
+      "detail": "Collected 106 review item(s); skipped 1 source(s)."
+    },
+    {
+      "id": "file_verification",
+      "label": "Checking file signatures and SHA-256 hashes",
+      "status": "Skipped",
+      "detail": "File signature and SHA-256 verification are not connected until a later implementation slice."
+    },
+    {
+      "id": "record",
+      "label": "Saving local security check record",
+      "status": "Complete",
+      "detail": "Local lifecycle record saved."
+    }
+  ],
+  "record_path": "C:\\Users\\HomePC\\ai-tools\\windows\\security_check_records\\e499ed33e13f4c9ebe66eb837642ade9.json",
+  "app_version": "1.15.0",
+  "error": null
+}

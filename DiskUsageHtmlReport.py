@@ -6,6 +6,7 @@ import html
 import json
 import os
 from pathlib import Path
+import re
 import stat
 import subprocess
 import sys
@@ -24,8 +25,8 @@ except ImportError:  # pragma: no cover - non-Windows fallback
 
 sys.setrecursionlimit(10000)
 
-APP_VERSION = "1.14.0"
-DOC_VERSION = "1.14"
+APP_VERSION = "1.15.0"
+DOC_VERSION = "1.15"
 APP_DIR = Path(__file__).resolve().parent
 RECORDS_DIR = APP_DIR / "scan_records"
 REPORTS_DIR = APP_DIR / "generated_reports"
@@ -960,9 +961,8 @@ def ensure_version_metadata():
         "documentation_version": DOC_VERSION,
         "last_updated": "2026-06-18",
         "revision_notes": (
-            "Added read-only Standard Review collectors for startup registry "
-            "entries, startup folders, browser policies, proxy/DNS settings, "
-            "and Microsoft Defender exclusions."
+            "Added read-only scheduled task review, scoped services summary, "
+            "and autoruns-style command/name review indicators."
         ),
         "affected_areas": [
             "browser_dashboard",
@@ -1127,7 +1127,7 @@ def security_check_steps():
             "id": "standard_locations",
             "label": "Reading standard security locations",
             "status": "Waiting",
-            "detail": "Waiting to read startup entries, browser policies, proxy and DNS settings, and Defender exclusions.",
+            "detail": "Waiting to read startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, and services summary.",
         },
         {
             "id": "file_verification",
@@ -1200,6 +1200,164 @@ def security_skip(category, message, status="Skipped", detail=None):
         "message": message,
         "detail": detail,
     }
+
+
+SEVERITY_RANK = {
+    "Info": 0,
+    "Low Review": 1,
+    "Medium Review": 2,
+    "High Review": 3,
+}
+
+COMMAND_REVIEW_PATTERNS = [
+    (
+        re.compile(r"\b(powershell|pwsh)(\.exe)?\b.*\s-(enc|encodedcommand)\b", re.IGNORECASE),
+        "Needs Review: encoded PowerShell command pattern",
+        "Encoded PowerShell can be legitimate for administration, but it hides the command text and should be reviewed.",
+        "Medium Review",
+        60,
+    ),
+    (
+        re.compile(r"\b(powershell|pwsh)(\.exe)?\b.*\s-(nop|noprofile|windowstyle|w)\b.*\b(hidden|bypass|unrestricted)\b", re.IGNORECASE),
+        "Needs Review: hidden or bypass-style PowerShell pattern",
+        "PowerShell started with hidden-window or policy-bypass style arguments can be normal for admin tools, but unfamiliar entries should be reviewed.",
+        "Medium Review",
+        55,
+    ),
+    (
+        re.compile(r"\b(mshta|wscript|cscript|regsvr32|rundll32|certutil|bitsadmin)(\.exe)?\b", re.IGNORECASE),
+        "Needs Review: script or living-off-the-land command host",
+        "This command uses a Windows scripting or command-host utility. That can be normal, but unknown autorun entries deserve review.",
+        "Medium Review",
+        50,
+    ),
+    (
+        re.compile(r"\b(cmd|powershell|pwsh)(\.exe)?\b.*\s(/c|-command)\b", re.IGNORECASE),
+        "Needs Review: shell launches another command",
+        "A shell command can be normal for scheduled maintenance, but it should be reviewed if the source or target is unfamiliar.",
+        "Low Review",
+        35,
+    ),
+    (
+        re.compile(r"(\\appdata\\|\\temp\\|\\downloads\\|\\users\\public\\)", re.IGNORECASE),
+        "Needs Review: command references a user-writable or temporary location",
+        "Autorun commands from user-writable or temporary locations are easier to change than protected program folders.",
+        "Medium Review",
+        55,
+    ),
+    (
+        re.compile(r"\bhttps?://", re.IGNORECASE),
+        "Needs Review: command references a web URL",
+        "Autorun commands that fetch or reference web content should be confirmed before any change is made.",
+        "Low Review",
+        35,
+    ),
+]
+
+WINDOWS_LIKE_EXECUTABLES = {
+    "svchost.exe",
+    "lsass.exe",
+    "winlogon.exe",
+    "csrss.exe",
+    "services.exe",
+    "smss.exe",
+    "spoolsv.exe",
+    "taskhostw.exe",
+    "explorer.exe",
+    "rundll32.exe",
+}
+
+
+def stronger_severity(current, candidate):
+    return candidate if SEVERITY_RANK.get(candidate, 0) > SEVERITY_RANK.get(current, 0) else current
+
+
+def extracted_command_path(command_text):
+    text = (command_text or "").strip()
+    if not text:
+        return ""
+
+    text = os.path.expandvars(text)
+    quoted = re.match(r'^"([^"]+)"', text)
+    if quoted:
+        return quoted.group(1)
+
+    lower_text = text.lower()
+    exe_index = lower_text.find(".exe")
+    if exe_index >= 0:
+        return text[:exe_index + 4].strip().strip('"')
+
+    exe_path = re.search(r"([A-Za-z]:\\[^|<>?*\r\n]+?\.exe)\b", text, re.IGNORECASE)
+    if exe_path:
+        return exe_path.group(1).strip()
+
+    first = text.split()[0] if text.split() else ""
+    return first.strip('"')
+
+
+def is_expected_windows_system_path(path):
+    if not path:
+        return False
+    expanded = os.path.normcase(os.path.abspath(os.path.expandvars(path)))
+    system_root = os.environ.get("SystemRoot", r"C:\Windows")
+    expected_roots = [
+        os.path.normcase(os.path.join(system_root, "System32")),
+        os.path.normcase(os.path.join(system_root, "SysWOW64")),
+        os.path.normcase(os.path.join(system_root, "WinSxS")),
+    ]
+    return any(expanded == root or expanded.startswith(root + os.sep) for root in expected_roots)
+
+
+def command_review_indicators(command_text, path_hint=None):
+    text = command_text or ""
+    indicators = []
+    for pattern, label, explanation, severity, score in COMMAND_REVIEW_PATTERNS:
+        match = pattern.search(text)
+        if match:
+            indicators.append({
+                "label": label,
+                "matched_text": match.group(0)[:160],
+                "explanation": explanation,
+                "severity": severity,
+                "score": score,
+            })
+
+    command_path = path_hint or extracted_command_path(text)
+    expanded_path = os.path.expandvars(command_path) if command_path else ""
+    executable_name = os.path.basename(expanded_path).lower()
+    if executable_name in WINDOWS_LIKE_EXECUTABLES and not is_expected_windows_system_path(expanded_path):
+        indicators.append({
+            "label": "Needs Review: Windows-like executable name outside expected Windows system folders",
+            "matched_text": expanded_path,
+            "explanation": "This executable name looks like a core Windows component, but the path is not an expected protected Windows system folder.",
+            "severity": "Medium Review",
+            "score": 60,
+        })
+
+    return indicators
+
+
+def apply_command_review_to_finding(finding, command_text, path_hint=None):
+    indicators = command_review_indicators(command_text, path_hint)
+    if not indicators:
+        return finding
+
+    finding["status"] = "Needs Review"
+    reasons = finding.setdefault("review_reasons", [])
+    evidence = finding.setdefault("evidence", {})
+    evidence["command_review_indicators"] = indicators
+    for indicator in indicators:
+        if indicator["label"] not in reasons:
+            reasons.append(indicator["label"])
+        finding["severity"] = stronger_severity(finding.get("severity", "Info"), indicator["severity"])
+        finding["score"] = max(int(finding.get("score") or 0), int(indicator["score"]))
+    return finding
+
+
+def as_list(value):
+    if value in (None, ""):
+        return []
+    return value if isinstance(value, list) else [value]
 
 
 def registry_value_to_text(value):
@@ -1338,6 +1496,8 @@ def collect_startup_registry_entries():
     explanation = "This registry location can start a program automatically when Windows starts or when the user signs in."
     for root_label, root, subkey in locations:
         rows, issues = collect_registry_values(root_label, root, subkey, "Registry Startup", explanation)
+        for row in rows:
+            apply_command_review_to_finding(row, row.get("evidence", {}).get("value_data", ""))
         findings.extend(rows)
         skipped.extend(issues)
     return findings, skipped
@@ -1355,7 +1515,7 @@ def collect_startup_folder_entries():
             continue
         try:
             for entry in os.scandir(folder):
-                findings.append(security_finding(
+                finding = security_finding(
                     category="Startup Folder",
                     title=entry.name,
                     severity="Low Review",
@@ -1372,7 +1532,9 @@ def collect_startup_folder_entries():
                         "Confirm the shortcut or file belongs to software you recognize.",
                         "Use the app's startup settings or Windows Startup Apps settings before deleting shortcuts.",
                     ],
-                ))
+                )
+                apply_command_review_to_finding(finding, entry.path, entry.path)
+                findings.append(finding)
         except PermissionError as ex:
             skipped.append(security_skip("Startup Folder", f"Access denied reading {folder}.", "Access Denied", str(ex)))
         except Exception as ex:
@@ -1568,6 +1730,192 @@ $pref = Get-MpPreference
     return findings, skipped
 
 
+def collect_scheduled_tasks():
+    command = r"""
+$WarningPreference = 'SilentlyContinue'
+$items = foreach ($task in Get-ScheduledTask) {
+    $info = $null
+    try {
+        $info = Get-ScheduledTaskInfo -TaskName $task.TaskName -TaskPath $task.TaskPath -ErrorAction Stop
+    } catch {
+        $info = $null
+    }
+    [PSCustomObject]@{
+        TaskName = $task.TaskName
+        TaskPath = $task.TaskPath
+        State = [string]$task.State
+        Author = $task.Author
+        PrincipalUserId = $task.Principal.UserId
+        RunLevel = [string]$task.Principal.RunLevel
+        LastRunTime = if ($info) { [string]$info.LastRunTime } else { $null }
+        NextRunTime = if ($info) { [string]$info.NextRunTime } else { $null }
+        LastTaskResult = if ($info) { $info.LastTaskResult } else { $null }
+        Actions = @($task.Actions | ForEach-Object {
+            [PSCustomObject]@{
+                Execute = $_.Execute
+                Arguments = $_.Arguments
+                WorkingDirectory = $_.WorkingDirectory
+                Id = $_.Id
+            }
+        })
+        Triggers = @($task.Triggers | ForEach-Object {
+            [PSCustomObject]@{
+                Enabled = $_.Enabled
+                StartBoundary = $_.StartBoundary
+                EndBoundary = $_.EndBoundary
+                Type = $_.CimClass.CimClassName
+            }
+        })
+    }
+}
+$items | ConvertTo-Json -Depth 20 -Compress
+"""
+    findings = []
+    skipped = []
+    try:
+        rows = run_powershell_json(command, timeout_seconds=45)
+        for row in rows:
+            actions = as_list(row.get("Actions"))
+            triggers = as_list(row.get("Triggers"))
+            action_texts = []
+            for action in actions:
+                if not isinstance(action, dict):
+                    continue
+                execute = action.get("Execute") or ""
+                arguments = action.get("Arguments") or ""
+                action_texts.append(" ".join(part for part in (execute, arguments) if part).strip())
+
+            task_path = row.get("TaskPath") or "\\"
+            task_name = row.get("TaskName") or "Unnamed task"
+            task_full_name = f"{task_path}{task_name}"
+            enabled_triggers = [trigger for trigger in triggers if isinstance(trigger, dict) and str(trigger.get("Enabled")).lower() != "false"]
+            reasons = ["Scheduled task is present"]
+            if row.get("State") and str(row.get("State")).lower() != "disabled":
+                reasons.append("Scheduled task is enabled")
+            if action_texts:
+                reasons.append("Scheduled task has one or more actions")
+            if enabled_triggers:
+                reasons.append("Scheduled task has enabled trigger data")
+
+            finding = security_finding(
+                category="Scheduled Task",
+                title=task_full_name,
+                severity="Info",
+                score=10,
+                status="Found",
+                review_reasons=reasons,
+                explanation=(
+                    "Scheduled tasks can start programs automatically by time, sign-in, maintenance, or system events. "
+                    "Many are normal Windows, driver, browser, game launcher, or updater tasks."
+                ),
+                evidence={
+                    "task_name": task_name,
+                    "task_path": task_path,
+                    "state": row.get("State"),
+                    "author": row.get("Author"),
+                    "principal_user_id": row.get("PrincipalUserId"),
+                    "run_level": row.get("RunLevel"),
+                    "last_run_time": row.get("LastRunTime"),
+                    "next_run_time": row.get("NextRunTime"),
+                    "last_task_result": row.get("LastTaskResult"),
+                    "actions": actions,
+                    "triggers": triggers,
+                    "action_commands": action_texts,
+                },
+                next_steps=[
+                    "Confirm the task name, author, trigger, and action match software you recognize.",
+                    "Use Task Scheduler or the owning application's settings before changing or disabling a task.",
+                ],
+            )
+            for action_text in action_texts:
+                apply_command_review_to_finding(finding, action_text)
+            findings.append(finding)
+        if not findings:
+            findings.append(security_finding(
+                category="Scheduled Task",
+                title="No scheduled tasks reported",
+                severity="Info",
+                score=0,
+                status="No Obvious Issue",
+                review_reasons=["PowerShell did not report scheduled tasks"],
+                explanation="No scheduled task data was returned through Get-ScheduledTask.",
+                evidence={"source": "Get-ScheduledTask"},
+            ))
+    except Exception as ex:
+        skipped.append(security_skip("Scheduled Task", "Could not read scheduled tasks.", "Error", str(ex)))
+    return findings, skipped
+
+
+def collect_windows_services_summary():
+    command = r"""
+Get-CimInstance Win32_Service |
+Select-Object Name,DisplayName,State,StartMode,PathName,StartName,Description |
+ConvertTo-Json -Depth 5
+"""
+    findings = []
+    skipped = []
+    try:
+        rows = run_powershell_json(command, timeout_seconds=35)
+        total = len(rows)
+        automatic = [row for row in rows if str(row.get("StartMode") or "").lower() == "auto"]
+        findings.append(security_finding(
+            category="Windows Service",
+            title="Windows services summary",
+            severity="Info",
+            score=0,
+            status="Found",
+            review_reasons=["Windows services were summarized in read-only mode"],
+            explanation=(
+                "Windows services are background components that can start with Windows. "
+                "This slice records a summary and only creates individual review items for automatic services with command/name indicators."
+            ),
+            evidence={
+                "services_total": total,
+                "automatic_services": len(automatic),
+                "running_services": len([row for row in rows if str(row.get("State") or "").lower() == "running"]),
+            },
+            next_steps=[
+                "Review individual service findings only when command/name indicators appear.",
+                "Use Services, app settings, or vendor documentation before changing service startup behavior.",
+            ],
+        ))
+        for row in automatic:
+            command_text = row.get("PathName") or ""
+            indicators = command_review_indicators(command_text)
+            if not indicators:
+                continue
+            finding = security_finding(
+                category="Windows Service",
+                title=row.get("DisplayName") or row.get("Name") or "Unnamed service",
+                severity="Low Review",
+                score=35,
+                status="Needs Review",
+                review_reasons=["Automatic service command has review indicators"],
+                explanation=(
+                    "This automatic Windows service has a command path or arguments that deserve review. "
+                    "This is not a malware verdict."
+                ),
+                evidence={
+                    "service_name": row.get("Name"),
+                    "display_name": row.get("DisplayName"),
+                    "state": row.get("State"),
+                    "start_mode": row.get("StartMode"),
+                    "start_name": row.get("StartName"),
+                    "path_name": command_text,
+                    "description": row.get("Description"),
+                },
+                next_steps=[
+                    "Confirm the service belongs to software you recognize.",
+                    "Do not disable services blindly; changing services can break Windows or installed apps.",
+                ],
+            )
+            apply_command_review_to_finding(finding, command_text)
+            findings.append(finding)
+    except Exception as ex:
+        skipped.append(security_skip("Windows Service", "Could not read Windows services summary.", "Error", str(ex)))
+    return findings, skipped
+
+
 def collect_standard_security_review(cancel_event=None):
     findings = []
     skipped = []
@@ -1578,6 +1926,8 @@ def collect_standard_security_review(cancel_event=None):
         ("Proxy Settings", collect_proxy_settings),
         ("DNS Settings", collect_dns_settings),
         ("Microsoft Defender Exclusions", collect_defender_exclusions),
+        ("Scheduled Task", collect_scheduled_tasks),
+        ("Windows Service", collect_windows_services_summary),
     ]
     for label, collector in collectors:
         if cancel_event and cancel_event.is_set():
@@ -2985,8 +3335,8 @@ summary {{ cursor: pointer; padding: 6px; }}
     <section id="tab-security" class="tab-panel hidden">
         <section class="action-alert info">
             <h2>Before You Run a Security Check</h2>
-            <p>This local review area reads Windows security-related indicators such as startup entries, browser policies, proxy settings, DNS settings, and Defender exclusions.</p>
-            <p>It is designed as a local read-only review workflow. Findings mean review this, not this is malware. Scheduled tasks, file signatures, hashes, and reports are later slices.</p>
+            <p>This local review area reads Windows security-related indicators such as startup entries, browser policies, proxy settings, DNS settings, Defender exclusions, scheduled tasks, and services summary.</p>
+            <p>It is designed as a local read-only review workflow. Findings mean review this, not this is malware. File signatures, hashes, and reports are later slices.</p>
         </section>
 
         <div class="security-layout">
@@ -3001,7 +3351,7 @@ summary {{ cursor: pointer; padding: 6px; }}
                         <label class="security-mode">
                             <input type="radio" name="securityMode" value="standard" checked>
                             <strong>Standard Review</strong>
-                            <span class="muted">Startup entries, browser policies, proxy/DNS settings, and Defender exclusions.</span>
+                            <span class="muted">Startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, services summary, and command/name review indicators.</span>
                         </label>
                         <label class="security-mode">
                             <input type="radio" name="securityMode" value="advanced" disabled>
@@ -3096,7 +3446,8 @@ summary {{ cursor: pointer; padding: 6px; }}
                 <div class="category-item"><strong>Browser Policy Review</strong><p>Chrome and Edge managed settings, forced extensions, homepage, search, and proxy policies.</p><span class="security-badge">ready</span></div>
                 <div class="category-item"><strong>Proxy And DNS Review</strong><p>Proxy, PAC script, and DNS server indicators.</p><span class="security-badge">ready</span></div>
                 <div class="category-item"><strong>Microsoft Defender Exclusions</strong><p>Excluded paths, processes, extensions, and IP addresses.</p><span class="security-badge">ready</span></div>
-                <div class="category-item"><strong>Scheduled Tasks Review</strong><p>Task actions, triggers, authors, hidden tasks, and suspicious command patterns.</p><span class="security-badge future">future collector</span></div>
+                <div class="category-item"><strong>Scheduled Tasks Review</strong><p>Task actions, triggers, authors, last run, next run, and command review indicators.</p><span class="security-badge">ready</span></div>
+                <div class="category-item"><strong>Windows Services Summary</strong><p>Scoped automatic-service summary and individual service command/name review items.</p><span class="security-badge">ready</span></div>
                 <div class="category-item"><strong>File Verification</strong><p>File existence, Authenticode signatures, publishers, and SHA-256 hashes.</p><span class="security-badge future">future collector</span></div>
             </div>
         </section>
@@ -3420,7 +3771,7 @@ function showTab(name) {{
         ]);
     }} else if (name === 'security') {{
         showActionAlert('info', 'Security Check Opened', 'This tab runs a local read-only Standard Review of selected Windows security indicators.', [
-            'It reviews startup entries, browser policies, proxy/DNS settings, and Defender exclusions.',
+            'It reviews startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, and services summary.',
             'Findings are review items, not malware verdicts.',
             'Registry backups require explicit opt-in.'
         ]);
@@ -3496,7 +3847,9 @@ function renderSecurityCategoryBlocks(status) {{
         ['Browser Policy', 'Chrome and Edge managed policy values grouped by browser where available.'],
         ['Proxy Settings', 'Windows current-user proxy and PAC script settings.'],
         ['DNS Settings', 'Network adapter DNS server settings.'],
-        ['Microsoft Defender Exclusions', 'Defender excluded paths, processes, extensions, and IP addresses.']
+        ['Microsoft Defender Exclusions', 'Defender excluded paths, processes, extensions, and IP addresses.'],
+        ['Scheduled Task', 'Scheduled task actions, triggers, authors, last run, next run, and command indicators.'],
+        ['Windows Service', 'Scoped services summary and automatic service command/name indicators.']
     ];
     $('securityCategoryBlocks').innerHTML = categories.map(([name, description]) => {{
         const matches = findings.filter(finding => finding.category === name);
@@ -3508,12 +3861,13 @@ function renderSecurityCategoryBlocks(status) {{
             if (evidence.exclusion_type) groups.add(evidence.exclusion_type);
             if (evidence.interface_alias) groups.add(evidence.interface_alias);
             if (evidence.registry_root) groups.add(evidence.registry_root);
+            if (evidence.task_path) groups.add(evidence.task_path);
+            if (evidence.start_mode) groups.add(evidence.start_mode);
         }});
         const groupText = groups.size ? `<p class="muted">Groups: ${{esc(Array.from(groups).join(', '))}}</p>` : '';
         const skippedText = categorySkipped.length ? `<p class="muted">Skipped: ${{esc(categorySkipped.length)}}</p>` : '';
         return `<div class="category-item"><strong>${{esc(name)}}: ${{matches.length}}</strong><p>${{esc(description)}}</p>${{groupText}}${{skippedText}}</div>`;
     }}).join('') + `
-        <div class="category-item"><strong>Scheduled Tasks Review</strong><p>Task actions, triggers, authors, hidden tasks, and suspicious command patterns.</p><span class="security-badge future">future collector</span></div>
         <div class="category-item"><strong>File Verification</strong><p>File existence, Authenticode signatures, publishers, and SHA-256 hashes.</p><span class="security-badge future">future collector</span></div>
     `;
 }}
@@ -3618,7 +3972,7 @@ async function startSecurityCheck() {{
     showActionAlert('info', 'Security Check Starting', 'The dashboard is asking the local server to start a read-only lifecycle job.', [
         `Mode: ${{payload.mode}}`,
         `Registry backup opt-in: ${{payload.registryBackup ? 'yes' : 'no'}}`,
-        'This run reads startup entries, browser policies, proxy/DNS settings, and Defender exclusions without changing settings.'
+        'This run reads startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, and services summary without changing settings.'
     ]);
     try {{
         const status = await api('/api/security-checks', {{ method: 'POST', body: JSON.stringify(payload) }});
@@ -3631,7 +3985,7 @@ async function startSecurityCheck() {{
         showTab('security');
         showActionAlert('success', 'Security Check Started', 'Lifecycle progress is now visible in the Security Check tab.', [
             `Check ID: ${{status.check_id}}`,
-            'Scheduled tasks, file signatures, event logs, and report downloads are still planned for later slices.'
+            'File signatures, event logs, and report downloads are still planned for later slices.'
         ]);
     }} catch (error) {{
         showActionAlert('error', 'Security Check Failed To Start', error.message, [
@@ -4568,7 +4922,7 @@ pollSecurityStatus();
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
-    server_version = "DiskUsageDashboard/1.14"
+    server_version = "DiskUsageDashboard/1.15"
 
     def log_message(self, format, *args):
         return

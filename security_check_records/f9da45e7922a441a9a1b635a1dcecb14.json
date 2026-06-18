@@ -1,0 +1,1273 @@
+{
+  "check_id": "f9da45e7922a441a9a1b635a1dcecb14",
+  "schema_version": "security-check-lifecycle-v1",
+  "mode": "standard",
+  "started_at": "2026-06-18T11:35:28",
+  "completed_at": "2026-06-18T11:35:42",
+  "duration_seconds": 13,
+  "status": "completed",
+  "safety_acknowledged": true,
+  "options": {
+    "registry_backup_opt_in": false,
+    "baseline_compare": false,
+    "wmi_check": false,
+    "event_log_correlation": false,
+    "sysmon_correlation": false
+  },
+  "summary": {
+    "overall_status": "Completed",
+    "high_review": 0,
+    "medium_review": 7,
+    "low_review": 16,
+    "info": 20,
+    "unsigned_files": 0,
+    "baseline_changes": "Future",
+    "findings_total": 43,
+    "skipped_count": 2,
+    "collectors_connected": true
+  },
+  "findings": [
+    {
+      "finding_id": "ec7242e01f8b4d28a3f63fe4bf99cf59",
+      "category": "Registry Startup",
+      "title": "Adobe Acrobat Synchronizer",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "Adobe Acrobat Synchronizer",
+        "value_data": "\"C:\\Program Files\\Adobe\\Acrobat DC\\Acrobat\\AdobeCollabSync.exe\"",
+        "value_type": "1"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:29",
+      "last_seen": "2026-06-18T11:35:29"
+    },
+    {
+      "finding_id": "7de01bb9f4914693904095b6cd122ef0",
+      "category": "Registry Startup",
+      "title": "Synapse3",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "Synapse3",
+        "value_data": "C:\\Program Files (x86)\\Razer\\Synapse3\\WPFUI\\Framework\\Razer Synapse 3 Host\\Razer Synapse 3.exe /StartMinimized",
+        "value_type": "1"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:29",
+      "last_seen": "2026-06-18T11:35:29"
+    },
+    {
+      "finding_id": "1c0c8d94bb624b279ba9d38a424a7498",
+      "category": "Registry Startup",
+      "title": "RzAppEngine",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "RzAppEngine",
+        "value_data": "\"C:\\Program Files\\Razer\\RzAppEngine\\rzappengine.exe\" --start-hidden --url-params=apps=7.1-surround-sound&autoStart=1",
+        "value_type": "1"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:29",
+      "last_seen": "2026-06-18T11:35:29"
+    },
+    {
+      "finding_id": "89fbae9a9c6946d78dd074a20e6a0478",
+      "category": "Registry Startup",
+      "title": "utweb",
+      "severity": "Medium Review",
+      "score": 55,
+      "status": "Needs Review",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present",
+        "Needs Review: command references a user-writable or temporary location"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "utweb",
+        "value_data": "\"C:\\Users\\HomePC\\AppData\\Roaming\\uTorrent Web\\utweb.exe\" /MINIMIZED",
+        "value_type": "1",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: command references a user-writable or temporary location",
+            "matched_text": "\\AppData\\",
+            "explanation": "Autorun commands from user-writable or temporary locations are easier to change than protected program folders.",
+            "severity": "Medium Review",
+            "score": 55
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:29",
+      "last_seen": "2026-06-18T11:35:29"
+    },
+    {
+      "finding_id": "206e4b4f0ddb475098e9699ffb1ad625",
+      "category": "Registry Startup",
+      "title": "AF_uuid_514912",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "AF_uuid_514912",
+        "value_data": "73cf255f-51c4-4d55-84d5-a3bd7f1189b9",
+        "value_type": "1"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:29",
+      "last_seen": "2026-06-18T11:35:29"
+    },
+    {
+      "finding_id": "dd53121e551047649a178f7cb662f278",
+      "category": "Registry Startup",
+      "title": "AF_counter_514912",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "AF_counter_514912",
+        "value_data": "9",
+        "value_type": "1"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:29",
+      "last_seen": "2026-06-18T11:35:29"
+    },
+    {
+      "finding_id": "56ed9ef291734ac6b2ba5f37d7048304",
+      "category": "Registry Startup",
+      "title": "Docker Desktop",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "Docker Desktop",
+        "value_data": "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe",
+        "value_type": "1"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:29",
+      "last_seen": "2026-06-18T11:35:29"
+    },
+    {
+      "finding_id": "e1629a582c054de68fb6f29bcc1a6001",
+      "category": "Registry Startup",
+      "title": "Steam",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "Steam",
+        "value_data": "\"C:\\Program Files (x86)\\Steam\\steam.exe\" -silent",
+        "value_type": "1"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:29",
+      "last_seen": "2026-06-18T11:35:29"
+    },
+    {
+      "finding_id": "2180ad20071148228e4922e1e52b1e61",
+      "category": "Registry Startup",
+      "title": "RiotClient",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "RiotClient",
+        "value_data": "C:\\Riot Games\\Riot Client\\RiotClientServices.exe --launch-background-mode",
+        "value_type": "1"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:29",
+      "last_seen": "2026-06-18T11:35:29"
+    },
+    {
+      "finding_id": "c32bcd56de04472da72a794ec8bc434d",
+      "category": "Registry Startup",
+      "title": "Opera GX Stable",
+      "severity": "Medium Review",
+      "score": 55,
+      "status": "Needs Review",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present",
+        "Needs Review: command references a user-writable or temporary location"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "Opera GX Stable",
+        "value_data": "\"C:\\Users\\HomePC\\AppData\\Local\\Programs\\Opera GX\\opera.exe\" --autostart",
+        "value_type": "1",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: command references a user-writable or temporary location",
+            "matched_text": "\\AppData\\",
+            "explanation": "Autorun commands from user-writable or temporary locations are easier to change than protected program folders.",
+            "severity": "Medium Review",
+            "score": 55
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:29",
+      "last_seen": "2026-06-18T11:35:29"
+    },
+    {
+      "finding_id": "e3d087f82d28444d8067f9d21106fcb9",
+      "category": "Registry Startup",
+      "title": "MicrosoftEdgeAutoLaunch_92867D842B4849A6D57B3FDF3B4FE076",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "MicrosoftEdgeAutoLaunch_92867D842B4849A6D57B3FDF3B4FE076",
+        "value_data": "\"C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe\" --win-session-start",
+        "value_type": "1"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:29",
+      "last_seen": "2026-06-18T11:35:29"
+    },
+    {
+      "finding_id": "6a3555e948a749b38ae5dd2ae809854d",
+      "category": "Registry Startup",
+      "title": "Viber",
+      "severity": "Medium Review",
+      "score": 55,
+      "status": "Needs Review",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present",
+        "Needs Review: command references a user-writable or temporary location"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "Viber",
+        "value_data": "\"C:\\Users\\HomePC\\AppData\\Local\\Viber\\Viber.exe\" AutoStart",
+        "value_type": "1",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: command references a user-writable or temporary location",
+            "matched_text": "\\AppData\\",
+            "explanation": "Autorun commands from user-writable or temporary locations are easier to change than protected program folders.",
+            "severity": "Medium Review",
+            "score": 55
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:29",
+      "last_seen": "2026-06-18T11:35:29"
+    },
+    {
+      "finding_id": "d5dd22e58b554a0db6c38f945b602701",
+      "category": "Registry Startup",
+      "title": "Discord",
+      "severity": "Medium Review",
+      "score": 55,
+      "status": "Needs Review",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present",
+        "Needs Review: command references a user-writable or temporary location"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "Discord",
+        "value_data": "\"C:\\Users\\HomePC\\AppData\\Local\\Discord\\Update.exe\" --processStart Discord.exe",
+        "value_type": "1",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: command references a user-writable or temporary location",
+            "matched_text": "\\AppData\\",
+            "explanation": "Autorun commands from user-writable or temporary locations are easier to change than protected program folders.",
+            "severity": "Medium Review",
+            "score": 55
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:29",
+      "last_seen": "2026-06-18T11:35:29"
+    },
+    {
+      "finding_id": "6c7b29072bce45349748121ecae34cc8",
+      "category": "Registry Startup",
+      "title": "Opera GX Browser Assistant",
+      "severity": "Medium Review",
+      "score": 55,
+      "status": "Needs Review",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present",
+        "Needs Review: command references a user-writable or temporary location"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "Opera GX Browser Assistant",
+        "value_data": "C:\\Users\\HomePC\\AppData\\Local\\Programs\\Opera GX\\assistant\\browser_assistant.exe",
+        "value_type": "1",
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: command references a user-writable or temporary location",
+            "matched_text": "\\AppData\\",
+            "explanation": "Autorun commands from user-writable or temporary locations are easier to change than protected program folders.",
+            "severity": "Medium Review",
+            "score": 55
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:29",
+      "last_seen": "2026-06-18T11:35:29"
+    },
+    {
+      "finding_id": "c4aae5279b154c9db38bfa88dd2f72d7",
+      "category": "Registry Startup",
+      "title": "SecurityHealth",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKLM",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "SecurityHealth",
+        "value_data": "%windir%\\system32\\SecurityHealthSystray.exe",
+        "value_type": "2"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:29",
+      "last_seen": "2026-06-18T11:35:29"
+    },
+    {
+      "finding_id": "be939eac8ec040fa97f5a081fc2a75c3",
+      "category": "Registry Startup",
+      "title": "RTHDVCPL",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKLM",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "RTHDVCPL",
+        "value_data": "\"C:\\Program Files\\Realtek\\Audio\\HDA\\RAVCpl64.exe\" -s",
+        "value_type": "1"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:29",
+      "last_seen": "2026-06-18T11:35:29"
+    },
+    {
+      "finding_id": "1c945a887ee24fa394e8a46e70fc68af",
+      "category": "Registry Startup",
+      "title": "RZSurroundHelper",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKLM",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "RZSurroundHelper",
+        "value_data": "C:\\WINDOWS\\system32\\RZSurroundHelper.exe",
+        "value_type": "1"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:29",
+      "last_seen": "2026-06-18T11:35:29"
+    },
+    {
+      "finding_id": "6b385f00aa794cfb832e7afdf1723c68",
+      "category": "Registry Startup",
+      "title": "Riot Vanguard",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "This registry location can start a program automatically when Windows starts or when the user signs in.",
+      "review_reasons": [
+        "Registry Startup entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKLM",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        "value_name": "Riot Vanguard",
+        "value_data": "\"C:\\Program Files\\Riot Vanguard\\vgtray.exe\"",
+        "value_type": "1"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:29",
+      "last_seen": "2026-06-18T11:35:29"
+    },
+    {
+      "finding_id": "f24cf1efc8834fcb89b761838d9d9d45",
+      "category": "Startup Folder",
+      "title": "desktop.ini",
+      "severity": "Medium Review",
+      "score": 55,
+      "status": "Needs Review",
+      "plain_explanation": "Files or shortcuts in this folder can start when the user signs in.",
+      "review_reasons": [
+        "Startup folder item is present",
+        "Needs Review: command references a user-writable or temporary location"
+      ],
+      "recommended_next_steps": [
+        "Confirm the shortcut or file belongs to software you recognize.",
+        "Use the app's startup settings or Windows Startup Apps settings before deleting shortcuts."
+      ],
+      "evidence": {
+        "folder_label": "Current user startup folder",
+        "folder_path": "C:\\Users\\HomePC\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
+        "file_path": "C:\\Users\\HomePC\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\desktop.ini",
+        "is_directory": false,
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: command references a user-writable or temporary location",
+            "matched_text": "\\AppData\\",
+            "explanation": "Autorun commands from user-writable or temporary locations are easier to change than protected program folders.",
+            "severity": "Medium Review",
+            "score": 55
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:29",
+      "last_seen": "2026-06-18T11:35:29"
+    },
+    {
+      "finding_id": "2cee160cbb3844dbb772a70b5e0e797a",
+      "category": "Startup Folder",
+      "title": "Send to OneNote.lnk",
+      "severity": "Medium Review",
+      "score": 55,
+      "status": "Needs Review",
+      "plain_explanation": "Files or shortcuts in this folder can start when the user signs in.",
+      "review_reasons": [
+        "Startup folder item is present",
+        "Needs Review: command references a user-writable or temporary location"
+      ],
+      "recommended_next_steps": [
+        "Confirm the shortcut or file belongs to software you recognize.",
+        "Use the app's startup settings or Windows Startup Apps settings before deleting shortcuts."
+      ],
+      "evidence": {
+        "folder_label": "Current user startup folder",
+        "folder_path": "C:\\Users\\HomePC\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
+        "file_path": "C:\\Users\\HomePC\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Send to OneNote.lnk",
+        "is_directory": false,
+        "command_review_indicators": [
+          {
+            "label": "Needs Review: command references a user-writable or temporary location",
+            "matched_text": "\\AppData\\",
+            "explanation": "Autorun commands from user-writable or temporary locations are easier to change than protected program folders.",
+            "severity": "Medium Review",
+            "score": 55
+          }
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:29",
+      "last_seen": "2026-06-18T11:35:29"
+    },
+    {
+      "finding_id": "42d5bd6440ce4046bd318d0cc5bcfc16",
+      "category": "Startup Folder",
+      "title": "desktop.ini",
+      "severity": "Low Review",
+      "score": 25,
+      "status": "Found",
+      "plain_explanation": "Files or shortcuts in this folder can start when the user signs in.",
+      "review_reasons": [
+        "Startup folder item is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the shortcut or file belongs to software you recognize.",
+        "Use the app's startup settings or Windows Startup Apps settings before deleting shortcuts."
+      ],
+      "evidence": {
+        "folder_label": "All users startup folder",
+        "folder_path": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
+        "file_path": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\desktop.ini",
+        "is_directory": false
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:29",
+      "last_seen": "2026-06-18T11:35:29"
+    },
+    {
+      "finding_id": "644d0822595242c384a71569add558fb",
+      "category": "Browser Policy",
+      "title": "Google Chrome: No managed policies reported",
+      "severity": "Info",
+      "score": 0,
+      "status": "No Obvious Issue",
+      "plain_explanation": "No Chrome or Edge managed policy values were found for this browser in the standard current-user or local-machine policy registry locations.",
+      "review_reasons": [
+        "No managed browser policy values were found in the standard locations"
+      ],
+      "recommended_next_steps": [
+        "No action is needed for this browser policy source unless you expected work, school, or security software policies."
+      ],
+      "evidence": {
+        "browser": "Google Chrome",
+        "locations_checked": [
+          "HKCU\\Software\\Policies\\Google\\Chrome",
+          "HKLM\\Software\\Policies\\Google\\Chrome"
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:29",
+      "last_seen": "2026-06-18T11:35:29"
+    },
+    {
+      "finding_id": "6f255e2676db4bcaaac40f0fd4d63c1e",
+      "category": "Browser Policy",
+      "title": "Microsoft Edge: No managed policies reported",
+      "severity": "Info",
+      "score": 0,
+      "status": "No Obvious Issue",
+      "plain_explanation": "No Chrome or Edge managed policy values were found for this browser in the standard current-user or local-machine policy registry locations.",
+      "review_reasons": [
+        "No managed browser policy values were found in the standard locations"
+      ],
+      "recommended_next_steps": [
+        "No action is needed for this browser policy source unless you expected work, school, or security software policies."
+      ],
+      "evidence": {
+        "browser": "Microsoft Edge",
+        "locations_checked": [
+          "HKCU\\Software\\Policies\\Microsoft\\Edge",
+          "HKLM\\Software\\Policies\\Microsoft\\Edge"
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:29",
+      "last_seen": "2026-06-18T11:35:29"
+    },
+    {
+      "finding_id": "e45e577e95574d2e81c4f22a825d91ce",
+      "category": "Proxy Settings",
+      "title": "ProxyEnable",
+      "severity": "Info",
+      "score": 10,
+      "status": "Found",
+      "plain_explanation": "Proxy settings can affect where web traffic goes. They can be normal for work, school, VPNs, or privacy tools, but unknown settings should be reviewed.",
+      "review_reasons": [
+        "Proxy Settings entry is present"
+      ],
+      "recommended_next_steps": [
+        "Confirm the value name and command match software you recognize.",
+        "Prefer app settings or official uninstallers before changing startup behavior."
+      ],
+      "evidence": {
+        "registry_root": "HKCU",
+        "registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings",
+        "value_name": "ProxyEnable",
+        "value_data": "0",
+        "value_type": "4"
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:29",
+      "last_seen": "2026-06-18T11:35:29"
+    },
+    {
+      "finding_id": "36dd08ed149e4955a88ad39e6832b083",
+      "category": "DNS Settings",
+      "title": "Ethernet 2 2",
+      "severity": "Info",
+      "score": 10,
+      "status": "Found",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "DNS server values are configured"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Ethernet 2",
+        "interface_index": 21,
+        "address_family": 2,
+        "dns_servers": [
+          "10.30.0.1",
+          "0.0.0.0"
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:31",
+      "last_seen": "2026-06-18T11:35:31"
+    },
+    {
+      "finding_id": "450f8e817ec845febcfe182383a78420",
+      "category": "DNS Settings",
+      "title": "Ethernet 2 23",
+      "severity": "Info",
+      "score": 0,
+      "status": "No Obvious Issue",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "No DNS server values reported for this adapter"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Ethernet 2",
+        "interface_index": 21,
+        "address_family": 23,
+        "dns_servers": []
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:31",
+      "last_seen": "2026-06-18T11:35:31"
+    },
+    {
+      "finding_id": "ba5cefc3a59543829901951a066cea2b",
+      "category": "DNS Settings",
+      "title": "Ethernet 2",
+      "severity": "Info",
+      "score": 10,
+      "status": "Found",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "DNS server values are configured"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Ethernet",
+        "interface_index": 13,
+        "address_family": 2,
+        "dns_servers": [
+          "192.168.254.254"
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:31",
+      "last_seen": "2026-06-18T11:35:31"
+    },
+    {
+      "finding_id": "6152e923e4c94bfb8f130d70263d20db",
+      "category": "DNS Settings",
+      "title": "Ethernet 23",
+      "severity": "Info",
+      "score": 0,
+      "status": "No Obvious Issue",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "No DNS server values reported for this adapter"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Ethernet",
+        "interface_index": 13,
+        "address_family": 23,
+        "dns_servers": []
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:31",
+      "last_seen": "2026-06-18T11:35:31"
+    },
+    {
+      "finding_id": "71144ff084704c5782889aee1a052349",
+      "category": "DNS Settings",
+      "title": "Ethernet 3 2",
+      "severity": "Info",
+      "score": 0,
+      "status": "No Obvious Issue",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "No DNS server values reported for this adapter"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Ethernet 3",
+        "interface_index": 17,
+        "address_family": 2,
+        "dns_servers": []
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:31",
+      "last_seen": "2026-06-18T11:35:31"
+    },
+    {
+      "finding_id": "36027b2baa3848beabefda7b3a5b1b52",
+      "category": "DNS Settings",
+      "title": "Ethernet 3 23",
+      "severity": "Info",
+      "score": 10,
+      "status": "Found",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "DNS server values are configured"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Ethernet 3",
+        "interface_index": 17,
+        "address_family": 23,
+        "dns_servers": [
+          "fec0:0:0:ffff::1",
+          "fec0:0:0:ffff::2",
+          "fec0:0:0:ffff::3"
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:31",
+      "last_seen": "2026-06-18T11:35:31"
+    },
+    {
+      "finding_id": "f7176da381ed40c5953c3aff8b0022c0",
+      "category": "DNS Settings",
+      "title": "Local Area Connection* 11 2",
+      "severity": "Info",
+      "score": 0,
+      "status": "No Obvious Issue",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "No DNS server values reported for this adapter"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Local Area Connection* 11",
+        "interface_index": 19,
+        "address_family": 2,
+        "dns_servers": []
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:31",
+      "last_seen": "2026-06-18T11:35:31"
+    },
+    {
+      "finding_id": "3c5659cf0b244fe18f30fb29af019707",
+      "category": "DNS Settings",
+      "title": "Local Area Connection* 11 23",
+      "severity": "Info",
+      "score": 10,
+      "status": "Found",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "DNS server values are configured"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Local Area Connection* 11",
+        "interface_index": 19,
+        "address_family": 23,
+        "dns_servers": [
+          "fec0:0:0:ffff::1",
+          "fec0:0:0:ffff::2",
+          "fec0:0:0:ffff::3"
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:31",
+      "last_seen": "2026-06-18T11:35:31"
+    },
+    {
+      "finding_id": "4a40aab380204ff4bb7f9c078fe6d806",
+      "category": "DNS Settings",
+      "title": "Local Area Connection* 12 2",
+      "severity": "Info",
+      "score": 0,
+      "status": "No Obvious Issue",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "No DNS server values reported for this adapter"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Local Area Connection* 12",
+        "interface_index": 8,
+        "address_family": 2,
+        "dns_servers": []
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:31",
+      "last_seen": "2026-06-18T11:35:31"
+    },
+    {
+      "finding_id": "6d8b670b98574809b37da92f59828c10",
+      "category": "DNS Settings",
+      "title": "Local Area Connection* 12 23",
+      "severity": "Info",
+      "score": 10,
+      "status": "Found",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "DNS server values are configured"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Local Area Connection* 12",
+        "interface_index": 8,
+        "address_family": 23,
+        "dns_servers": [
+          "fec0:0:0:ffff::1",
+          "fec0:0:0:ffff::2",
+          "fec0:0:0:ffff::3"
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:31",
+      "last_seen": "2026-06-18T11:35:31"
+    },
+    {
+      "finding_id": "6d96fbcf08f14dc7bfef16af1efd9145",
+      "category": "DNS Settings",
+      "title": "Wi-Fi 2",
+      "severity": "Info",
+      "score": 10,
+      "status": "Found",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "DNS server values are configured"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Wi-Fi",
+        "interface_index": 14,
+        "address_family": 2,
+        "dns_servers": [
+          "192.168.1.1"
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:31",
+      "last_seen": "2026-06-18T11:35:31"
+    },
+    {
+      "finding_id": "d97067ba1e6a4169b1ca1b4555fea6d6",
+      "category": "DNS Settings",
+      "title": "Wi-Fi 23",
+      "severity": "Info",
+      "score": 10,
+      "status": "Found",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "DNS server values are configured"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Wi-Fi",
+        "interface_index": 14,
+        "address_family": 23,
+        "dns_servers": [
+          "fe80::1",
+          "fe80::1"
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:31",
+      "last_seen": "2026-06-18T11:35:31"
+    },
+    {
+      "finding_id": "d5c50ea9cedc4d2695a2a58b64a667b9",
+      "category": "DNS Settings",
+      "title": "Loopback Pseudo-Interface 1 2",
+      "severity": "Info",
+      "score": 0,
+      "status": "No Obvious Issue",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "No DNS server values reported for this adapter"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Loopback Pseudo-Interface 1",
+        "interface_index": 1,
+        "address_family": 2,
+        "dns_servers": []
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:31",
+      "last_seen": "2026-06-18T11:35:31"
+    },
+    {
+      "finding_id": "61c0f4d4882645a78b60db7a8d136d68",
+      "category": "DNS Settings",
+      "title": "Loopback Pseudo-Interface 1 23",
+      "severity": "Info",
+      "score": 10,
+      "status": "Found",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "DNS server values are configured"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "Loopback Pseudo-Interface 1",
+        "interface_index": 1,
+        "address_family": 23,
+        "dns_servers": [
+          "fec0:0:0:ffff::1",
+          "fec0:0:0:ffff::2",
+          "fec0:0:0:ffff::3"
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:31",
+      "last_seen": "2026-06-18T11:35:31"
+    },
+    {
+      "finding_id": "d9185a3a5fd34a0c8123111e0bba0408",
+      "category": "DNS Settings",
+      "title": "vEthernet (WSL (Hyper-V firewall)) 2",
+      "severity": "Info",
+      "score": 0,
+      "status": "No Obvious Issue",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "No DNS server values reported for this adapter"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "vEthernet (WSL (Hyper-V firewall))",
+        "interface_index": 62,
+        "address_family": 2,
+        "dns_servers": []
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:31",
+      "last_seen": "2026-06-18T11:35:31"
+    },
+    {
+      "finding_id": "57813169dd554d439c777ba77eaad34c",
+      "category": "DNS Settings",
+      "title": "vEthernet (WSL (Hyper-V firewall)) 23",
+      "severity": "Info",
+      "score": 10,
+      "status": "Found",
+      "plain_explanation": "DNS settings control which servers translate website names into network addresses. Custom DNS can be normal for work, school, VPNs, privacy tools, or manual network setup.",
+      "review_reasons": [
+        "DNS server values are configured"
+      ],
+      "recommended_next_steps": [
+        "Confirm DNS servers match your router, VPN, workplace, school, or chosen DNS provider.",
+        "Unknown DNS settings should be reviewed before changing network configuration."
+      ],
+      "evidence": {
+        "interface_alias": "vEthernet (WSL (Hyper-V firewall))",
+        "interface_index": 62,
+        "address_family": 23,
+        "dns_servers": [
+          "fec0:0:0:ffff::1",
+          "fec0:0:0:ffff::2",
+          "fec0:0:0:ffff::3"
+        ]
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:31",
+      "last_seen": "2026-06-18T11:35:31"
+    },
+    {
+      "finding_id": "5d63b168a16a4fa697525837f2652276",
+      "category": "Microsoft Defender Exclusions",
+      "title": "Excluded Path: C:\\Windows",
+      "severity": "Low Review",
+      "score": 35,
+      "status": "Found",
+      "plain_explanation": "Defender exclusions tell Microsoft Defender what not to scan. Some are normal for developer tools, game engines, or business software, but broad or unfamiliar exclusions can weaken protection.",
+      "review_reasons": [
+        "Defender exclusion is configured"
+      ],
+      "recommended_next_steps": [
+        "Confirm the exclusion belongs to software you trust and still use.",
+        "Do not remove exclusions blindly; some apps require them, but broad exclusions deserve review."
+      ],
+      "evidence": {
+        "exclusion_type": "Excluded Path",
+        "field": "ExclusionPath",
+        "value": "C:\\Windows",
+        "broad_exclusion": false
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:33",
+      "last_seen": "2026-06-18T11:35:33"
+    },
+    {
+      "finding_id": "0059d2b8bda34357a45d763cf755d5e0",
+      "category": "Microsoft Defender Exclusions",
+      "title": "Excluded Path: C:\\Windows\\System32\\SppExtComObjHook.dll",
+      "severity": "Low Review",
+      "score": 35,
+      "status": "Found",
+      "plain_explanation": "Defender exclusions tell Microsoft Defender what not to scan. Some are normal for developer tools, game engines, or business software, but broad or unfamiliar exclusions can weaken protection.",
+      "review_reasons": [
+        "Defender exclusion is configured"
+      ],
+      "recommended_next_steps": [
+        "Confirm the exclusion belongs to software you trust and still use.",
+        "Do not remove exclusions blindly; some apps require them, but broad exclusions deserve review."
+      ],
+      "evidence": {
+        "exclusion_type": "Excluded Path",
+        "field": "ExclusionPath",
+        "value": "C:\\Windows\\System32\\SppExtComObjHook.dll",
+        "broad_exclusion": false
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:33",
+      "last_seen": "2026-06-18T11:35:33"
+    },
+    {
+      "finding_id": "868d5ecf51c642088a448d4624de20f7",
+      "category": "Windows Service",
+      "title": "Windows services summary",
+      "severity": "Info",
+      "score": 0,
+      "status": "Found",
+      "plain_explanation": "Windows services are background components that can start with Windows. This slice records a summary and only creates individual review items for automatic services with command/name indicators.",
+      "review_reasons": [
+        "Windows services were summarized in read-only mode"
+      ],
+      "recommended_next_steps": [
+        "Review individual service findings only when command/name indicators appear.",
+        "Use Services, app settings, or vendor documentation before changing service startup behavior."
+      ],
+      "evidence": {
+        "services_total": 316,
+        "automatic_services": 95,
+        "running_services": 130
+      },
+      "source": "local_standard_review",
+      "first_seen": "2026-06-18T11:35:42",
+      "last_seen": "2026-06-18T11:35:42"
+    }
+  ],
+  "skipped_items": [
+    {
+      "category": "Scheduled Task",
+      "status": "Error",
+      "message": "Could not read scheduled tasks.",
+      "detail": "Expecting ',' delimiter: line 1 column 159267 (char 159266)"
+    },
+    {
+      "category": "reports",
+      "status": "Skipped",
+      "message": "Security report downloads are planned for a later slice."
+    }
+  ],
+  "errors": [],
+  "steps": [
+    {
+      "id": "prepare",
+      "label": "Preparing local review",
+      "status": "Complete",
+      "detail": "Local Security Check state prepared."
+    },
+    {
+      "id": "registry_backup",
+      "label": "Recording registry backup opt-in",
+      "status": "Complete",
+      "detail": "User did not opt into registry backups."
+    },
+    {
+      "id": "standard_locations",
+      "label": "Reading standard security locations",
+      "status": "Complete",
+      "detail": "Collected 43 review item(s); skipped 1 source(s)."
+    },
+    {
+      "id": "file_verification",
+      "label": "Checking file signatures and SHA-256 hashes",
+      "status": "Skipped",
+      "detail": "File signature and SHA-256 verification are not connected until a later implementation slice."
+    },
+    {
+      "id": "record",
+      "label": "Saving local security check record",
+      "status": "Complete",
+      "detail": "Local lifecycle record saved."
+    }
+  ],
+  "record_path": "C:\\Users\\HomePC\\ai-tools\\windows\\security_check_records\\f9da45e7922a441a9a1b635a1dcecb14.json",
+  "app_version": "1.15.0",
+  "error": null
+}

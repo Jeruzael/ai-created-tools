@@ -1,8 +1,8 @@
 {
-  "app_version": "1.14.0",
-  "documentation_version": "1.14",
+  "app_version": "1.15.0",
+  "documentation_version": "1.15",
   "last_updated": "2026-06-18",
-  "revision_notes": "Added read-only Standard Review collectors for startup registry entries, startup folders, browser policies, proxy/DNS settings, and Microsoft Defender exclusions.",
+  "revision_notes": "Added read-only scheduled task review, scoped services summary, and autoruns-style command/name review indicators.",
   "affected_areas": [
     "browser_dashboard",
     "security_check_ui",
