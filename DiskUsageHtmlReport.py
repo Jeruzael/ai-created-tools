@@ -27,8 +27,8 @@ except ImportError:  # pragma: no cover - non-Windows fallback
 
 sys.setrecursionlimit(10000)
 
-APP_VERSION = "1.23.0"
-DOC_VERSION = "1.23.1"
+APP_VERSION = "1.23.1"
+DOC_VERSION = "1.23.2"
 APP_DIR = Path(__file__).resolve().parent
 RECORDS_DIR = APP_DIR / "scan_records"
 REPORTS_DIR = APP_DIR / "generated_reports"
@@ -964,12 +964,10 @@ def ensure_version_metadata():
     metadata = {
         "app_version": APP_VERSION,
         "documentation_version": DOC_VERSION,
-        "last_updated": "2026-06-18",
+        "last_updated": "2026-07-18",
         "revision_notes": (
-            "Expanded project documentation and README guidance for "
-            "non-technical users and technical maintainers, including safety "
-            "boundaries, workflows, Security Check interpretation, generated "
-            "files, troubleshooting, verification, and maintenance notes."
+            "Fixed Large Folder Tree dropdowns resetting by preventing "
+            "completed scan polling from re-rendering Results every second."
         ),
         "affected_areas": [
             "browser_dashboard",
@@ -981,6 +979,7 @@ def ensure_version_metadata():
             "security_check_baselines",
             "security_check_allowlist",
             "security_check_timeline",
+            "results_tree_rendering",
             "local_records",
             "safety_messaging",
             "documentation_versioning"
@@ -6422,15 +6421,18 @@ async function pollStatus() {{
             setExitState(true, 'Cancel or wait for the current scan to finish before exiting.');
             updateSecurityCheckStartState();
         }} else {{
+            const scanJustFinished = state.scanActive;
             $('scanStatus').textContent = `Last scan ${{status.status}}.`;
             $('startScan').disabled = false;
             $('cancelScan').disabled = true;
             setExitState(false);
             updateSecurityCheckStartState();
             if (status.result) {{
-                renderResult(status);
-                await refreshHistory(false);
                 const statusKey = `${{status.scan_id}}:${{status.status}}`;
+                if (scanJustFinished) {{
+                    renderResult(status);
+                    await refreshHistory(false);
+                }}
                 if (state.lastScanStatusKey !== statusKey) {{
                     state.lastScanStatusKey = statusKey;
                     const alertType = status.status === 'completed' ? 'success' : (status.status === 'cancelled' ? 'warning' : 'error');

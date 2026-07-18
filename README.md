@@ -2,13 +2,13 @@
 
 - Document: Folder README and operations guide
 - Project: Windows Disk Usage Dashboard
-- App version: `1.23.0`
-- Documentation version: `1.23.1`
-- Date: 2026-06-18
+- App version: `1.23.1`
+- Documentation version: `1.23.2`
+- Date: 2026-07-18
 - Prepared by: Codex
 - Prepared for: users and maintainers working inside the `windows/` folder
 - Status: Revised
-- Revision notes: Expanded quick-start, safety notes, Security Check workflow, generated files, commands, verification, and maintenance guidance.
+- Revision notes: Documented the v1.23.1 Large Folder Tree dropdown fix and kept operations guidance current.
 
 ## 1. Purpose
 
@@ -296,4 +296,4 @@ Before handing off changes:
 
 ## 14. Current Version Summary
 
-Version `1.23.0` includes the Security Check timeline view. Timeline rows show chronological evidence points for run events, baselines, file timestamps, scheduled task times, registry evidence, Defender data, event-log entries, and related findings.
+Version `1.23.1` fixes Large Folder Tree dropdowns resetting after a completed scan. Version `1.23.0` added the Security Check timeline view with chronological evidence points for run events, baselines, file timestamps, scheduled task times, registry evidence, Defender data, event-log entries, and related findings.

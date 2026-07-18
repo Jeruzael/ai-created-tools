@@ -1,8 +1,8 @@
 {
-  "app_version": "1.23.0",
-  "documentation_version": "1.23.1",
-  "last_updated": "2026-06-18",
-  "revision_notes": "Expanded project documentation and README guidance for non-technical users and technical maintainers, including safety boundaries, workflows, Security Check interpretation, generated files, troubleshooting, verification, and maintenance notes.",
+  "app_version": "1.23.1",
+  "documentation_version": "1.23.2",
+  "last_updated": "2026-07-18",
+  "revision_notes": "Fixed Large Folder Tree dropdowns resetting by preventing completed scan polling from re-rendering Results every second.",
   "affected_areas": [
     "browser_dashboard",
     "security_check_ui",
@@ -13,6 +13,7 @@
     "security_check_baselines",
     "security_check_allowlist",
     "security_check_timeline",
+    "results_tree_rendering",
     "local_records",
     "safety_messaging",
     "documentation_versioning"
