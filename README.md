@@ -2,13 +2,13 @@
 
 - Document: Folder README and operations guide
 - Project: Windows Disk Usage Dashboard
-- App version: `1.23.1`
-- Documentation version: `1.23.2`
-- Date: 2026-07-18
+- App version: `1.25.0`
+- Documentation version: `1.25`
+- Date: 2026-09-04
 - Prepared by: Codex
 - Prepared for: users and maintainers working inside the `windows/` folder
 - Status: Revised
-- Revision notes: Documented the v1.23.1 Large Folder Tree dropdown fix and kept operations guidance current.
+- Revision notes: Added second-stage MSI metadata, installed-product, uninstall-registration, and MSP patch verification to Installer Cache review.
 
 ## 1. Purpose
 
@@ -25,6 +25,7 @@ It runs a local browser dashboard for:
 - Disk usage scans.
 - Scan history.
 - Running process review.
+- Windows Installer cache review.
 - Read-only Security Check workflows.
 - Safe cleanup guidance.
 - Local report generation.
@@ -79,6 +80,7 @@ Full-drive scans may take longer and may include Windows folders, app data, cach
 
 - This tool reports only.
 - It does not delete, move, rename, compress, quarantine, upload, or modify files.
+- It does not delete Windows Installer cache files or decide that an installer package is safe to remove.
 - It does not stop, kill, disable, or modify running processes.
 - It does not modify registry keys, Defender settings, browser policies, DNS settings, proxy settings, startup items, scheduled tasks, services, drivers, WMI subscriptions, event logs, Sysmon configuration, processes, or files.
 - It does not install Sysmon or any other external tool.
@@ -106,6 +108,12 @@ Explains whether the scan was affected by locked files, running apps, permission
 
 Review running programs and local technical indicators. The UI supports Needs Review filtering, publisher and memory grouping, grouped tree summaries, verification reports, selectable rows, and a resizable details panel.
 
+### Installer Cache
+
+Review cached Windows Installer `.msi` and `.msp` files in `C:\Windows\Installer`. The tab checks direct `LocalPackage` references, reads MSI product metadata, compares ProductCodes and exact product names with installed app records, evaluates MSP PatchCodes separately, reports missing registered cache files, and exports review evidence to CSV.
+
+This tab never deletes files. Probable orphan and unknown results are review leads only, not safe-to-delete verdicts.
+
 ### Security Check
 
 Run a local read-only Standard or Advanced Review.
@@ -128,7 +136,28 @@ Read safe usage guidance, scan setting explanations, use cases, cleanup workflow
 
 View version and local privacy notes.
 
-## 6. Security Check Workflow
+## 6. Installer Cache Workflow
+
+Recommended workflow:
+
+1. Use Windows Storage settings and Disk Cleanup first.
+2. Open Installer Cache.
+3. Run the read-only cache review.
+4. Export review candidates if any are found.
+5. Review the ProductCode, PatchCode, product, version, manufacturer, and registration evidence.
+6. Keep a backup outside `C:\Windows\Installer` before any manual removal.
+7. Confirm Windows Update, app updates, repair, modify, and uninstall operations still work.
+
+Important interpretation rules:
+
+- Direct references and installed product or patch matches should be kept.
+- Probable orphan and unknown results are not safe-to-delete verdicts.
+- MSI product packages and MSP patch packages use separate registration checks.
+- Product and patch visibility can be limited by the current user's permissions.
+- Size, date, and random-looking filenames are not enough evidence for deletion.
+- Missing registered cache files may explain future update, repair, or uninstall failures.
+
+## 7. Security Check Workflow
 
 Recommended workflow:
 
@@ -148,7 +177,7 @@ Important interpretation rules:
 - Allowlisting lowers local review priority but does not hide evidence by default.
 - Timeline rows are evidence timestamps only and do not prove cause or harm.
 
-## 7. Legacy One-Shot Report
+## 8. Legacy One-Shot Report
 
 To generate a single static HTML report without using the browser app:
 
@@ -164,7 +193,7 @@ python .\DiskUsageHtmlReport.py --scan-once --root "C:\Users" --output ".\User_D
 
 Avoid `--include-reparse` unless you understand Windows junctions, symlinks, and reparse points.
 
-## 8. Command Reference
+## 9. Command Reference
 
 Show all options:
 
@@ -184,7 +213,7 @@ Useful options:
 - `--show-skipped-live`: print skipped/access-denied paths while scanning.
 - `--include-reparse`: include reparse points; not recommended for normal use.
 
-## 9. Generated Local Files
+## 10. Generated Local Files
 
 These paths are generated locally and ignored by Git:
 
@@ -204,17 +233,18 @@ These paths are generated locally and ignored by Git:
 
 Do not commit generated reports or records. They may contain private paths, usernames, process command lines, registry values, hashes, installed software details, and event-log summaries.
 
-## 10. Technical Notes
+## 11. Technical Notes
 
 - Requires Python 3.9 or newer.
 - No external Python packages are required.
 - The local server binds only to `127.0.0.1` or `localhost`.
 - PowerShell/CIM is used for local Windows process and system metadata.
+- Installer Cache review reads `%windir%\Installer` and Windows Installer registry metadata in read-only mode.
 - Security Check collectors continue where possible when individual sources are unavailable or permission-limited.
 - Reports, baselines, and allowlist files are local artifacts written under this folder.
 - The root repository also has a `.gitignore`; keep this folder `.gitignore` in sync when generated paths change.
 
-## 11. Verification
+## 12. Verification
 
 Compile check:
 
@@ -246,11 +276,12 @@ Expected checks:
 - Scan tab starts and cancels a scan.
 - Results and History tabs open.
 - Processes tab loads without crashing.
+- Installer Cache tab runs a read-only review or shows a clear permission/error message.
 - Security Check can start and cancel.
 - Exit App is blocked during active work.
 - Generated output remains ignored by Git.
 
-## 12. Troubleshooting
+## 13. Troubleshooting
 
 ### `python` is not recognized
 
@@ -282,7 +313,11 @@ Scan a smaller folder first, such as `C:\Users`. Close large apps, games, editor
 
 Review Scan Health or Security Check skipped-source details. Administrator permission may be required for some Windows locations. Missing optional sources, such as Sysmon when it is not installed, should be reported without failing the whole review.
 
-## 13. Maintainer Checklist
+### Installer Cache has many review candidates
+
+Do not delete them directly from the dashboard result. Export the CSV, identify related products, prefer official cleanup tools first, and keep a backup before any manual cleanup decision.
+
+## 14. Maintainer Checklist
 
 Before handing off changes:
 
@@ -294,6 +329,6 @@ Before handing off changes:
 - Keep safety wording accurate and conservative.
 - Do not add external dependencies without documenting why.
 
-## 14. Current Version Summary
+## 15. Current Version Summary
 
-Version `1.23.1` fixes Large Folder Tree dropdowns resetting after a completed scan. Version `1.23.0` added the Security Check timeline view with chronological evidence points for run events, baselines, file timestamps, scheduled task times, registry evidence, Defender data, event-log entries, and related findings.
+Version `1.25.0` adds second-stage Windows Installer verification. It reads MSI package metadata, compares product identifiers with Windows Installer and uninstall registrations, evaluates MSP PatchCodes against patch registrations, shows the evidence behind each status, and exports review candidates without changing cache files.

@@ -1,4 +1,6 @@
 import argparse
+import ctypes
+import ctypes.wintypes as wintypes
 import datetime as dt
 import hashlib
 import heapq
@@ -27,8 +29,8 @@ except ImportError:  # pragma: no cover - non-Windows fallback
 
 sys.setrecursionlimit(10000)
 
-APP_VERSION = "1.23.1"
-DOC_VERSION = "1.23.2"
+APP_VERSION = "1.25.0"
+DOC_VERSION = "1.25"
 APP_DIR = Path(__file__).resolve().parent
 RECORDS_DIR = APP_DIR / "scan_records"
 REPORTS_DIR = APP_DIR / "generated_reports"
@@ -36,6 +38,9 @@ SECURITY_RECORDS_DIR = APP_DIR / "security_check_records"
 BASELINES_DIR = APP_DIR / "baselines"
 ALLOWLIST_FILE = APP_DIR / "allowlist.local.json"
 VERSION_FILE = APP_DIR / "dashboard_version.json"
+INSTALLER_CACHE_DIR = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Installer"
+INSTALLER_CACHE_EXTENSIONS = {".msi", ".msp"}
+INSTALLER_USERDATA_SUBKEY = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData"
 
 
 class ScanCancelled(Exception):
@@ -964,13 +969,19 @@ def ensure_version_metadata():
     metadata = {
         "app_version": APP_VERSION,
         "documentation_version": DOC_VERSION,
-        "last_updated": "2026-07-18",
+        "last_updated": "2026-09-04",
         "revision_notes": (
-            "Fixed Large Folder Tree dropdowns resetting by preventing "
-            "completed scan polling from re-rendering Results every second."
+            "Added second-stage Windows Installer verification that inspects MSI "
+            "metadata, checks installed product registrations, and evaluates MSP "
+            "patch registrations separately before labeling review candidates."
         ),
         "affected_areas": [
             "browser_dashboard",
+            "installer_cache_review",
+            "installer_cache_api",
+            "installer_package_metadata",
+            "installer_product_inventory",
+            "installer_patch_inventory",
             "security_check_ui",
             "security_check_api",
             "security_check_collectors",
@@ -3487,6 +3498,803 @@ ConvertTo-Json -Depth 4
     }
 
 
+MSI_ERROR_SUCCESS = 0
+MSI_ERROR_MORE_DATA = 234
+MSI_ERROR_NO_MORE_ITEMS = 259
+MSI_INSTALL_CONTEXT_USER_MANAGED = 1
+MSI_INSTALL_CONTEXT_USER_UNMANAGED = 2
+MSI_INSTALL_CONTEXT_MACHINE = 4
+MSI_PATCH_STATE_ALL = 15
+MSI_SUMMARY_REVISION_NUMBER = 9
+
+
+def load_windows_installer_api():
+    if os.name != "nt":
+        raise OSError("Windows Installer APIs are unavailable on this platform.")
+
+    msi = ctypes.WinDLL("msi", use_last_error=True)
+    handle_pointer = ctypes.POINTER(wintypes.UINT)
+    dword_pointer = ctypes.POINTER(wintypes.DWORD)
+
+    msi.MsiOpenDatabaseW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR, handle_pointer]
+    msi.MsiOpenDatabaseW.restype = wintypes.UINT
+    msi.MsiDatabaseOpenViewW.argtypes = [wintypes.UINT, wintypes.LPCWSTR, handle_pointer]
+    msi.MsiDatabaseOpenViewW.restype = wintypes.UINT
+    msi.MsiViewExecute.argtypes = [wintypes.UINT, wintypes.UINT]
+    msi.MsiViewExecute.restype = wintypes.UINT
+    msi.MsiViewFetch.argtypes = [wintypes.UINT, handle_pointer]
+    msi.MsiViewFetch.restype = wintypes.UINT
+    msi.MsiRecordGetStringW.argtypes = [wintypes.UINT, wintypes.UINT, wintypes.LPWSTR, dword_pointer]
+    msi.MsiRecordGetStringW.restype = wintypes.UINT
+    msi.MsiCloseHandle.argtypes = [wintypes.UINT]
+    msi.MsiCloseHandle.restype = wintypes.UINT
+
+    msi.MsiGetSummaryInformationW.argtypes = [wintypes.UINT, wintypes.LPCWSTR, wintypes.UINT, handle_pointer]
+    msi.MsiGetSummaryInformationW.restype = wintypes.UINT
+    msi.MsiSummaryInfoGetPropertyW.argtypes = [
+        wintypes.UINT,
+        wintypes.UINT,
+        ctypes.POINTER(wintypes.UINT),
+        ctypes.POINTER(ctypes.c_int),
+        ctypes.POINTER(wintypes.FILETIME),
+        wintypes.LPWSTR,
+        dword_pointer,
+    ]
+    msi.MsiSummaryInfoGetPropertyW.restype = wintypes.UINT
+
+    msi.MsiEnumProductsExW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPWSTR,
+        dword_pointer,
+        wintypes.LPWSTR,
+        dword_pointer,
+    ]
+    msi.MsiEnumProductsExW.restype = wintypes.UINT
+    msi.MsiGetProductInfoExW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.LPCWSTR,
+        wintypes.LPWSTR,
+        dword_pointer,
+    ]
+    msi.MsiGetProductInfoExW.restype = wintypes.UINT
+    msi.MsiEnumPatchesExW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPWSTR,
+        wintypes.LPWSTR,
+        dword_pointer,
+        wintypes.LPWSTR,
+        dword_pointer,
+    ]
+    msi.MsiEnumPatchesExW.restype = wintypes.UINT
+    msi.MsiGetPatchInfoExW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.LPCWSTR,
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.LPCWSTR,
+        wintypes.LPWSTR,
+        dword_pointer,
+    ]
+    msi.MsiGetPatchInfoExW.restype = wintypes.UINT
+    return msi
+
+
+def msi_api_string(getter, *args):
+    size = wintypes.DWORD(0)
+    result = getter(*args, None, ctypes.byref(size))
+    if result not in (MSI_ERROR_SUCCESS, MSI_ERROR_MORE_DATA):
+        return ""
+    buffer = ctypes.create_unicode_buffer(max(1, int(size.value) + 1))
+    capacity = wintypes.DWORD(len(buffer))
+    result = getter(*args, buffer, ctypes.byref(capacity))
+    return buffer.value if result == MSI_ERROR_SUCCESS else ""
+
+
+def inspect_msi_package(path_value):
+    metadata = {
+        "product_name": "",
+        "product_code": "",
+        "product_version": "",
+        "upgrade_code": "",
+        "manufacturer": "",
+    }
+    database_handle = wintypes.UINT(0)
+
+    try:
+        msi = load_windows_installer_api()
+        result = msi.MsiOpenDatabaseW(str(path_value), None, ctypes.byref(database_handle))
+        if result != MSI_ERROR_SUCCESS:
+            raise OSError(f"Windows Installer could not open this MSI database (error {result}).")
+
+        for property_name, output_name in (
+            ("ProductName", "product_name"),
+            ("ProductCode", "product_code"),
+            ("ProductVersion", "product_version"),
+            ("UpgradeCode", "upgrade_code"),
+            ("Manufacturer", "manufacturer"),
+        ):
+            view_handle = wintypes.UINT(0)
+            record_handle = wintypes.UINT(0)
+            query = f"SELECT `Value` FROM `Property` WHERE `Property`='{property_name}'"
+            try:
+                result = msi.MsiDatabaseOpenViewW(database_handle.value, query, ctypes.byref(view_handle))
+                if result != MSI_ERROR_SUCCESS:
+                    continue
+                if msi.MsiViewExecute(view_handle.value, 0) != MSI_ERROR_SUCCESS:
+                    continue
+                if msi.MsiViewFetch(view_handle.value, ctypes.byref(record_handle)) != MSI_ERROR_SUCCESS:
+                    continue
+                size = wintypes.DWORD(0)
+                result = msi.MsiRecordGetStringW(record_handle.value, 1, None, ctypes.byref(size))
+                if result not in (MSI_ERROR_SUCCESS, MSI_ERROR_MORE_DATA):
+                    continue
+                buffer = ctypes.create_unicode_buffer(max(1, int(size.value) + 1))
+                capacity = wintypes.DWORD(len(buffer))
+                if msi.MsiRecordGetStringW(record_handle.value, 1, buffer, ctypes.byref(capacity)) == MSI_ERROR_SUCCESS:
+                    metadata[output_name] = buffer.value.strip()
+            finally:
+                if record_handle.value:
+                    msi.MsiCloseHandle(record_handle.value)
+                if view_handle.value:
+                    msi.MsiCloseHandle(view_handle.value)
+    except Exception as ex:
+        return metadata, str(ex)
+    finally:
+        if database_handle.value:
+            try:
+                msi.MsiCloseHandle(database_handle.value)
+            except Exception:
+                pass
+
+    return metadata, ""
+
+
+def inspect_msp_package(path_value):
+    summary_handle = wintypes.UINT(0)
+    metadata = {"patch_code": ""}
+
+    try:
+        msi = load_windows_installer_api()
+        result = msi.MsiGetSummaryInformationW(0, str(path_value), 0, ctypes.byref(summary_handle))
+        if result != MSI_ERROR_SUCCESS:
+            raise OSError(f"Windows Installer could not open this MSP summary (error {result}).")
+
+        data_type = wintypes.UINT(0)
+        integer_value = ctypes.c_int(0)
+        file_time = wintypes.FILETIME()
+        size = wintypes.DWORD(0)
+        result = msi.MsiSummaryInfoGetPropertyW(
+            summary_handle.value,
+            MSI_SUMMARY_REVISION_NUMBER,
+            ctypes.byref(data_type),
+            ctypes.byref(integer_value),
+            ctypes.byref(file_time),
+            None,
+            ctypes.byref(size),
+        )
+        if result not in (MSI_ERROR_SUCCESS, MSI_ERROR_MORE_DATA):
+            raise OSError(f"Windows Installer could not read the MSP revision number (error {result}).")
+        buffer = ctypes.create_unicode_buffer(max(1, int(size.value) + 1))
+        capacity = wintypes.DWORD(len(buffer))
+        result = msi.MsiSummaryInfoGetPropertyW(
+            summary_handle.value,
+            MSI_SUMMARY_REVISION_NUMBER,
+            ctypes.byref(data_type),
+            ctypes.byref(integer_value),
+            ctypes.byref(file_time),
+            buffer,
+            ctypes.byref(capacity),
+        )
+        if result != MSI_ERROR_SUCCESS:
+            raise OSError(f"Windows Installer could not read the MSP revision number (error {result}).")
+        match = re.search(r"\{[0-9A-Fa-f-]{36}\}", buffer.value)
+        metadata["patch_code"] = match.group(0).upper() if match else ""
+        if not metadata["patch_code"]:
+            return metadata, "The MSP summary does not expose a PatchCode."
+    except Exception as ex:
+        return metadata, str(ex)
+    finally:
+        if summary_handle.value:
+            try:
+                msi.MsiCloseHandle(summary_handle.value)
+            except Exception:
+                pass
+
+    return metadata, ""
+
+
+def collect_windows_installer_inventory():
+    inventory = {"products": {}, "patches": {}, "local_packages": {}}
+    errors = []
+
+    try:
+        msi = load_windows_installer_api()
+    except Exception as ex:
+        return inventory, [str(ex)]
+
+    def get_product_property(product_code, user_sid, context, property_name):
+        return msi_api_string(msi.MsiGetProductInfoExW, product_code, user_sid, context, property_name)
+
+    def get_patch_property(patch_code, product_code, user_sid, context, property_name):
+        return msi_api_string(msi.MsiGetPatchInfoExW, patch_code, product_code, user_sid, context, property_name)
+
+    enumeration_scopes = (
+        ("current user", None, MSI_INSTALL_CONTEXT_USER_MANAGED | MSI_INSTALL_CONTEXT_USER_UNMANAGED),
+        ("all users", "S-1-1-0", MSI_INSTALL_CONTEXT_USER_MANAGED | MSI_INSTALL_CONTEXT_USER_UNMANAGED),
+        ("machine", None, MSI_INSTALL_CONTEXT_MACHINE),
+    )
+
+    for scope_label, requested_sid, requested_context in enumeration_scopes:
+        index = 0
+        while True:
+            product_code_buffer = ctypes.create_unicode_buffer(39)
+            context = wintypes.DWORD(0)
+            sid_buffer = ctypes.create_unicode_buffer(256)
+            sid_size = wintypes.DWORD(len(sid_buffer))
+            result = msi.MsiEnumProductsExW(
+                None,
+                requested_sid,
+                requested_context,
+                index,
+                product_code_buffer,
+                ctypes.byref(context),
+                sid_buffer,
+                ctypes.byref(sid_size),
+            )
+            if result == MSI_ERROR_NO_MORE_ITEMS:
+                break
+            if result == MSI_ERROR_MORE_DATA:
+                errors.append(f"Windows Installer returned an unexpectedly long user SID while enumerating {scope_label} products.")
+                break
+            if result != MSI_ERROR_SUCCESS:
+                errors.append(f"Windows Installer product enumeration failed for {scope_label} (error {result}).")
+                break
+
+            product_code = product_code_buffer.value.upper()
+            user_sid = sid_buffer.value or None
+            instance = {
+                "product_code": product_code,
+                "product_name": get_product_property(product_code, user_sid, context.value, "ProductName"),
+                "product_version": get_product_property(product_code, user_sid, context.value, "VersionString"),
+                "publisher": get_product_property(product_code, user_sid, context.value, "Publisher"),
+                "local_package": get_product_property(product_code, user_sid, context.value, "LocalPackage"),
+                "context": int(context.value),
+                "user_sid": user_sid or "",
+            }
+            product_instances = inventory["products"].setdefault(product_code, [])
+            if not any(item["context"] == instance["context"] and item["user_sid"] == instance["user_sid"] for item in product_instances):
+                product_instances.append(instance)
+            normalized = normalize_installer_reference(instance["local_package"])
+            if normalized:
+                local_entry = inventory["local_packages"].setdefault(normalized, {"local_package": instance["local_package"], "products": [], "publishers": [], "versions": [], "registry_paths": [], "evidence": []})
+                local_entry["products"].append(instance["product_name"])
+                local_entry["publishers"].append(instance["publisher"])
+                local_entry["versions"].append(instance["product_version"])
+                local_entry["evidence"].append(f"Windows Installer product {product_code} reports this LocalPackage.")
+            index += 1
+
+    for scope_label, requested_sid, requested_context in enumeration_scopes:
+        index = 0
+        while True:
+            patch_code_buffer = ctypes.create_unicode_buffer(39)
+            product_code_buffer = ctypes.create_unicode_buffer(39)
+            context = wintypes.DWORD(0)
+            sid_buffer = ctypes.create_unicode_buffer(256)
+            sid_size = wintypes.DWORD(len(sid_buffer))
+            result = msi.MsiEnumPatchesExW(
+                None,
+                requested_sid,
+                requested_context,
+                MSI_PATCH_STATE_ALL,
+                index,
+                patch_code_buffer,
+                product_code_buffer,
+                ctypes.byref(context),
+                sid_buffer,
+                ctypes.byref(sid_size),
+            )
+            if result == MSI_ERROR_NO_MORE_ITEMS:
+                break
+            if result == MSI_ERROR_MORE_DATA:
+                errors.append(f"Windows Installer returned an unexpectedly long user SID while enumerating {scope_label} patches.")
+                break
+            if result != MSI_ERROR_SUCCESS:
+                errors.append(f"Windows Installer patch enumeration failed for {scope_label} (error {result}).")
+                break
+
+            patch_code = patch_code_buffer.value.upper()
+            product_code = product_code_buffer.value.upper()
+            user_sid = sid_buffer.value or None
+            instance = {
+                "patch_code": patch_code,
+                "product_code": product_code,
+                "display_name": get_patch_property(patch_code, product_code, user_sid, context.value, "DisplayName"),
+                "local_package": get_patch_property(patch_code, product_code, user_sid, context.value, "LocalPackage"),
+                "state": get_patch_property(patch_code, product_code, user_sid, context.value, "State"),
+                "context": int(context.value),
+                "user_sid": user_sid or "",
+            }
+            patch_instances = inventory["patches"].setdefault(patch_code, [])
+            if not any(
+                item["product_code"] == instance["product_code"]
+                and item["context"] == instance["context"]
+                and item["user_sid"] == instance["user_sid"]
+                for item in patch_instances
+            ):
+                patch_instances.append(instance)
+            normalized = normalize_installer_reference(instance["local_package"])
+            if normalized:
+                local_entry = inventory["local_packages"].setdefault(normalized, {"local_package": instance["local_package"], "products": [], "publishers": [], "versions": [], "registry_paths": [], "evidence": []})
+                local_entry["products"].append(instance["display_name"] or f"Patch {patch_code}")
+                local_entry["evidence"].append(f"Windows Installer patch {patch_code} reports this LocalPackage for product {product_code}.")
+            index += 1
+
+    for entry in inventory["local_packages"].values():
+        for field in ("products", "publishers", "versions", "registry_paths", "evidence"):
+            entry[field] = sorted({value for value in entry[field] if value})
+
+    return inventory, sorted(set(errors))
+
+
+def normalize_installer_reference(path_value) -> str:
+    value = str(path_value or "").strip().strip('"')
+    if not value:
+        return ""
+    return os.path.normcase(os.path.abspath(os.path.expandvars(value)))
+
+
+def collect_installer_localpackage_references():
+    references = {}
+    errors = []
+
+    if winreg is None:
+        return references, ["Windows registry access is unavailable on this platform."]
+
+    registry_views = [("default", 0)]
+    if hasattr(winreg, "KEY_WOW64_64KEY"):
+        registry_views.append(("64-bit", winreg.KEY_WOW64_64KEY))
+    if hasattr(winreg, "KEY_WOW64_32KEY"):
+        registry_views.append(("32-bit", winreg.KEY_WOW64_32KEY))
+
+    def add_reference(local_package, values, registry_path, view_label):
+        normalized = normalize_installer_reference(local_package)
+        if not normalized:
+            return
+
+        entry = references.setdefault(normalized, {
+            "local_package": str(local_package),
+            "registry_paths": [],
+            "display_names": set(),
+            "publishers": set(),
+            "versions": set(),
+            "install_dates": set(),
+            "registry_views": set(),
+        })
+        entry["registry_paths"].append(registry_path)
+        entry["registry_views"].add(view_label)
+
+        for field, target in (
+            ("DisplayName", "display_names"),
+            ("ProductName", "display_names"),
+            ("Publisher", "publishers"),
+            ("DisplayVersion", "versions"),
+            ("InstallDate", "install_dates"),
+        ):
+            value = values.get(field)
+            if value:
+                entry[target].add(str(value))
+
+    def read_values(key):
+        values = {}
+        index = 0
+        while True:
+            try:
+                name, value, _value_type = winreg.EnumValue(key, index)
+            except OSError:
+                break
+            values[name] = value
+            index += 1
+        return values
+
+    def walk_registry(subkey, view_label, access_flags, depth=0):
+        if depth > 80:
+            errors.append(f"Registry walk stopped at depth limit: HKLM\\{subkey}")
+            return
+
+        try:
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, subkey, 0, winreg.KEY_READ | access_flags) as key:
+                values = read_values(key)
+                local_package = values.get("LocalPackage")
+                if local_package:
+                    add_reference(local_package, values, f"HKLM\\{subkey}", view_label)
+
+                index = 0
+                while True:
+                    try:
+                        child_name = winreg.EnumKey(key, index)
+                    except OSError:
+                        break
+                    walk_registry(f"{subkey}\\{child_name}", view_label, access_flags, depth + 1)
+                    index += 1
+        except PermissionError:
+            errors.append(f"Access denied while reading HKLM\\{subkey}")
+        except FileNotFoundError:
+            if depth == 0:
+                errors.append(f"Registry path was not found: HKLM\\{subkey}")
+        except OSError as ex:
+            errors.append(f"Could not read HKLM\\{subkey}: {ex}")
+
+    for view_label, access_flags in registry_views:
+        walk_registry(INSTALLER_USERDATA_SUBKEY, view_label, access_flags)
+
+    public_references = {}
+    for normalized, entry in references.items():
+        public_references[normalized] = {
+            "local_package": entry["local_package"],
+            "registry_paths": sorted(set(entry["registry_paths"])),
+            "display_names": sorted(entry["display_names"]),
+            "publishers": sorted(entry["publishers"]),
+            "versions": sorted(entry["versions"]),
+            "install_dates": sorted(entry["install_dates"]),
+            "registry_views": sorted(entry["registry_views"]),
+        }
+
+    return public_references, sorted(set(errors))
+
+
+def collect_uninstall_registrations():
+    registrations = {"product_codes": {}, "display_names": {}}
+    errors = []
+    if winreg is None:
+        return registrations, ["Windows uninstall registry access is unavailable on this platform."]
+
+    registry_views = [("default", 0)]
+    if hasattr(winreg, "KEY_WOW64_64KEY"):
+        registry_views.append(("64-bit", winreg.KEY_WOW64_64KEY))
+    if hasattr(winreg, "KEY_WOW64_32KEY"):
+        registry_views.append(("32-bit", winreg.KEY_WOW64_32KEY))
+
+    roots = (
+        (winreg.HKEY_LOCAL_MACHINE, "HKLM", r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+        (winreg.HKEY_CURRENT_USER, "HKCU", r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+    )
+    guid_pattern = re.compile(r"\{[0-9A-Fa-f-]{36}\}")
+
+    for hive, hive_label, subkey in roots:
+        for view_label, access_flags in registry_views:
+            try:
+                with winreg.OpenKey(hive, subkey, 0, winreg.KEY_READ | access_flags) as root_key:
+                    index = 0
+                    while True:
+                        try:
+                            child_name = winreg.EnumKey(root_key, index)
+                        except OSError:
+                            break
+                        index += 1
+                        try:
+                            with winreg.OpenKey(root_key, child_name, 0, winreg.KEY_READ | access_flags) as child_key:
+                                values = {}
+                                for value_name in ("DisplayName", "Publisher", "DisplayVersion", "UninstallString", "QuietUninstallString"):
+                                    try:
+                                        values[value_name] = str(winreg.QueryValueEx(child_key, value_name)[0])
+                                    except OSError:
+                                        values[value_name] = ""
+                        except (PermissionError, OSError):
+                            continue
+
+                        display_name = values.get("DisplayName", "").strip()
+                        if not display_name:
+                            continue
+                        item = {
+                            "display_name": display_name,
+                            "publisher": values.get("Publisher", "").strip(),
+                            "display_version": values.get("DisplayVersion", "").strip(),
+                            "registry_path": f"{hive_label}\\{subkey}\\{child_name}",
+                            "registry_view": view_label,
+                        }
+                        name_key = " ".join(display_name.casefold().split())
+                        registrations["display_names"].setdefault(name_key, []).append(item)
+
+                        product_codes = {match.upper() for match in guid_pattern.findall(child_name)}
+                        for field in ("UninstallString", "QuietUninstallString"):
+                            product_codes.update(match.upper() for match in guid_pattern.findall(values.get(field, "")))
+                        for product_code in product_codes:
+                            registrations["product_codes"].setdefault(product_code, []).append(item)
+            except FileNotFoundError:
+                continue
+            except PermissionError:
+                errors.append(f"Access denied while reading {hive_label}\\{subkey} ({view_label} view).")
+            except OSError as ex:
+                errors.append(f"Could not read {hive_label}\\{subkey} ({view_label} view): {ex}")
+
+    return registrations, sorted(set(errors))
+
+
+def analyze_installer_cache():
+    started_at = now_iso()
+    references, reference_errors = collect_installer_localpackage_references()
+    inventory, inventory_errors = collect_windows_installer_inventory()
+    uninstall_inventory, uninstall_errors = collect_uninstall_registrations()
+    all_references = dict(references)
+    for normalized, api_reference in inventory["local_packages"].items():
+        existing = all_references.get(normalized)
+        if not existing:
+            all_references[normalized] = api_reference
+            continue
+        for field in ("products", "publishers", "versions", "registry_paths", "evidence"):
+            registry_field = "display_names" if field == "products" else field
+            existing[field] = sorted(set(existing.get(registry_field, []) + api_reference.get(field, [])))
+        existing["local_package"] = existing.get("local_package") or api_reference.get("local_package")
+    files = []
+    scan_errors = []
+    cache_dir = INSTALLER_CACHE_DIR
+    cache_dir_normalized = normalize_installer_reference(cache_dir)
+
+    if not cache_dir.exists():
+        return {
+            "schema_version": "installer-cache-review-v2",
+            "collected_at": started_at,
+            "cache_path": str(cache_dir),
+            "summary": {
+                "status": "Unavailable",
+                "cache_files": 0,
+                "cache_size_bytes": 0,
+                "cache_size": "0 B",
+                "registered_files": 0,
+                "installed_product_matches": 0,
+                "registered_patch_matches": 0,
+                "probable_orphans": 0,
+                "unknown_files": 0,
+                "orphan_candidates": 0,
+                "orphan_candidate_size_bytes": 0,
+                "orphan_candidate_size": "0 B",
+                "missing_registered_files": 0,
+            },
+            "files": [],
+            "missing_registered_files": [],
+            "errors": [f"Installer cache folder was not found: {cache_dir}"] + reference_errors + inventory_errors + uninstall_errors,
+            "safety_statement": "Review only. Do not delete Windows Installer cache files based only on this report.",
+        }
+
+    try:
+        entries = [entry for entry in cache_dir.iterdir() if entry.is_file() and entry.suffix.lower() in INSTALLER_CACHE_EXTENSIONS]
+    except Exception as ex:
+        return {
+            "schema_version": "installer-cache-review-v2",
+            "collected_at": started_at,
+            "cache_path": str(cache_dir),
+            "summary": {
+                "status": "Error",
+                "cache_files": 0,
+                "cache_size_bytes": 0,
+                "cache_size": "0 B",
+                "registered_files": 0,
+                "installed_product_matches": 0,
+                "registered_patch_matches": 0,
+                "probable_orphans": 0,
+                "unknown_files": 0,
+                "orphan_candidates": 0,
+                "orphan_candidate_size_bytes": 0,
+                "orphan_candidate_size": "0 B",
+                "missing_registered_files": 0,
+            },
+            "files": [],
+            "missing_registered_files": [],
+            "errors": [f"Could not read installer cache folder: {ex}"] + reference_errors + inventory_errors + uninstall_errors,
+            "safety_statement": "Review only. Do not delete Windows Installer cache files based only on this report.",
+        }
+
+    total_size = 0
+    registered_count = 0
+    installed_product_match_count = 0
+    registered_patch_match_count = 0
+    probable_orphan_count = 0
+    unknown_count = 0
+    candidate_count = 0
+    candidate_size = 0
+
+    for entry in entries:
+        try:
+            stat_result = entry.stat()
+        except Exception as ex:
+            scan_errors.append(f"Could not read file metadata for {entry}: {ex}")
+            continue
+
+        normalized = normalize_installer_reference(entry)
+        reference = all_references.get(normalized)
+        referenced = reference is not None
+        size_bytes = int(stat_result.st_size)
+        total_size += size_bytes
+        extension = entry.suffix.lower()
+        package_type = "MSI product package" if extension == ".msi" else "MSP patch package"
+        package_metadata = {
+            "product_name": "",
+            "product_code": "",
+            "product_version": "",
+            "upgrade_code": "",
+            "manufacturer": "",
+            "patch_code": "",
+        }
+        metadata_error = ""
+        products = list(reference.get("products", reference.get("display_names", []))) if reference else []
+        publishers = list(reference.get("publishers", [])) if reference else []
+        versions = list(reference.get("versions", [])) if reference else []
+        evidence = list(reference.get("evidence", [])) if reference else []
+
+        if referenced:
+            registered_count += 1
+            classification = "Registered"
+            recommendation = "Keep. Windows Installer directly reports this file as a LocalPackage."
+            if not evidence:
+                evidence.append("A Windows Installer registry record directly references this LocalPackage path.")
+        elif extension == ".msi":
+            package_metadata, metadata_error = inspect_msi_package(entry)
+            product_code = package_metadata.get("product_code", "").upper()
+            product_instances = inventory["products"].get(product_code, []) if product_code else []
+            uninstall_code_matches = uninstall_inventory["product_codes"].get(product_code, []) if product_code else []
+            package_product_name = package_metadata.get("product_name", "").strip()
+            package_name_key = " ".join(package_product_name.casefold().split())
+            uninstall_name_matches = uninstall_inventory["display_names"].get(package_name_key, []) if package_name_key else []
+            products.extend([package_product_name])
+            publishers.extend([package_metadata.get("manufacturer", "")])
+            versions.extend([package_metadata.get("product_version", "")])
+
+            if product_instances or uninstall_code_matches:
+                installed_product_match_count += 1
+                classification = "Installed product match"
+                recommendation = "Keep. This MSI's ProductCode matches an installed product registration."
+                if product_instances:
+                    evidence.append(f"ProductCode {product_code} is registered in {len(product_instances)} visible Windows Installer context(s).")
+                if uninstall_code_matches:
+                    evidence.append(f"ProductCode {product_code} appears in {len(uninstall_code_matches)} uninstall registration(s).")
+                products.extend([item.get("product_name", "") for item in product_instances])
+                publishers.extend([item.get("publisher", "") for item in product_instances])
+                versions.extend([item.get("product_version", "") for item in product_instances])
+                products.extend([item.get("display_name", "") for item in uninstall_code_matches])
+                publishers.extend([item.get("publisher", "") for item in uninstall_code_matches])
+                versions.extend([item.get("display_version", "") for item in uninstall_code_matches])
+            elif uninstall_name_matches:
+                installed_product_match_count += 1
+                classification = "Installed app name match"
+                recommendation = "Keep for review. The MSI ProductName exactly matches an app listed in Windows uninstall registrations."
+                evidence.append(f"ProductName '{package_product_name}' exactly matches {len(uninstall_name_matches)} uninstall registration(s), although the ProductCode did not match.")
+                products.extend([item.get("display_name", "") for item in uninstall_name_matches])
+                publishers.extend([item.get("publisher", "") for item in uninstall_name_matches])
+                versions.extend([item.get("display_version", "") for item in uninstall_name_matches])
+            elif product_code and not metadata_error:
+                probable_orphan_count += 1
+                candidate_count += 1
+                candidate_size += size_bytes
+                classification = "Probable orphan MSI"
+                recommendation = "Review and quarantine only. The MSI is readable, but its ProductCode was not found in visible Windows Installer registrations."
+                evidence.append(f"ProductCode {product_code} was read from the MSI and was not found in the visible product inventory.")
+            else:
+                unknown_count += 1
+                candidate_count += 1
+                candidate_size += size_bytes
+                classification = "Unknown MSI"
+                recommendation = "Keep until manually identified. Windows Installer metadata could not provide a ProductCode for a reliable registration check."
+                evidence.append(metadata_error or "The MSI Property table did not provide a ProductCode.")
+        else:
+            package_metadata, metadata_error = inspect_msp_package(entry)
+            patch_code = package_metadata.get("patch_code", "").upper()
+            patch_instances = inventory["patches"].get(patch_code, []) if patch_code else []
+
+            if patch_instances:
+                registered_patch_match_count += 1
+                classification = "Registered patch match"
+                recommendation = "Keep. This MSP's PatchCode matches a patch registered with Windows Installer."
+                evidence.append(f"PatchCode {patch_code} is registered for {len(patch_instances)} visible product context(s).")
+                products.extend([item.get("display_name", "") for item in patch_instances])
+                for item in patch_instances:
+                    product_instances = inventory["products"].get(item.get("product_code", ""), [])
+                    products.extend([product.get("product_name", "") for product in product_instances])
+            elif patch_code and not metadata_error:
+                probable_orphan_count += 1
+                candidate_count += 1
+                candidate_size += size_bytes
+                classification = "Probable orphan MSP"
+                recommendation = "Review and quarantine only. The MSP is readable, but its PatchCode was not found in visible Windows Installer patch registrations."
+                evidence.append(f"PatchCode {patch_code} was read from the MSP and was not found in the visible patch inventory.")
+            else:
+                unknown_count += 1
+                candidate_count += 1
+                candidate_size += size_bytes
+                classification = "Unknown MSP"
+                recommendation = "Keep until manually identified. Patch metadata could not provide a PatchCode for a reliable registration check."
+                evidence.append(metadata_error or "The MSP summary did not provide a PatchCode.")
+
+        products = sorted({value for value in products if value})
+        publishers = sorted({value for value in publishers if value})
+        versions = sorted({value for value in versions if value})
+        needs_review = classification.startswith("Probable orphan") or classification.startswith("Unknown")
+
+        files.append({
+            "name": entry.name,
+            "path": str(entry),
+            "extension": extension,
+            "package_type": package_type,
+            "size_bytes": size_bytes,
+            "size": format_size(size_bytes),
+            "modified_at": dt.datetime.fromtimestamp(stat_result.st_mtime).isoformat(timespec="seconds"),
+            "referenced": referenced,
+            "needs_review": needs_review,
+            "removal_candidate": classification.startswith("Probable orphan"),
+            "classification": classification,
+            "recommendation": recommendation,
+            "products": products,
+            "publishers": publishers,
+            "versions": versions,
+            "registry_paths": reference.get("registry_paths", [])[:5] if reference else [],
+            "product_code": package_metadata.get("product_code", ""),
+            "upgrade_code": package_metadata.get("upgrade_code", ""),
+            "patch_code": package_metadata.get("patch_code", ""),
+            "metadata_error": metadata_error,
+            "evidence": sorted(set(evidence)),
+        })
+
+    missing_registered_files = []
+    for normalized, reference in all_references.items():
+        if not normalized.startswith(cache_dir_normalized):
+            continue
+        if not normalized.lower().endswith(tuple(INSTALLER_CACHE_EXTENSIONS)):
+            continue
+        if not os.path.exists(normalized):
+            missing_registered_files.append({
+                "path": reference.get("local_package") or normalized,
+                "products": reference.get("products", reference.get("display_names", [])),
+                "publishers": reference.get("publishers", []),
+                "registry_paths": reference.get("registry_paths", [])[:5],
+                "recommendation": "This registered installer cache file appears missing. Repair/update/uninstall operations for the related product may fail until original media or vendor repair is used.",
+            })
+
+    files.sort(key=lambda item: item["size_bytes"], reverse=True)
+    missing_registered_files.sort(key=lambda item: item["path"])
+
+    status = "Review Needed" if candidate_count or missing_registered_files or scan_errors or reference_errors or inventory_errors or uninstall_errors else "No Obvious Issue"
+
+    return {
+        "schema_version": "installer-cache-review-v2",
+        "collected_at": started_at,
+        "cache_path": str(cache_dir),
+        "summary": {
+            "status": status,
+            "cache_files": len(files),
+            "cache_size_bytes": total_size,
+            "cache_size": format_size(total_size),
+            "registered_files": registered_count,
+            "installed_product_matches": installed_product_match_count,
+            "registered_patch_matches": registered_patch_match_count,
+            "probable_orphans": probable_orphan_count,
+            "unknown_files": unknown_count,
+            "orphan_candidates": candidate_count,
+            "orphan_candidate_size_bytes": candidate_size,
+            "orphan_candidate_size": format_size(candidate_size),
+            "missing_registered_files": len(missing_registered_files),
+        },
+        "files": files,
+        "missing_registered_files": missing_registered_files[:200],
+        "errors": sorted(set(reference_errors + inventory_errors + uninstall_errors + scan_errors)),
+        "safety_statement": "Review only. Do not delete Windows Installer cache files based only on this report.",
+        "guidance": [
+            "Use Windows Storage settings and Disk Cleanup before manually reviewing installer cache files.",
+            "Files with direct LocalPackage, installed ProductCode, or registered PatchCode matches should be kept.",
+            "Probable orphan and unknown results are review evidence, not safe-to-delete verdicts.",
+            "MSI product packages and MSP patch packages are evaluated with separate registration checks.",
+            "Before any manual removal, export candidates, identify the related product where possible, keep a backup outside the Installer folder, and verify updates/uninstallers still work.",
+        ],
+    }
+
+
 class DashboardApp:
     def __init__(self):
         self.lock = threading.Lock()
@@ -3970,6 +4778,9 @@ class DashboardApp:
 
     def history(self):
         return [record_summary(record) for record in load_scan_records()]
+
+    def installer_cache_review(self):
+        return analyze_installer_cache()
 
     def record(self, scan_id):
         path = scan_record_path(scan_id)
@@ -4467,6 +5278,7 @@ summary {{ cursor: pointer; padding: 6px; }}
         <button class="tab active" data-tab="scan">Scan</button>
         <button class="tab" data-tab="results">Results</button>
         <button class="tab" data-tab="processes">Processes</button>
+        <button class="tab" data-tab="installer">Installer Cache</button>
         <button class="tab" data-tab="security">Security Check</button>
         <button class="tab" data-tab="history">History</button>
         <button class="tab" data-tab="manual">Manual</button>
@@ -4637,6 +5449,68 @@ summary {{ cursor: pointer; padding: 6px; }}
                 <li>Use official uninstallers, Windows Settings, or vendor tools instead of deleting program files manually.</li>
             </ul>
             <p><a class="button-link" href="#processTop">Back to top</a></p>
+        </section>
+    </section>
+
+    <section id="tab-installer" class="tab-panel hidden">
+        <section class="action-alert warning">
+            <h2>Before Reviewing Windows Installer Cache</h2>
+            <p><code>C:\\Windows\\Installer</code> is managed by Windows Installer. Cached <code>.msi</code> and <code>.msp</code> files may be required later for repair, update, modify, or uninstall operations.</p>
+            <p>This dashboard only scans and labels evidence. It does not delete installer cache files, and a probable-orphan result is not a safe-to-delete verdict.</p>
+        </section>
+
+        <section class="section">
+            <h2>Installer Cache Review</h2>
+            <p class="muted">This read-only check compares <code>LocalPackage</code> references, reads MSI product metadata, checks installed product records, and evaluates MSP patch registrations separately. Use it to create a review list, not to clean automatically.</p>
+            <div class="actions">
+                <button id="refreshInstallerCache" class="primary">Scan installer cache</button>
+                <button id="exportInstallerCandidates" disabled>Export review candidates CSV</button>
+            </div>
+            <div id="installerCacheStatus" class="status-line">Installer cache has not been scanned yet.</div>
+            <div id="installerCacheSummary" class="grid" style="margin-top:12px">
+                <div class="metric"><div class="label">Status</div><div class="value">Not Run</div></div>
+                <div class="metric"><div class="label">MSI/MSP Files</div><div class="value">0</div></div>
+                <div class="metric"><div class="label">Direct References</div><div class="value">0</div></div>
+                <div class="metric"><div class="label">Installed Matches</div><div class="value">0</div></div>
+                <div class="metric"><div class="label">Patch Matches</div><div class="value">0</div></div>
+                <div class="metric"><div class="label">Probable Orphans</div><div class="value">0</div></div>
+                <div class="metric"><div class="label">Unknown</div><div class="value">0</div></div>
+            </div>
+        </section>
+
+        <section class="section">
+            <h2>Largest Installer Cache Files</h2>
+            <p class="muted">Keep direct references and installed product or patch matches. Probable orphan and unknown rows still require manual review because registration visibility can be limited.</p>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>File</th><th>Size</th><th>Modified</th><th>Status</th><th>Product / Publisher</th><th>Recommendation</th></tr></thead>
+                    <tbody id="installerCacheRows"><tr><td colspan="6">Scan installer cache to populate this table.</td></tr></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="section">
+            <h2>Missing Registered Cache Files</h2>
+            <p class="muted">These are registry references that point to cache files that were not found. They can explain future repair, update, or uninstall failures.</p>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Missing File</th><th>Product / Publisher</th><th>Recommendation</th></tr></thead>
+                    <tbody id="installerMissingRows"><tr><td colspan="3">No installer cache scan has been run.</td></tr></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="section">
+            <h2>Safe Review Workflow</h2>
+            <ol>
+                <li>Use Windows Storage settings and Disk Cleanup first.</li>
+                <li>Run this read-only cache review.</li>
+                <li>Export review candidates if any are found.</li>
+                <li>Review the ProductCode, PatchCode, product, version, manufacturer, and registration evidence.</li>
+                <li>Keep a backup outside <code>C:\\Windows\\Installer</code> before any manual removal.</li>
+                <li>Confirm Windows Update, app updates, repair, modify, and uninstall operations still work.</li>
+            </ol>
+            <p class="notice">Do not delete files from <code>C:\\Windows\\Installer</code> based only on size, date, or filename.</p>
         </section>
     </section>
 
@@ -5052,7 +5926,7 @@ summary {{ cursor: pointer; padding: 6px; }}
     </section>
 </main>
 <script>
-const state = {{ currentRecord: null, currentSecurityStatus: null, selectedSecurityFindingId: null, securityBaselines: [], securityAllowlist: null, processes: [], lastScanStatusKey: null, lastSecurityStatusKey: null, scanActive: false, securityCheckActive: false, isShuttingDown: false }};
+const state = {{ currentRecord: null, currentSecurityStatus: null, selectedSecurityFindingId: null, securityBaselines: [], securityAllowlist: null, installerCache: null, processes: [], lastScanStatusKey: null, lastSecurityStatusKey: null, scanActive: false, securityCheckActive: false, isShuttingDown: false }};
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));
 
@@ -5174,6 +6048,12 @@ function showTab(name) {{
         ]);
         refreshSecurityBaselines(false);
         refreshSecurityAllowlist(false);
+    }} else if (name === 'installer') {{
+        showActionAlert('warning', 'Installer Cache Review Opened', 'This tab checks Windows Installer cache references without deleting anything.', [
+            'Registered MSI/MSP files may be required for repair, update, modify, or uninstall operations.',
+            'Probable orphan and unknown results are review leads, not safe-to-delete verdicts.',
+            'Use Windows Storage settings and Disk Cleanup before manual cache review.'
+        ]);
     }}
 }}
 
@@ -5194,6 +6074,142 @@ function updateAdvancedReviewOptions() {{
         const input = $(id);
         if (input) input.disabled = !advanced;
     }});
+}}
+
+function installerJoined(values) {{
+    return asArray(values).filter(Boolean).join('; ') || 'Unavailable';
+}}
+
+function installerStatusBadge(file) {{
+    const label = file.classification || (file.referenced ? 'Registered' : 'Unknown');
+    const keepMatch = ['Registered', 'Installed product match', 'Installed app name match', 'Registered patch match'].includes(label);
+    const badgeClass = keepMatch ? 'info' : (label.startsWith('Unknown') ? 'bad' : 'review');
+    return `<span class="pill ${{badgeClass}}">${{esc(label)}}</span>`;
+}}
+
+function renderInstallerCache(data) {{
+    state.installerCache = data || null;
+    const summary = data?.summary || {{}};
+    $('installerCacheStatus').innerHTML = data
+        ? `<strong>${{esc(summary.status || 'Review complete')}}</strong><br><span class="muted">Cache path: <code>${{esc(data.cache_path || 'Unavailable')}}</code> | Collected: ${{esc(data.collected_at || 'Unavailable')}}</span>`
+        : 'Installer cache has not been scanned yet.';
+    $('installerCacheSummary').innerHTML = [
+        metric('Status', summary.status || 'Not Run'),
+        metric('MSI/MSP Files', summary.cache_files || 0),
+        metric('Direct References', summary.registered_files || 0),
+        metric('Installed MSI Matches', summary.installed_product_matches || 0),
+        metric('Registered MSP Matches', summary.registered_patch_matches || 0),
+        metric('Probable Orphans', summary.probable_orphans || 0),
+        metric('Unknown', summary.unknown_files || 0),
+        metric('Review Size', summary.orphan_candidate_size || '0 B'),
+        metric('Missing Registered', summary.missing_registered_files || 0)
+    ].join('');
+
+    const files = asArray(data?.files);
+    $('installerCacheRows').innerHTML = files.map(file => `
+        <tr>
+            <td><strong>${{esc(file.name)}}</strong><br><span class="muted">${{esc(file.package_type || file.extension || 'Installer package')}}</span><br><code>${{esc(file.path)}}</code></td>
+            <td data-sort="${{esc(file.size_bytes || 0)}}">${{esc(file.size || '0 B')}}</td>
+            <td>${{esc(file.modified_at || 'Unavailable')}}</td>
+            <td>${{installerStatusBadge(file)}}</td>
+            <td>${{esc(installerJoined(file.products))}}<br><span class="muted">${{esc(installerJoined(file.publishers))}} | ${{esc(installerJoined(file.versions))}}</span><br><code>${{esc(file.product_code || file.patch_code || 'No package identifier')}}</code></td>
+            <td>${{esc(file.recommendation || 'Review before making any manual change.')}}<br><span class="muted">${{esc(installerJoined(file.evidence))}}</span></td>
+        </tr>
+    `).join('') || '<tr><td colspan="6">No MSI/MSP cache files were found or available to read.</td></tr>';
+
+    const missing = asArray(data?.missing_registered_files);
+    $('installerMissingRows').innerHTML = missing.map(item => `
+        <tr>
+            <td><code>${{esc(item.path || 'Unavailable')}}</code></td>
+            <td>${{esc(installerJoined(item.products))}}<br><span class="muted">${{esc(installerJoined(item.publishers))}}</span></td>
+            <td>${{esc(item.recommendation || 'Restore from original media or vendor repair if an installer asks for this cache file.')}}</td>
+        </tr>
+    `).join('') || '<tr><td colspan="3">No missing registered cache files were reported.</td></tr>';
+
+    $('exportInstallerCandidates').disabled = !files.some(file => file.needs_review);
+
+    const errors = asArray(data?.errors);
+    if (errors.length) {{
+        showActionAlert('warning', 'Installer Cache Review Completed With Notes', 'Some registry or file metadata could not be read.', errors.slice(0, 6));
+    }}
+}}
+
+async function refreshInstallerCache() {{
+    $('refreshInstallerCache').disabled = true;
+    $('exportInstallerCandidates').disabled = true;
+    $('installerCacheStatus').innerHTML = 'Reading Windows Installer cache and registry references...';
+    showActionAlert('info', 'Installer Cache Scan Started', 'The dashboard is running a local read-only review of cached MSI/MSP files.', [
+        'No files will be deleted or changed.',
+        'This can take a moment on systems with many installer packages.'
+    ]);
+
+    try {{
+        const data = await api('/api/installer-cache');
+        renderInstallerCache(data);
+        const summary = data.summary || {{}};
+        const notes = asArray(data.errors);
+        showActionAlert(notes.length ? 'warning' : 'success', notes.length ? 'Installer Cache Review Complete With Notes' : 'Installer Cache Review Complete', notes.length ? 'The read-only review finished, but some installer records were not visible.' : 'The read-only installer cache review finished.', [
+            `MSI/MSP files: ${{summary.cache_files || 0}}`,
+            `Direct references: ${{summary.registered_files || 0}}`,
+            `Installed product matches: ${{summary.installed_product_matches || 0}}`,
+            `Registered patch matches: ${{summary.registered_patch_matches || 0}}`,
+            `Probable orphans: ${{summary.probable_orphans || 0}}`,
+            `Unknown files: ${{summary.unknown_files || 0}}`,
+            'Review candidates still require manual verification before any cleanup decision.',
+            ...notes.slice(0, 4)
+        ]);
+    }} catch (error) {{
+        $('installerCacheStatus').textContent = error.message;
+        $('installerCacheRows').innerHTML = '<tr><td colspan="6">Installer cache review failed.</td></tr>';
+        $('installerMissingRows').innerHTML = '<tr><td colspan="3">Installer cache review failed.</td></tr>';
+        showActionAlert('error', 'Installer Cache Review Failed', error.message, [
+            'Run the dashboard as Administrator if Windows blocks access to installer cache or registry metadata.',
+            'No files were changed.'
+        ]);
+    }} finally {{
+        $('refreshInstallerCache').disabled = false;
+        $('exportInstallerCandidates').disabled = !asArray(state.installerCache?.files).some(file => file.needs_review);
+    }}
+}}
+
+function csvCell(value) {{
+    const text = Array.isArray(value) ? value.filter(Boolean).join('; ') : String(value ?? '');
+    return '"' + text.replace(/"/g, '""') + '"';
+}}
+
+function exportInstallerCandidatesCsv() {{
+    const candidates = asArray(state.installerCache?.files).filter(file => file.needs_review);
+    if (!candidates.length) {{
+        showActionAlert('info', 'No Installer Candidates To Export', 'The latest installer cache review did not report files needing manual review.', [
+            'Direct references and installed product or patch matches should be kept.'
+        ]);
+        return;
+    }}
+
+    const header = ['File', 'Package Type', 'Size MB', 'Modified', 'Status', 'Product', 'Publisher', 'Version', 'ProductCode', 'UpgradeCode', 'PatchCode', 'Evidence', 'Full Path', 'Recommendation'];
+    const rows = candidates.map(file => [
+        file.name,
+        file.package_type || file.extension || '',
+        ((file.size_bytes || 0) / 1048576).toFixed(2),
+        file.modified_at || '',
+        file.classification || 'Unknown',
+        installerJoined(file.products),
+        installerJoined(file.publishers),
+        installerJoined(file.versions),
+        file.product_code || '',
+        file.upgrade_code || '',
+        file.patch_code || '',
+        installerJoined(file.evidence),
+        file.path || '',
+        file.recommendation || ''
+    ]);
+    const csv = [header, ...rows].map(row => row.map(csvCell).join(',')).join('\\r\\n');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    downloadSecurityBlob(`installer-cache-review-candidates-${{stamp}}.csv`, csv, 'text/csv');
+    showActionAlert('success', 'Installer Candidates Exported', 'A local CSV of installer files needing review was generated.', [
+        `Candidates exported: ${{candidates.length}}`,
+        'This CSV is a review list, not a delete list.'
+    ]);
 }}
 
 function renderSecurityProgress(steps = []) {{
@@ -7001,6 +8017,8 @@ $('refreshHistory').addEventListener('click', refreshHistory);
 $('refreshProcesses').addEventListener('click', refreshProcesses);
 $('downloadProcessReport').addEventListener('click', downloadProcessReport);
 $('downloadVerificationReport').addEventListener('click', downloadVerificationReport);
+$('refreshInstallerCache').addEventListener('click', refreshInstallerCache);
+$('exportInstallerCandidates').addEventListener('click', exportInstallerCandidatesCsv);
 $('downloadSecurityFullReport').addEventListener('click', () => downloadSecurityReport('full'));
 $('downloadSecurityFindingsReport').addEventListener('click', () => downloadSecurityReport('findings'));
 $('downloadSecurityVerificationReport').addEventListener('click', () => downloadSecurityReport('verification'));
@@ -7105,7 +8123,7 @@ pollSecurityStatus();
 
 
 class DashboardRequestHandler(BaseHTTPRequestHandler):
-    server_version = "DiskUsageDashboard/1.19"
+    server_version = f"DiskUsageDashboard/{APP_VERSION}"
 
     def log_message(self, format, *args):
         return
@@ -7143,6 +8161,8 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 json_response(self, APP_STATE.security_baselines())
             elif path == "/api/security-allowlist":
                 json_response(self, APP_STATE.security_allowlist())
+            elif path == "/api/installer-cache":
+                json_response(self, APP_STATE.installer_cache_review())
             elif path.startswith("/api/security-checks/"):
                 check_id = path.rsplit("/", 1)[-1]
                 json_response(self, APP_STATE.security_check_record(check_id))
