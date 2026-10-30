@@ -34,6 +34,12 @@ The app is local-only and designed for review. It does not clean, quarantine, di
 
 ## 2. Quick Start
 
+The Sidebar Studio Phase 1 branch opens on Overview, with persistent sidebar
+navigation and compact Scan/Results workspaces. Keep the local `ui/` directory
+alongside the Python file. Startup and diagnostic APIs are unchanged. This UI
+preview still requires visual approval; see the
+[Phase 1 guide, synthetic preview and verification limits](docs/sidebar-studio-phase1.md).
+
 Open PowerShell or Windows Terminal in this `windows` folder, then run:
 
 ```powershell
@@ -92,13 +98,24 @@ Full-drive scans may take longer and may include Windows folders, app data, cach
 
 ## 5. Main Tabs
 
+### Overview
+
+Review the latest recorded scanned size, file/folder/skipped totals, scan health,
+five largest folders and recent scan history. These totals are not disk capacity
+or free space. New Scan and Review Results actions lead to the relevant workspace.
+
 ### Scan
 
 Choose a drive or folder and start a scan.
+Less frequent options are inside Advanced Scan Settings. Safety acknowledgement
+stays visible and reparse traversal starts unchecked for each fresh form.
 
 ### Results
 
 Review biggest folders, file types, biggest files, tree view, skipped paths, and Scan Health. Copy-directory buttons help users copy folder paths for manual review.
+Select Folders, Biggest Files, File Types, Folder Tree or Scan Health. Tables
+support search, numeric size sorting and 25/50/100-row pages. Expand a truncated
+path to read/copy it. Health warnings stay available outside the detailed view.
 
 ### Scan Health
 
