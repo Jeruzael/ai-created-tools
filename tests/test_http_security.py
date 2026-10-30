@@ -141,6 +141,33 @@ class HttpSecurityTests(unittest.TestCase):
             with self.subTest(content_type=content_type):
                 self.assert_blocked(415, headers={"Content-Type": content_type})
 
+    def test_invalid_reparse_flag_returns_400_without_starting_work(self):
+        invalid = ("false", "true", 0, 1, 0.0, 1.0, "", None, {}, {"value": False}, [], [False])
+        with mock.patch.object(self.app, "_start_worker") as launch:
+            for value in invalid:
+                with self.subTest(value=value):
+                    payload = {"root": self.temp.name, "acknowledgeSafety": True, "includeReparse": value}
+                    status, _headers, body = self.request("/api/scans", body=json.dumps(payload).encode())
+                    self.assertEqual(status, 400, body[:300])
+                    self.assertIn("includeReparse", json.loads(body)["error"])
+            launch.assert_not_called()
+        self.assertIsNone(self.app.active_scan)
+        self.assertIsNone(self.app._operation)
+
+    def test_invalid_security_flags_return_400_without_starting_work(self):
+        invalid = ("false", "true", 0, 1, 0.0, 1.0, "", None, {}, {"value": False}, [], [False])
+        with mock.patch.object(self.app, "_start_worker") as launch:
+            for flag in ("registryBackup", "wmiCheck", "eventLogCorrelation", "sysmonCorrelation"):
+                for value in invalid:
+                    with self.subTest(flag=flag, value=value):
+                        payload = {"acknowledgeSafety": True, "mode": "advanced", flag: value}
+                        status, _headers, body = self.request("/api/security-checks", body=json.dumps(payload).encode())
+                        self.assertEqual(status, 400, body[:300])
+                        self.assertIn(flag, json.loads(body)["error"])
+            launch.assert_not_called()
+        self.assertIsNone(self.app.active_security_check)
+        self.assertIsNone(self.app._operation)
+
     def test_malformed_json_shape_utf8_constants_and_duplicate_keys(self):
         for body in (b"{", b"[]", b"null", b'"string"', b'{"value":NaN}', b'{"x":1,"x":2}', b"\xff",
                      b'{"value":1e400}', b'{"nested":{"value":-1e400}}'):

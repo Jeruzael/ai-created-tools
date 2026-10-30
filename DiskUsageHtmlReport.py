@@ -1253,6 +1253,13 @@ def is_sensitive_path(path: str) -> bool:
     return any(normalized == root or normalized.startswith(root + os.sep) for root in sensitive_roots)
 
 
+def read_boolean_option(data, name, default=False):
+    value = data.get(name, default)
+    if type(value) is not bool:
+        raise ValueError(f"{name} must be a JSON Boolean (true or false).")
+    return value
+
+
 def parse_scan_settings(data):
     def read_positive_int(name, default, min_value=1, max_value=10000):
         value = int(data.get(name, default))
@@ -1271,7 +1278,7 @@ def parse_scan_settings(data):
         "max_tree_depth": read_non_negative_int("maxTreeDepth", 5, 20),
         "max_tree_children": read_positive_int("maxTreeChildren", 60, 1, 500),
         "min_tree_size_mb": read_non_negative_int("minTreeSizeMb", 100, 1000000),
-        "include_reparse": bool(data.get("includeReparse", False)),
+        "include_reparse": read_boolean_option(data, "includeReparse"),
     }
 
 
@@ -5916,7 +5923,8 @@ class DashboardApp:
         return self.scan_status()
 
     def start_security_check(self, data):
-        if data.get("registryBackup"):
+        registry_backup = read_boolean_option(data, "registryBackup")
+        if registry_backup:
             raise ValueError("Registry backup creation is not available in this version. Leave that option disabled.")
         acknowledgement = data.get("acknowledgeSafety") is True
         if not acknowledgement:
@@ -5926,6 +5934,11 @@ class DashboardApp:
         if mode not in ("standard", "advanced"):
             raise ValueError("Security Check mode must be Standard Review or Advanced Review.")
 
+        collector_options = {
+            "wmi_check": read_boolean_option(data, "wmiCheck", mode == "advanced"),
+            "event_log_correlation": read_boolean_option(data, "eventLogCorrelation", mode == "advanced"),
+            "sysmon_correlation": read_boolean_option(data, "sysmonCorrelation", mode == "advanced"),
+        }
         baseline_id = str(data.get("baselineId", "") or "").strip()
         baseline = None
         baseline_summary = None
@@ -5934,14 +5947,12 @@ class DashboardApp:
             baseline_summary = baseline_public_summary(baseline)
 
         options = {
-            "registry_backup_opt_in": bool(data.get("registryBackup", False)),
+            "registry_backup_opt_in": registry_backup,
             "baseline_compare": bool(baseline_id),
             "baseline_id": baseline_summary.get("baseline_id") if baseline_summary else None,
             "baseline_label": baseline_summary.get("label") if baseline_summary else None,
             "advanced_review": mode == "advanced",
-            "wmi_check": bool(data.get("wmiCheck", mode == "advanced")),
-            "event_log_correlation": bool(data.get("eventLogCorrelation", mode == "advanced")),
-            "sysmon_correlation": bool(data.get("sysmonCorrelation", mode == "advanced")),
+            **collector_options,
         }
         check_id = uuid.uuid4().hex
         cancel_event = threading.Event()

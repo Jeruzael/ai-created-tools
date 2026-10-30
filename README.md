@@ -378,6 +378,12 @@ valid local JSON; and collector coverage is reported separately from findings.
 Installer manifests remain read-only, revalidated and bound to the displayed
 review. Registry backups remain unavailable.
 
+The independent-review follow-up rejects non-Boolean scan/Security Check flags
+instead of applying Python truthiness. Omitted defaults are unchanged; explicit
+null, strings, numbers, arrays and objects are invalid. See the Boolean options
+table in the hardening guide before updating an API client, and the
+[PR #1 correction evidence](docs/pr-1-boolean-review-follow-up.md) for results.
+
 For users:
 
 - Refresh a previously open dashboard tab after upgrading. Its old session token
@@ -396,3 +402,6 @@ For maintainers, see the [v1.29 hardening and API guide](docs/v1.29-hardening.md
 design context and original Word document are historical design artifacts, not
 the current release contract. This folder is the Git application repository;
 the parent folder is a separate checkout and is not reorganized by this release.
+Visual checks remain NOT VERIFIED; use the
+[manual browser-check procedure](docs/v1.29-manual-browser-check.md) to record
+genuine human results without bypassing any restriction.
