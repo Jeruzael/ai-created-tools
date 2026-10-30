@@ -2,13 +2,13 @@
 
 - Document: Folder README and operations guide
 - Project: Windows Disk Usage Dashboard
-- App version: `1.25.0`
-- Documentation version: `1.25`
-- Date: 2026-09-04
+- App version: `1.28.0`
+- Documentation version: `1.28`
+- Date: 2026-10-30
 - Prepared by: Codex
 - Prepared for: users and maintainers working inside the `windows/` folder
 - Status: Revised
-- Revision notes: Added second-stage MSI metadata, installed-product, uninstall-registration, and MSP patch verification to Installer Cache review.
+- Revision notes: Fixed incomplete coverage reporting and stale manifest eligibility, added export revalidation and automated regression tests, and disabled the unfinished registry-backup option.
 
 ## 1. Purpose
 
@@ -110,9 +110,9 @@ Review running programs and local technical indicators. The UI supports Needs Re
 
 ### Installer Cache
 
-Review cached Windows Installer `.msi` and `.msp` files in `C:\Windows\Installer`. The tab checks direct `LocalPackage` references, reads MSI product metadata, compares ProductCodes and exact product names with installed app records, evaluates MSP PatchCodes separately, reports missing registered cache files, and exports review evidence to CSV.
+Review cached Windows Installer `.msi` and `.msp` files in `C:\Windows\Installer`. The tab searches exact registry-path references, reads package metadata, compares installed products and patches, extracts MSP targets, evaluates patch applicability through Windows Installer without applying the patch, reports missing registered cache files, and exports review evidence to CSV.
 
-This tab never deletes files. Probable orphan and unknown results are review leads only, not safe-to-delete verdicts.
+This tab never launches, applies, moves, quarantines, or deletes files. Probable orphan and unknown results are review leads only, not safe-to-delete verdicts. Backup-review candidates can be exported to a hash manifest, but that status still does not authorize changing the cache.
 
 ### Security Check
 
@@ -144,20 +144,32 @@ Recommended workflow:
 2. Open Installer Cache.
 3. Run the read-only cache review.
 4. Export review candidates if any are found.
-5. Review the ProductCode, PatchCode, product, version, manufacturer, and registration evidence.
+5. Review package identifiers, target products, applicability, confidence, exact registry matches, and incomplete checks.
 6. Keep a backup outside `C:\Windows\Installer` before any manual removal.
 7. Confirm Windows Update, app updates, repair, modify, and uninstall operations still work.
 
 Important interpretation rules:
 
-- Direct references and installed product or patch matches should be kept.
+- Direct references and installed product, patch, or MSP target matches should be kept.
 - Probable orphan and unknown results are not safe-to-delete verdicts.
 - MSI product packages and MSP patch packages use separate registration checks.
-- Product and patch visibility can be limited by the current user's permissions.
+- MSP applicability is checked through `MsiDeterminePatchSequenceW`; the patch is not launched or applied.
+- Confidence is `Definitive` for direct references, `Strong` for installed matches, `High` for complete no-match evidence, `Medium` for non-permission gaps, `Low` for access-limited scans, or `Unknown` for unreadable metadata.
+- Product and patch visibility can be limited by the current user's permissions. Access denied caps no-match confidence at `Low`.
+- Decision, confidence, package-type, and incomplete-check filters narrow the evidence table without rescanning.
+- Backup-review status is `Not eligible`, `Manual investigation`, or `Backup review candidate`.
+- Manifest eligibility requires a probable orphan, readable metadata, no keep evidence, complete checks, full source visibility, and `High` confidence.
+- The context-coverage panel shows current-user, all-user, and machine product/patch enumeration separately.
+- Manifest export hashes only backend-approved candidates, rejects paths outside the Installer cache, detects files changed since scanning, and performs no file changes.
+- Registry/API read failures lower coverage and confidence; normal enumeration completion and absent optional uninstall values are handled separately.
+- Manifest export is tied to the displayed scan and repeats registration checks. Changed, missing, newly registered, and unreadable files are invalidated, lose eligibility, and have no exported hash.
+- A warning or a superseded scan requires a fresh review before another export. Validated and invalidated counts appear in the exported JSON.
 - Size, date, and random-looking filenames are not enough evidence for deletion.
 - Missing registered cache files may explain future update, repair, or uninstall failures.
 
 ## 7. Security Check Workflow
+
+Registry backup creation is unavailable. The option is disabled, and the API rejects requests that enable it before starting any work. Older opt-in records do not prove that backups exist.
 
 Recommended workflow:
 
@@ -239,12 +251,20 @@ Do not commit generated reports or records. They may contain private paths, user
 - No external Python packages are required.
 - The local server binds only to `127.0.0.1` or `localhost`.
 - PowerShell/CIM is used for local Windows process and system metadata.
-- Installer Cache review reads `%windir%\Installer` and Windows Installer registry metadata in read-only mode.
+- Installer Cache review reads `%windir%\Installer`, Windows Installer registry metadata, package metadata, and Windows Installer applicability results in read-only mode.
 - Security Check collectors continue where possible when individual sources are unavailable or permission-limited.
 - Reports, baselines, and allowlist files are local artifacts written under this folder.
 - The root repository also has a `.gitignore`; keep this folder `.gitignore` in sync when generated paths change.
 
 ## 12. Verification
+
+Run the automated suite from this `windows` folder:
+
+```powershell
+python -m unittest discover -s tests -v
+```
+
+The tests use temporary fixtures and simulate Windows API failures. They do not modify the system Installer cache or registry. Embedded JavaScript behavior tests run when Node.js is available and are explicitly skipped otherwise.
 
 Compile check:
 
@@ -276,10 +296,12 @@ Expected checks:
 - Scan tab starts and cancels a scan.
 - Results and History tabs open.
 - Processes tab loads without crashing.
-- Installer Cache tab runs a read-only review or shows a clear permission/error message.
+- Installer Cache tab runs a read-only review, exposes eligibility, context coverage, evidence, filters, and manifest export, or shows a clear permission/error message.
 - Security Check can start and cancel.
 - Exit App is blocked during active work.
 - Generated output remains ignored by Git.
+
+For release validation, repeat Installer Cache review in normal and Administrator terminals. Check denied-source reporting, manifest enablement, warnings for invalidated files, and stale-scan rejection. Native Administrator validation remains a manual check.
 
 ## 13. Troubleshooting
 
@@ -315,13 +337,14 @@ Review Scan Health or Security Check skipped-source details. Administrator permi
 
 ### Installer Cache has many review candidates
 
-Do not delete them directly from the dashboard result. Export the CSV, identify related products, prefer official cleanup tools first, and keep a backup before any manual cleanup decision.
+Do not delete them directly from the dashboard result. Check confidence and incomplete checks first; `Low` commonly means Administrator-only installer contexts were not visible. Export the CSV, identify related products, prefer official cleanup tools first, and keep a backup before any manual cleanup decision.
 
 ## 14. Maintainer Checklist
 
 Before handing off changes:
 
 - Run `python -m py_compile .\DiskUsageHtmlReport.py`.
+- Run `python -m unittest discover -s tests -v`.
 - Run `python .\DiskUsageHtmlReport.py --help`.
 - Start the local dashboard and check the main tabs.
 - Confirm generated/private files are ignored by Git.
@@ -331,4 +354,4 @@ Before handing off changes:
 
 ## 15. Current Version Summary
 
-Version `1.25.0` adds second-stage Windows Installer verification. It reads MSI package metadata, compares product identifiers with Windows Installer and uninstall registrations, evaluates MSP PatchCodes against patch registrations, shows the evidence behind each status, and exports review candidates without changing cache files.
+Version `1.28.0` fixes hidden registry/API failures and stale manifest eligibility. Exports repeat registration checks, validate precise file snapshots, and reject superseded scans. Invalidated entries lose eligibility and trigger a warning. Registry backup creation is visibly unavailable and rejected by the backend. A standard-library regression suite covers these behaviors.

@@ -18,6 +18,7 @@ import threading
 import time
 import uuid
 import webbrowser
+import xml.etree.ElementTree as ET
 from collections import defaultdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -29,8 +30,8 @@ except ImportError:  # pragma: no cover - non-Windows fallback
 
 sys.setrecursionlimit(10000)
 
-APP_VERSION = "1.25.0"
-DOC_VERSION = "1.25"
+APP_VERSION = "1.28.0"
+DOC_VERSION = "1.28"
 APP_DIR = Path(__file__).resolve().parent
 RECORDS_DIR = APP_DIR / "scan_records"
 REPORTS_DIR = APP_DIR / "generated_reports"
@@ -969,11 +970,10 @@ def ensure_version_metadata():
     metadata = {
         "app_version": APP_VERSION,
         "documentation_version": DOC_VERSION,
-        "last_updated": "2026-09-04",
+        "last_updated": "2026-10-30",
         "revision_notes": (
-            "Added second-stage Windows Installer verification that inspects MSI "
-            "metadata, checks installed product registrations, and evaluates MSP "
-            "patch registrations separately before labeling review candidates."
+            "Fixed installer coverage error reporting and stale manifest eligibility, "
+            "added scan-bound export revalidation and regression tests, and disabled unavailable registry backups."
         ),
         "affected_areas": [
             "browser_dashboard",
@@ -982,6 +982,12 @@ def ensure_version_metadata():
             "installer_package_metadata",
             "installer_product_inventory",
             "installer_patch_inventory",
+            "installer_patch_applicability",
+            "installer_confidence_scoring",
+            "installer_registry_reference_scan",
+            "installer_backup_review_eligibility",
+            "installer_context_coverage",
+            "installer_review_manifest",
             "security_check_ui",
             "security_check_api",
             "security_check_collectors",
@@ -3506,6 +3512,20 @@ MSI_INSTALL_CONTEXT_USER_UNMANAGED = 2
 MSI_INSTALL_CONTEXT_MACHINE = 4
 MSI_PATCH_STATE_ALL = 15
 MSI_SUMMARY_REVISION_NUMBER = 9
+MSI_PATCH_DATA_TYPE_FILE = 0
+MSI_ORDER_NOT_APPLICABLE = 0xFFFFFFFF
+MSI_ERROR_ACCESS_DENIED = 5
+MSI_ERROR_UNKNOWN_PRODUCT = 1605
+MSI_ERROR_PATCH_TARGET_NOT_FOUND = 1642
+
+
+class MsiPatchSequenceInfoW(ctypes.Structure):
+    _fields_ = [
+        ("szPatchData", wintypes.LPCWSTR),
+        ("ePatchDataType", ctypes.c_int),
+        ("dwOrder", wintypes.DWORD),
+        ("uStatus", wintypes.UINT),
+    ]
 
 
 def load_windows_installer_api():
@@ -3585,17 +3605,36 @@ def load_windows_installer_api():
         dword_pointer,
     ]
     msi.MsiGetPatchInfoExW.restype = wintypes.UINT
+    msi.MsiExtractPatchXMLDataW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.LPWSTR,
+        dword_pointer,
+    ]
+    msi.MsiExtractPatchXMLDataW.restype = wintypes.UINT
+    msi.MsiDeterminePatchSequenceW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.POINTER(MsiPatchSequenceInfoW),
+    ]
+    msi.MsiDeterminePatchSequenceW.restype = wintypes.UINT
     return msi
 
 
-def msi_api_string(getter, *args):
+def msi_api_string(getter, *args, errors=None, description="Windows Installer property"):
     size = wintypes.DWORD(0)
     result = getter(*args, None, ctypes.byref(size))
     if result not in (MSI_ERROR_SUCCESS, MSI_ERROR_MORE_DATA):
+        if errors is not None:
+            errors.append(f"Could not read {description} (error {result}).")
         return ""
     buffer = ctypes.create_unicode_buffer(max(1, int(size.value) + 1))
     capacity = wintypes.DWORD(len(buffer))
     result = getter(*args, buffer, ctypes.byref(capacity))
+    if result != MSI_ERROR_SUCCESS and errors is not None:
+        errors.append(f"Could not read {description} (error {result}).")
     return buffer.value if result == MSI_ERROR_SUCCESS else ""
 
 
@@ -3660,7 +3699,14 @@ def inspect_msi_package(path_value):
 
 def inspect_msp_package(path_value):
     summary_handle = wintypes.UINT(0)
-    metadata = {"patch_code": ""}
+    metadata = {
+        "patch_code": "",
+        "target_product_codes": [],
+        "target_versions": [],
+        "upgrade_codes": [],
+        "obsoleted_patch_codes": [],
+        "patch_xml_available": False,
+    }
 
     try:
         msi = load_windows_installer_api()
@@ -3698,8 +3744,39 @@ def inspect_msp_package(path_value):
             raise OSError(f"Windows Installer could not read the MSP revision number (error {result}).")
         match = re.search(r"\{[0-9A-Fa-f-]{36}\}", buffer.value)
         metadata["patch_code"] = match.group(0).upper() if match else ""
+
+        xml_text = msi_api_string(msi.MsiExtractPatchXMLDataW, str(path_value), 0)
+        if not xml_text:
+            return metadata, "Windows Installer did not return MSP applicability XML."
+
+        root = ET.fromstring(xml_text)
+        metadata["patch_xml_available"] = True
+        xml_patch_code = str(root.attrib.get("PatchGUID") or "").strip().upper()
+        if xml_patch_code:
+            metadata["patch_code"] = xml_patch_code
+
+        extracted = {
+            "TargetProductCode": set(),
+            "TargetVersion": set(),
+            "UpgradeCode": set(),
+            "ObsoletedPatch": set(),
+        }
+        for element in root.iter():
+            local_name = element.tag.rsplit("}", 1)[-1]
+            if local_name not in extracted:
+                continue
+            value = str(element.text or "").strip()
+            if value:
+                extracted[local_name].add(value.upper() if "Code" in local_name or local_name == "ObsoletedPatch" else value)
+
+        metadata["target_product_codes"] = sorted(extracted["TargetProductCode"])
+        metadata["target_versions"] = sorted(extracted["TargetVersion"])
+        metadata["upgrade_codes"] = sorted(extracted["UpgradeCode"])
+        metadata["obsoleted_patch_codes"] = sorted(extracted["ObsoletedPatch"])
         if not metadata["patch_code"]:
-            return metadata, "The MSP summary does not expose a PatchCode."
+            return metadata, "The MSP metadata does not expose a PatchCode."
+        if not metadata["target_product_codes"]:
+            return metadata, "The MSP applicability metadata does not expose a target ProductCode."
     except Exception as ex:
         return metadata, str(ex)
     finally:
@@ -3712,29 +3789,145 @@ def inspect_msp_package(path_value):
     return metadata, ""
 
 
-def collect_windows_installer_inventory():
-    inventory = {"products": {}, "patches": {}, "local_packages": {}}
-    errors = []
+def determine_msp_applicability(path_value, target_instances):
+    if not target_instances:
+        return {
+            "status": "No installed target",
+            "complete": True,
+            "results": [],
+            "errors": [],
+        }
 
     try:
         msi = load_windows_installer_api()
     except Exception as ex:
+        return {
+            "status": "Could not determine",
+            "complete": False,
+            "results": [],
+            "errors": [str(ex)],
+        }
+
+    results = []
+    errors = []
+    seen = set()
+    for instance in target_instances:
+        product_code = str(instance.get("product_code") or "").upper()
+        context = int(instance.get("context") or 0)
+        user_sid = str(instance.get("user_sid") or "") or None
+        identity = (product_code, context, user_sid or "")
+        if not product_code or identity in seen:
+            continue
+        seen.add(identity)
+
+        patch_path = str(path_value)
+        sequence_info = MsiPatchSequenceInfoW(
+            patch_path,
+            MSI_PATCH_DATA_TYPE_FILE,
+            MSI_ORDER_NOT_APPLICABLE,
+            MSI_ERROR_SUCCESS,
+        )
+        result = msi.MsiDeterminePatchSequenceW(
+            product_code,
+            user_sid,
+            context,
+            1,
+            ctypes.byref(sequence_info),
+        )
+
+        if result == MSI_ERROR_SUCCESS and sequence_info.uStatus == MSI_ERROR_SUCCESS:
+            applicability = "Applicable" if sequence_info.dwOrder != MSI_ORDER_NOT_APPLICABLE else "Superseded or obsolete"
+        elif sequence_info.uStatus == MSI_ERROR_PATCH_TARGET_NOT_FOUND:
+            applicability = "Inapplicable to installed target"
+        elif result == MSI_ERROR_UNKNOWN_PRODUCT:
+            applicability = "Target product registration changed"
+        else:
+            applicability = "Could not determine"
+            status_code = int(sequence_info.uStatus or result)
+            errors.append(f"Patch applicability check failed for {product_code} (error {status_code}).")
+
+        results.append({
+            "product_code": product_code,
+            "product_name": instance.get("product_name", ""),
+            "context": context,
+            "user_sid": user_sid or "",
+            "status": applicability,
+            "sequence_order": int(sequence_info.dwOrder) if sequence_info.dwOrder != MSI_ORDER_NOT_APPLICABLE else None,
+            "result_code": int(result),
+            "patch_status_code": int(sequence_info.uStatus),
+        })
+
+    statuses = {item["status"] for item in results}
+    if "Applicable" in statuses:
+        status = "Applicable"
+    elif "Superseded or obsolete" in statuses:
+        status = "Superseded or obsolete"
+    elif statuses and statuses == {"Inapplicable to installed target"}:
+        status = "Inapplicable to installed target"
+    else:
+        status = "Could not determine"
+
+    return {
+        "status": status,
+        "complete": bool(results) and not errors,
+        "results": results,
+        "errors": sorted(set(errors)),
+    }
+
+
+def collect_windows_installer_inventory():
+    inventory = {"products": {}, "patches": {}, "local_packages": {}, "contexts": []}
+    errors = []
+
+    enumeration_scopes = (
+        ("current user", None, MSI_INSTALL_CONTEXT_USER_MANAGED | MSI_INSTALL_CONTEXT_USER_UNMANAGED, ["user managed", "user unmanaged"]),
+        ("all users", "S-1-1-0", MSI_INSTALL_CONTEXT_USER_MANAGED | MSI_INSTALL_CONTEXT_USER_UNMANAGED, ["user managed", "user unmanaged"]),
+        ("machine", None, MSI_INSTALL_CONTEXT_MACHINE, ["machine"]),
+    )
+
+    try:
+        msi = load_windows_installer_api()
+    except Exception as ex:
+        for source in ("Products", "Patches"):
+            for scope_label, requested_sid, _requested_context, contexts in enumeration_scopes:
+                inventory["contexts"].append({
+                    "source": source,
+                    "scope": scope_label,
+                    "requested_sid": requested_sid or "current user",
+                    "contexts": contexts,
+                    "status": "Unavailable",
+                    "items_enumerated": 0,
+                    "error_code": None,
+                    "detail": str(ex),
+                })
         return inventory, [str(ex)]
 
     def get_product_property(product_code, user_sid, context, property_name):
-        return msi_api_string(msi.MsiGetProductInfoExW, product_code, user_sid, context, property_name)
+        return msi_api_string(msi.MsiGetProductInfoExW, product_code, user_sid, context, property_name,
+                              errors=errors, description=f"product {product_code} {property_name} in context {context}")
 
     def get_patch_property(patch_code, product_code, user_sid, context, property_name):
-        return msi_api_string(msi.MsiGetPatchInfoExW, patch_code, product_code, user_sid, context, property_name)
+        return msi_api_string(msi.MsiGetPatchInfoExW, patch_code, product_code, user_sid, context, property_name,
+                              errors=errors, description=f"patch {patch_code} {property_name} for product {product_code} in context {context}")
 
-    enumeration_scopes = (
-        ("current user", None, MSI_INSTALL_CONTEXT_USER_MANAGED | MSI_INSTALL_CONTEXT_USER_UNMANAGED),
-        ("all users", "S-1-1-0", MSI_INSTALL_CONTEXT_USER_MANAGED | MSI_INSTALL_CONTEXT_USER_UNMANAGED),
-        ("machine", None, MSI_INSTALL_CONTEXT_MACHINE),
-    )
+    def record_scope(source, scope_label, requested_sid, contexts, status, item_count, error_code=None, detail=""):
+        inventory["contexts"].append({
+            "source": source,
+            "scope": scope_label,
+            "requested_sid": requested_sid or "current user",
+            "contexts": contexts,
+            "status": status,
+            "items_enumerated": item_count,
+            "error_code": error_code,
+            "detail": detail or f"{source} enumeration completed for {scope_label}.",
+        })
 
-    for scope_label, requested_sid, requested_context in enumeration_scopes:
+    for scope_label, requested_sid, requested_context, contexts in enumeration_scopes:
         index = 0
+        initial_error_count = len(errors)
+        scope_status = "Complete"
+        scope_error_code = None
+        scope_detail = ""
         while True:
             product_code_buffer = ctypes.create_unicode_buffer(39)
             context = wintypes.DWORD(0)
@@ -3753,10 +3946,16 @@ def collect_windows_installer_inventory():
             if result == MSI_ERROR_NO_MORE_ITEMS:
                 break
             if result == MSI_ERROR_MORE_DATA:
-                errors.append(f"Windows Installer returned an unexpectedly long user SID while enumerating {scope_label} products.")
+                scope_detail = f"Windows Installer returned an unexpectedly long user SID while enumerating {scope_label} products."
+                errors.append(scope_detail)
+                scope_status = "Incomplete"
+                scope_error_code = int(result)
                 break
             if result != MSI_ERROR_SUCCESS:
-                errors.append(f"Windows Installer product enumeration failed for {scope_label} (error {result}).")
+                scope_detail = f"Windows Installer product enumeration failed for {scope_label} (error {result})."
+                errors.append(scope_detail)
+                scope_status = "Access denied" if result == MSI_ERROR_ACCESS_DENIED else "Incomplete"
+                scope_error_code = int(result)
                 break
 
             product_code = product_code_buffer.value.upper()
@@ -3781,9 +3980,17 @@ def collect_windows_installer_inventory():
                 local_entry["versions"].append(instance["product_version"])
                 local_entry["evidence"].append(f"Windows Installer product {product_code} reports this LocalPackage.")
             index += 1
+        if scope_status == "Complete" and len(errors) > initial_error_count:
+            scope_status = "Incomplete"
+            scope_detail = "Product enumeration completed, but one or more product properties could not be read."
+        record_scope("Products", scope_label, requested_sid, contexts, scope_status, index, scope_error_code, scope_detail)
 
-    for scope_label, requested_sid, requested_context in enumeration_scopes:
+    for scope_label, requested_sid, requested_context, contexts in enumeration_scopes:
         index = 0
+        initial_error_count = len(errors)
+        scope_status = "Complete"
+        scope_error_code = None
+        scope_detail = ""
         while True:
             patch_code_buffer = ctypes.create_unicode_buffer(39)
             product_code_buffer = ctypes.create_unicode_buffer(39)
@@ -3805,10 +4012,16 @@ def collect_windows_installer_inventory():
             if result == MSI_ERROR_NO_MORE_ITEMS:
                 break
             if result == MSI_ERROR_MORE_DATA:
-                errors.append(f"Windows Installer returned an unexpectedly long user SID while enumerating {scope_label} patches.")
+                scope_detail = f"Windows Installer returned an unexpectedly long user SID while enumerating {scope_label} patches."
+                errors.append(scope_detail)
+                scope_status = "Incomplete"
+                scope_error_code = int(result)
                 break
             if result != MSI_ERROR_SUCCESS:
-                errors.append(f"Windows Installer patch enumeration failed for {scope_label} (error {result}).")
+                scope_detail = f"Windows Installer patch enumeration failed for {scope_label} (error {result})."
+                errors.append(scope_detail)
+                scope_status = "Access denied" if result == MSI_ERROR_ACCESS_DENIED else "Incomplete"
+                scope_error_code = int(result)
                 break
 
             patch_code = patch_code_buffer.value.upper()
@@ -3837,6 +4050,10 @@ def collect_windows_installer_inventory():
                 local_entry["products"].append(instance["display_name"] or f"Patch {patch_code}")
                 local_entry["evidence"].append(f"Windows Installer patch {patch_code} reports this LocalPackage for product {product_code}.")
             index += 1
+        if scope_status == "Complete" and len(errors) > initial_error_count:
+            scope_status = "Incomplete"
+            scope_detail = "Patch enumeration completed, but one or more patch properties could not be read."
+        record_scope("Patches", scope_label, requested_sid, contexts, scope_status, index, scope_error_code, scope_detail)
 
     for entry in inventory["local_packages"].values():
         for field in ("products", "publishers", "versions", "registry_paths", "evidence"):
@@ -3852,12 +4069,24 @@ def normalize_installer_reference(path_value) -> str:
     return os.path.normcase(os.path.abspath(os.path.expandvars(value)))
 
 
+def installer_registry_read_error(location, error):
+    if isinstance(error, PermissionError) or getattr(error, "winerror", None) == MSI_ERROR_ACCESS_DENIED:
+        return f"Access denied while reading {location}."
+    return f"Could not read {location}: {error}"
+
+
 def collect_installer_localpackage_references():
     references = {}
+    exact_references = {}
     errors = []
+    found_root_views = set()
 
     if winreg is None:
-        return references, ["Windows registry access is unavailable on this platform."]
+        return references, exact_references, ["Windows registry access is unavailable on this platform."], {
+            "status": "Unavailable",
+            "attempted_views": [],
+            "readable_views": [],
+        }
 
     registry_views = [("default", 0)]
     if hasattr(winreg, "KEY_WOW64_64KEY"):
@@ -3893,13 +4122,46 @@ def collect_installer_localpackage_references():
             if value:
                 entry[target].add(str(value))
 
-    def read_values(key):
+    def add_exact_reference(path_value, values, registry_path, value_name, view_label):
+        normalized = normalize_installer_reference(path_value)
+        if not normalized:
+            return
+        entry = exact_references.setdefault(normalized, {
+            "local_package": str(path_value),
+            "registry_paths": set(),
+            "products": set(),
+            "publishers": set(),
+            "versions": set(),
+            "evidence": set(),
+            "registry_matches": [],
+        })
+        entry["registry_paths"].add(registry_path)
+        entry["evidence"].add(f"Exact installer registry reference: {registry_path} [{value_name}].")
+        entry["registry_matches"].append({
+            "registry_path": registry_path,
+            "property": value_name,
+            "value": str(path_value),
+            "registry_view": view_label,
+        })
+        for field, target in (
+            ("DisplayName", "products"),
+            ("ProductName", "products"),
+            ("Publisher", "publishers"),
+            ("DisplayVersion", "versions"),
+        ):
+            value = values.get(field)
+            if value:
+                entry[target].add(str(value))
+
+    def read_values(key, location):
         values = {}
         index = 0
         while True:
             try:
                 name, value, _value_type = winreg.EnumValue(key, index)
-            except OSError:
+            except OSError as ex:
+                if getattr(ex, "winerror", None) != MSI_ERROR_NO_MORE_ITEMS:
+                    errors.append(installer_registry_read_error(location, ex))
                 break
             values[name] = value
             index += 1
@@ -3912,29 +4174,43 @@ def collect_installer_localpackage_references():
 
         try:
             with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, subkey, 0, winreg.KEY_READ | access_flags) as key:
-                values = read_values(key)
+                if depth == 0:
+                    found_root_views.add(view_label)
+                values = read_values(key, f"HKLM\\{subkey} ({view_label} view) values")
                 local_package = values.get("LocalPackage")
                 if local_package:
                     add_reference(local_package, values, f"HKLM\\{subkey}", view_label)
+                for value_name, raw_value in values.items():
+                    candidates = raw_value if isinstance(raw_value, (list, tuple)) else [raw_value]
+                    for candidate in candidates:
+                        if not isinstance(candidate, str):
+                            continue
+                        if not candidate.strip().strip('"').lower().endswith(tuple(INSTALLER_CACHE_EXTENSIONS)):
+                            continue
+                        add_exact_reference(candidate, values, f"HKLM\\{subkey}", value_name, view_label)
 
                 index = 0
                 while True:
                     try:
                         child_name = winreg.EnumKey(key, index)
-                    except OSError:
+                    except OSError as ex:
+                        if getattr(ex, "winerror", None) != MSI_ERROR_NO_MORE_ITEMS:
+                            errors.append(installer_registry_read_error(f"HKLM\\{subkey} ({view_label} view) subkeys", ex))
                         break
                     walk_registry(f"{subkey}\\{child_name}", view_label, access_flags, depth + 1)
                     index += 1
         except PermissionError:
             errors.append(f"Access denied while reading HKLM\\{subkey}")
         except FileNotFoundError:
-            if depth == 0:
-                errors.append(f"Registry path was not found: HKLM\\{subkey}")
+            if depth:
+                errors.append(f"Registry key disappeared during review: HKLM\\{subkey} ({view_label} view).")
         except OSError as ex:
             errors.append(f"Could not read HKLM\\{subkey}: {ex}")
 
     for view_label, access_flags in registry_views:
         walk_registry(INSTALLER_USERDATA_SUBKEY, view_label, access_flags)
+    if not found_root_views:
+        errors.append(f"Registry path was not found: HKLM\\{INSTALLER_USERDATA_SUBKEY}")
 
     public_references = {}
     for normalized, entry in references.items():
@@ -3946,9 +4222,28 @@ def collect_installer_localpackage_references():
             "versions": sorted(entry["versions"]),
             "install_dates": sorted(entry["install_dates"]),
             "registry_views": sorted(entry["registry_views"]),
+            "evidence": ["Windows Installer LocalPackage directly references this file."],
+            "registry_matches": [],
         }
 
-    return public_references, sorted(set(errors))
+    public_exact_references = {}
+    for normalized, entry in exact_references.items():
+        public_exact_references[normalized] = {
+            "local_package": entry["local_package"],
+            "registry_paths": sorted(entry["registry_paths"]),
+            "products": sorted(entry["products"]),
+            "publishers": sorted(entry["publishers"]),
+            "versions": sorted(entry["versions"]),
+            "evidence": sorted(entry["evidence"]),
+            "registry_matches": entry["registry_matches"][:20],
+        }
+
+    registry_coverage = {
+        "status": "Complete" if not errors else ("Limited visibility" if found_root_views else "Unavailable"),
+        "attempted_views": [view_label for view_label, _access_flags in registry_views],
+        "readable_views": sorted(found_root_views),
+    }
+    return public_references, public_exact_references, sorted(set(errors)), registry_coverage
 
 
 def collect_uninstall_registrations():
@@ -3977,7 +4272,9 @@ def collect_uninstall_registrations():
                     while True:
                         try:
                             child_name = winreg.EnumKey(root_key, index)
-                        except OSError:
+                        except OSError as ex:
+                            if getattr(ex, "winerror", None) != MSI_ERROR_NO_MORE_ITEMS:
+                                errors.append(installer_registry_read_error(f"{hive_label}\\{subkey} ({view_label} view) subkeys", ex))
                             break
                         index += 1
                         try:
@@ -3986,9 +4283,12 @@ def collect_uninstall_registrations():
                                 for value_name in ("DisplayName", "Publisher", "DisplayVersion", "UninstallString", "QuietUninstallString"):
                                     try:
                                         values[value_name] = str(winreg.QueryValueEx(child_key, value_name)[0])
-                                    except OSError:
+                                    except OSError as ex:
+                                        if getattr(ex, "winerror", None) != 2:
+                                            errors.append(installer_registry_read_error(f"{hive_label}\\{subkey}\\{child_name} [{value_name}] ({view_label} view)", ex))
                                         values[value_name] = ""
-                        except (PermissionError, OSError):
+                        except OSError as ex:
+                            errors.append(installer_registry_read_error(f"{hive_label}\\{subkey}\\{child_name} ({view_label} view)", ex))
                             continue
 
                         display_name = values.get("DisplayName", "").strip()
@@ -4019,49 +4319,145 @@ def collect_uninstall_registrations():
     return registrations, sorted(set(errors))
 
 
+def merge_installer_reference_maps(*reference_maps):
+    merged = {}
+    for reference_map in reference_maps:
+        for normalized, source in reference_map.items():
+            target = merged.setdefault(normalized, {
+                "local_package": source.get("local_package", normalized),
+                "products": [],
+                "publishers": [],
+                "versions": [],
+                "registry_paths": [],
+                "evidence": [],
+                "registry_matches": [],
+            })
+            target["local_package"] = target.get("local_package") or source.get("local_package", normalized)
+            for field in ("products", "publishers", "versions", "registry_paths", "evidence"):
+                source_field = "display_names" if field == "products" and "products" not in source else field
+                target[field] = sorted(set(target[field] + list(source.get(source_field, []))))
+            seen_matches = {
+                (item.get("registry_path"), item.get("property"), item.get("value"))
+                for item in target["registry_matches"]
+            }
+            for item in source.get("registry_matches", []):
+                identity = (item.get("registry_path"), item.get("property"), item.get("value"))
+                if identity not in seen_matches:
+                    target["registry_matches"].append(item)
+                    seen_matches.add(identity)
+    return merged
+
+
+def installer_source_coverage(errors):
+    errors = sorted(set(errors))
+    access_limited = any("access denied" in error.casefold() or "error 5" in error.casefold() for error in errors)
+    return {
+        "complete": not errors,
+        "access_limited": access_limited,
+        "status": "Limited visibility" if access_limited else ("Completed with notes" if errors else "Complete"),
+        "notes": errors,
+    }
+
+
+def installer_confidence(classification, coverage, package_complete=True, applicability_complete=True):
+    if classification == "Registered":
+        return "Definitive"
+    if classification in {"Installed product match", "Installed app name match", "Registered patch match", "Installed target match"}:
+        return "Strong"
+    if classification.startswith("Unknown") or not package_complete:
+        return "Unknown"
+    if coverage.get("access_limited"):
+        return "Low"
+    if not coverage.get("complete") or not applicability_complete:
+        return "Medium"
+    return "High"
+
+
+def installer_backup_review_eligibility(classification, confidence, incomplete_checks, coverage):
+    probable_orphan = classification.startswith("Probable orphan")
+    complete_checks = not incomplete_checks
+    complete_coverage = bool(coverage.get("complete"))
+    readable_metadata = confidence != "Unknown"
+    no_keep_evidence = classification not in {
+        "Registered",
+        "Installed product match",
+        "Installed app name match",
+        "Registered patch match",
+        "Installed target match",
+    }
+    requirements = [
+        {"name": "Probable orphan classification", "met": probable_orphan},
+        {"name": "Readable package metadata", "met": readable_metadata},
+        {"name": "No registered or installed keep evidence", "met": no_keep_evidence},
+        {"name": "All required checks complete", "met": complete_checks},
+        {"name": "All installer sources fully visible", "met": complete_coverage},
+        {"name": "High evidence confidence", "met": confidence == "High"},
+    ]
+
+    if probable_orphan and complete_checks and complete_coverage and confidence == "High":
+        status = "Backup review candidate"
+        reason = "All required no-match checks completed with full source visibility. Export a manifest for supervised backup review; this is not a safe-to-delete verdict."
+    elif probable_orphan:
+        status = "Manual investigation"
+        reason = "The file remains a review candidate, but one or more required checks or installer contexts are incomplete."
+    else:
+        status = "Not eligible"
+        reason = "Registered, installed-match, or unknown packages are not eligible for backup-review candidacy."
+
+    return {
+        "status": status,
+        "eligible_for_manifest": status == "Backup review candidate",
+        "reason": reason,
+        "requirements": requirements,
+    }
+
+
 def analyze_installer_cache():
     started_at = now_iso()
-    references, reference_errors = collect_installer_localpackage_references()
+    review_id = uuid.uuid4().hex
+    references, exact_references, reference_errors, registry_coverage = collect_installer_localpackage_references()
     inventory, inventory_errors = collect_windows_installer_inventory()
     uninstall_inventory, uninstall_errors = collect_uninstall_registrations()
-    all_references = dict(references)
-    for normalized, api_reference in inventory["local_packages"].items():
-        existing = all_references.get(normalized)
-        if not existing:
-            all_references[normalized] = api_reference
-            continue
-        for field in ("products", "publishers", "versions", "registry_paths", "evidence"):
-            registry_field = "display_names" if field == "products" else field
-            existing[field] = sorted(set(existing.get(registry_field, []) + api_reference.get(field, [])))
-        existing["local_package"] = existing.get("local_package") or api_reference.get("local_package")
+    source_errors = sorted(set(reference_errors + inventory_errors + uninstall_errors))
+    coverage = installer_source_coverage(source_errors)
+    coverage["registry"] = registry_coverage
+    coverage["installer_contexts"] = inventory.get("contexts", [])
+    all_references = merge_installer_reference_maps(exact_references, references, inventory["local_packages"])
     files = []
     scan_errors = []
     cache_dir = INSTALLER_CACHE_DIR
     cache_dir_normalized = normalize_installer_reference(cache_dir)
 
+    empty_summary = {
+        "status": "Unavailable",
+        "cache_files": 0,
+        "cache_size_bytes": 0,
+        "cache_size": "0 B",
+        "registered_files": 0,
+        "installed_product_matches": 0,
+        "registered_patch_matches": 0,
+        "installed_target_matches": 0,
+        "probable_orphans": 0,
+        "unknown_files": 0,
+        "orphan_candidates": 0,
+        "orphan_candidate_size_bytes": 0,
+        "orphan_candidate_size": "0 B",
+        "missing_registered_files": 0,
+        "backup_review_candidates": 0,
+        "confidence_counts": {},
+    }
+
     if not cache_dir.exists():
         return {
-            "schema_version": "installer-cache-review-v2",
+            "schema_version": "installer-cache-review-v5",
+            "review_id": review_id,
             "collected_at": started_at,
             "cache_path": str(cache_dir),
-            "summary": {
-                "status": "Unavailable",
-                "cache_files": 0,
-                "cache_size_bytes": 0,
-                "cache_size": "0 B",
-                "registered_files": 0,
-                "installed_product_matches": 0,
-                "registered_patch_matches": 0,
-                "probable_orphans": 0,
-                "unknown_files": 0,
-                "orphan_candidates": 0,
-                "orphan_candidate_size_bytes": 0,
-                "orphan_candidate_size": "0 B",
-                "missing_registered_files": 0,
-            },
+            "summary": empty_summary,
+            "coverage": coverage,
             "files": [],
             "missing_registered_files": [],
-            "errors": [f"Installer cache folder was not found: {cache_dir}"] + reference_errors + inventory_errors + uninstall_errors,
+            "errors": [f"Installer cache folder was not found: {cache_dir}"] + source_errors,
             "safety_statement": "Review only. Do not delete Windows Installer cache files based only on this report.",
         }
 
@@ -4069,27 +4465,15 @@ def analyze_installer_cache():
         entries = [entry for entry in cache_dir.iterdir() if entry.is_file() and entry.suffix.lower() in INSTALLER_CACHE_EXTENSIONS]
     except Exception as ex:
         return {
-            "schema_version": "installer-cache-review-v2",
+            "schema_version": "installer-cache-review-v5",
+            "review_id": review_id,
             "collected_at": started_at,
             "cache_path": str(cache_dir),
-            "summary": {
-                "status": "Error",
-                "cache_files": 0,
-                "cache_size_bytes": 0,
-                "cache_size": "0 B",
-                "registered_files": 0,
-                "installed_product_matches": 0,
-                "registered_patch_matches": 0,
-                "probable_orphans": 0,
-                "unknown_files": 0,
-                "orphan_candidates": 0,
-                "orphan_candidate_size_bytes": 0,
-                "orphan_candidate_size": "0 B",
-                "missing_registered_files": 0,
-            },
+            "summary": {**empty_summary, "status": "Error"},
+            "coverage": coverage,
             "files": [],
             "missing_registered_files": [],
-            "errors": [f"Could not read installer cache folder: {ex}"] + reference_errors + inventory_errors + uninstall_errors,
+            "errors": [f"Could not read installer cache folder: {ex}"] + source_errors,
             "safety_statement": "Review only. Do not delete Windows Installer cache files based only on this report.",
         }
 
@@ -4097,6 +4481,7 @@ def analyze_installer_cache():
     registered_count = 0
     installed_product_match_count = 0
     registered_patch_match_count = 0
+    installed_target_match_count = 0
     probable_orphan_count = 0
     unknown_count = 0
     candidate_count = 0
@@ -4123,19 +4508,38 @@ def analyze_installer_cache():
             "upgrade_code": "",
             "manufacturer": "",
             "patch_code": "",
+            "target_product_codes": [],
+            "target_versions": [],
+            "upgrade_codes": [],
+            "obsoleted_patch_codes": [],
         }
         metadata_error = ""
         products = list(reference.get("products", reference.get("display_names", []))) if reference else []
         publishers = list(reference.get("publishers", [])) if reference else []
         versions = list(reference.get("versions", [])) if reference else []
         evidence = list(reference.get("evidence", [])) if reference else []
+        registry_matches = list(reference.get("registry_matches", [])) if reference else []
+        installed_target_products = []
+        applicability = {
+            "status": "Not applicable (MSI)" if extension == ".msi" else "Not checked",
+            "complete": True if extension == ".msi" else False,
+            "results": [],
+            "errors": [],
+        }
+        checks = []
 
         if referenced:
             registered_count += 1
             classification = "Registered"
-            recommendation = "Keep. Windows Installer directly reports this file as a LocalPackage."
+            recommendation = "Keep. Windows Installer or an exact installer registry value directly references this cache path."
             if not evidence:
                 evidence.append("A Windows Installer registry record directly references this LocalPackage path.")
+            checks.extend([
+                {"name": "Exact package path reference", "status": "Match", "detail": evidence[0], "complete": True},
+                {"name": "Package metadata", "status": "Not required", "detail": "A direct path reference is already definitive keep evidence.", "complete": True},
+                {"name": "Installer registration", "status": "Match", "detail": "The cached path is present in visible Windows Installer data.", "complete": True},
+                {"name": "Patch applicability", "status": "Not required", "detail": "A direct path reference takes precedence.", "complete": True},
+            ])
         elif extension == ".msi":
             package_metadata, metadata_error = inspect_msi_package(entry)
             product_code = package_metadata.get("product_code", "").upper()
@@ -4147,6 +4551,18 @@ def analyze_installer_cache():
             products.extend([package_product_name])
             publishers.extend([package_metadata.get("manufacturer", "")])
             versions.extend([package_metadata.get("product_version", "")])
+            checks.append({
+                "name": "Exact package path reference",
+                "status": "Incomplete" if reference_errors else "No match",
+                "detail": "No exact cache-path reference was found in readable registry data." if not reference_errors else "No match was found, but one or more registry locations could not be read.",
+                "complete": not reference_errors,
+            })
+            checks.append({
+                "name": "MSI package metadata",
+                "status": "Complete" if product_code and not metadata_error else "Error",
+                "detail": f"ProductCode {product_code} was read from the MSI." if product_code and not metadata_error else (metadata_error or "The MSI did not expose a ProductCode."),
+                "complete": bool(product_code and not metadata_error),
+            })
 
             if product_instances or uninstall_code_matches:
                 installed_product_match_count += 1
@@ -4162,6 +4578,7 @@ def analyze_installer_cache():
                 products.extend([item.get("display_name", "") for item in uninstall_code_matches])
                 publishers.extend([item.get("publisher", "") for item in uninstall_code_matches])
                 versions.extend([item.get("display_version", "") for item in uninstall_code_matches])
+                checks.append({"name": "Installed product registration", "status": "Match", "detail": "The MSI ProductCode matches visible installed-product evidence.", "complete": True})
             elif uninstall_name_matches:
                 installed_product_match_count += 1
                 classification = "Installed app name match"
@@ -4170,13 +4587,15 @@ def analyze_installer_cache():
                 products.extend([item.get("display_name", "") for item in uninstall_name_matches])
                 publishers.extend([item.get("publisher", "") for item in uninstall_name_matches])
                 versions.extend([item.get("display_version", "") for item in uninstall_name_matches])
+                checks.append({"name": "Installed product registration", "status": "Name match", "detail": "An exact installed-app name match was found without a matching ProductCode.", "complete": not inventory_errors and not uninstall_errors})
             elif product_code and not metadata_error:
                 probable_orphan_count += 1
                 candidate_count += 1
                 candidate_size += size_bytes
                 classification = "Probable orphan MSI"
-                recommendation = "Review and quarantine only. The MSI is readable, but its ProductCode was not found in visible Windows Installer registrations."
+                recommendation = "Investigate only. The MSI is readable, but its ProductCode was not found in visible Windows Installer registrations."
                 evidence.append(f"ProductCode {product_code} was read from the MSI and was not found in the visible product inventory.")
+                checks.append({"name": "Installed product registration", "status": "Incomplete" if inventory_errors or uninstall_errors else "No match", "detail": "No ProductCode or exact app-name match was found in visible registrations.", "complete": not inventory_errors and not uninstall_errors})
             else:
                 unknown_count += 1
                 candidate_count += 1
@@ -4184,10 +4603,43 @@ def analyze_installer_cache():
                 classification = "Unknown MSI"
                 recommendation = "Keep until manually identified. Windows Installer metadata could not provide a ProductCode for a reliable registration check."
                 evidence.append(metadata_error or "The MSI Property table did not provide a ProductCode.")
+                checks.append({"name": "Installed product registration", "status": "Not checked", "detail": "A ProductCode is required for the registration check.", "complete": False})
+            checks.append({"name": "Patch applicability", "status": "Not applicable", "detail": "MSI product packages do not use the MSP applicability check.", "complete": True})
         else:
             package_metadata, metadata_error = inspect_msp_package(entry)
             patch_code = package_metadata.get("patch_code", "").upper()
             patch_instances = inventory["patches"].get(patch_code, []) if patch_code else []
+            target_instances = []
+            seen_targets = set()
+            for target_product_code in package_metadata.get("target_product_codes", []):
+                for instance in inventory["products"].get(target_product_code.upper(), []):
+                    identity = (instance.get("product_code"), instance.get("context"), instance.get("user_sid"))
+                    if identity in seen_targets:
+                        continue
+                    seen_targets.add(identity)
+                    target_instances.append(instance)
+                    installed_target_products.append({
+                        "product_code": instance.get("product_code", ""),
+                        "product_name": instance.get("product_name", ""),
+                        "product_version": instance.get("product_version", ""),
+                        "publisher": instance.get("publisher", ""),
+                        "context": instance.get("context", 0),
+                        "user_sid": instance.get("user_sid", ""),
+                    })
+            checks.extend([
+                {
+                    "name": "Exact package path reference",
+                    "status": "Incomplete" if reference_errors else "No match",
+                    "detail": "No exact cache-path reference was found in readable registry data." if not reference_errors else "No match was found, but one or more registry locations could not be read.",
+                    "complete": not reference_errors,
+                },
+                {
+                    "name": "MSP package metadata",
+                    "status": "Complete" if patch_code and package_metadata.get("patch_xml_available") and not metadata_error else "Error",
+                    "detail": f"PatchCode {patch_code} and {len(package_metadata.get('target_product_codes', []))} target ProductCode(s) were read." if patch_code and not metadata_error else (metadata_error or "The MSP did not expose complete applicability metadata."),
+                    "complete": bool(patch_code and package_metadata.get("patch_xml_available") and not metadata_error),
+                },
+            ])
 
             if patch_instances:
                 registered_patch_match_count += 1
@@ -4198,13 +4650,41 @@ def analyze_installer_cache():
                 for item in patch_instances:
                     product_instances = inventory["products"].get(item.get("product_code", ""), [])
                     products.extend([product.get("product_name", "") for product in product_instances])
+                applicability = {
+                    "status": "Registered patch",
+                    "complete": True,
+                    "results": [],
+                    "errors": [],
+                }
+                checks.append({"name": "Patch registration", "status": "Match", "detail": "The PatchCode matches a visible Windows Installer patch registration.", "complete": True})
+                checks.append({"name": "Installed target product", "status": "Match" if target_instances else "Not required", "detail": "The registered patch match is sufficient keep evidence.", "complete": True})
+                checks.append({"name": "Patch applicability", "status": "Not required", "detail": "A registered PatchCode is already strong keep evidence.", "complete": True})
+            elif target_instances:
+                installed_target_match_count += 1
+                classification = "Installed target match"
+                applicability = determine_msp_applicability(entry, target_instances)
+                recommendation = "Keep for maintenance review. The MSP targets at least one installed Windows Installer product."
+                evidence.append(f"The MSP applicability XML targets {len(target_instances)} visible installed product context(s).")
+                evidence.append(f"Read-only Windows Installer applicability result: {applicability['status']}.")
+                products.extend([item.get("product_name", "") for item in target_instances])
+                publishers.extend([item.get("publisher", "") for item in target_instances])
+                versions.extend([item.get("product_version", "") for item in target_instances])
+                checks.append({"name": "Patch registration", "status": "Incomplete" if inventory_errors else "No match", "detail": "The PatchCode was not found in visible patch registrations.", "complete": not inventory_errors})
+                checks.append({"name": "Installed target product", "status": "Match", "detail": "At least one ProductCode declared by the MSP is installed.", "complete": True})
+                checks.append({"name": "Patch applicability", "status": applicability["status"], "detail": "Windows Installer evaluated the patch sequence without applying the patch.", "complete": applicability["complete"]})
+                scan_errors.extend(applicability["errors"])
             elif patch_code and not metadata_error:
                 probable_orphan_count += 1
                 candidate_count += 1
                 candidate_size += size_bytes
                 classification = "Probable orphan MSP"
-                recommendation = "Review and quarantine only. The MSP is readable, but its PatchCode was not found in visible Windows Installer patch registrations."
+                applicability = determine_msp_applicability(entry, [])
+                recommendation = "Investigate only. No direct reference, registered PatchCode, or installed target ProductCode was found in visible installer data."
                 evidence.append(f"PatchCode {patch_code} was read from the MSP and was not found in the visible patch inventory.")
+                evidence.append("No ProductCode declared by the MSP was found in the visible installed-product inventory.")
+                checks.append({"name": "Patch registration", "status": "Incomplete" if inventory_errors else "No match", "detail": "The PatchCode was not found in visible patch registrations.", "complete": not inventory_errors})
+                checks.append({"name": "Installed target product", "status": "Incomplete" if inventory_errors else "No match", "detail": "No declared target ProductCode was found in the visible product inventory.", "complete": not inventory_errors})
+                checks.append({"name": "Patch applicability", "status": applicability["status"], "detail": "No installed target was available for patch-sequence evaluation.", "complete": applicability["complete"]})
             else:
                 unknown_count += 1
                 candidate_count += 1
@@ -4212,11 +4692,24 @@ def analyze_installer_cache():
                 classification = "Unknown MSP"
                 recommendation = "Keep until manually identified. Patch metadata could not provide a PatchCode for a reliable registration check."
                 evidence.append(metadata_error or "The MSP summary did not provide a PatchCode.")
+                applicability = {"status": "Could not determine", "complete": False, "results": [], "errors": [metadata_error] if metadata_error else []}
+                checks.append({"name": "Patch registration", "status": "Not checked", "detail": "A PatchCode is required for the registration check.", "complete": False})
+                checks.append({"name": "Installed target product", "status": "Not checked", "detail": "Target ProductCodes could not be read reliably.", "complete": False})
+                checks.append({"name": "Patch applicability", "status": "Could not determine", "detail": "Complete MSP metadata is required before evaluating applicability.", "complete": False})
 
         products = sorted({value for value in products if value})
         publishers = sorted({value for value in publishers if value})
         versions = sorted({value for value in versions if value})
         needs_review = classification.startswith("Probable orphan") or classification.startswith("Unknown")
+        package_complete = not metadata_error or referenced
+        confidence = installer_confidence(classification, coverage, package_complete, applicability.get("complete", True))
+        completed_checks = [item["name"] for item in checks if item.get("complete")]
+        incomplete_checks = [item["name"] for item in checks if not item.get("complete")]
+        backup_review = installer_backup_review_eligibility(classification, confidence, incomplete_checks, coverage)
+        if backup_review["status"] == "Backup review candidate":
+            recommendation = "Eligible for a read-only hash manifest and supervised backup review. This is not permission to move or delete the cache file."
+        elif backup_review["status"] == "Manual investigation":
+            recommendation = "Investigate only. Required checks or installer contexts are incomplete, so do not move or delete this cache file."
 
         files.append({
             "name": entry.name,
@@ -4226,20 +4719,33 @@ def analyze_installer_cache():
             "size_bytes": size_bytes,
             "size": format_size(size_bytes),
             "modified_at": dt.datetime.fromtimestamp(stat_result.st_mtime).isoformat(timespec="seconds"),
+            "modified_at_ns": str(stat_result.st_mtime_ns),
             "referenced": referenced,
             "needs_review": needs_review,
             "removal_candidate": classification.startswith("Probable orphan"),
             "classification": classification,
+            "confidence": confidence,
+            "applicability": applicability,
             "recommendation": recommendation,
             "products": products,
             "publishers": publishers,
             "versions": versions,
             "registry_paths": reference.get("registry_paths", [])[:5] if reference else [],
+            "registry_matches": registry_matches[:20],
             "product_code": package_metadata.get("product_code", ""),
             "upgrade_code": package_metadata.get("upgrade_code", ""),
             "patch_code": package_metadata.get("patch_code", ""),
+            "target_product_codes": package_metadata.get("target_product_codes", []),
+            "target_versions": package_metadata.get("target_versions", []),
+            "upgrade_codes": package_metadata.get("upgrade_codes", []),
+            "obsoleted_patch_codes": package_metadata.get("obsoleted_patch_codes", []),
+            "installed_target_products": installed_target_products,
             "metadata_error": metadata_error,
             "evidence": sorted(set(evidence)),
+            "checks": checks,
+            "completed_checks": completed_checks,
+            "incomplete_checks": incomplete_checks,
+            "backup_review": backup_review,
         })
 
     missing_registered_files = []
@@ -4260,12 +4766,18 @@ def analyze_installer_cache():
     files.sort(key=lambda item: item["size_bytes"], reverse=True)
     missing_registered_files.sort(key=lambda item: item["path"])
 
-    status = "Review Needed" if candidate_count or missing_registered_files or scan_errors or reference_errors or inventory_errors or uninstall_errors else "No Obvious Issue"
+    confidence_counts = {}
+    for item in files:
+        confidence_counts[item["confidence"]] = confidence_counts.get(item["confidence"], 0) + 1
+    backup_review_candidate_count = sum(1 for item in files if item["backup_review"]["eligible_for_manifest"])
+    status = "Review Needed" if candidate_count or missing_registered_files or scan_errors or source_errors else "No Obvious Issue"
 
     return {
-        "schema_version": "installer-cache-review-v2",
+        "schema_version": "installer-cache-review-v5",
+        "review_id": review_id,
         "collected_at": started_at,
         "cache_path": str(cache_dir),
+        "coverage": coverage,
         "summary": {
             "status": status,
             "cache_files": len(files),
@@ -4274,24 +4786,140 @@ def analyze_installer_cache():
             "registered_files": registered_count,
             "installed_product_matches": installed_product_match_count,
             "registered_patch_matches": registered_patch_match_count,
+            "installed_target_matches": installed_target_match_count,
             "probable_orphans": probable_orphan_count,
             "unknown_files": unknown_count,
             "orphan_candidates": candidate_count,
             "orphan_candidate_size_bytes": candidate_size,
             "orphan_candidate_size": format_size(candidate_size),
             "missing_registered_files": len(missing_registered_files),
+            "backup_review_candidates": backup_review_candidate_count,
+            "confidence_counts": confidence_counts,
         },
         "files": files,
         "missing_registered_files": missing_registered_files[:200],
-        "errors": sorted(set(reference_errors + inventory_errors + uninstall_errors + scan_errors)),
+        "errors": sorted(set(source_errors + scan_errors)),
         "safety_statement": "Review only. Do not delete Windows Installer cache files based only on this report.",
         "guidance": [
             "Use Windows Storage settings and Disk Cleanup before manually reviewing installer cache files.",
-            "Files with direct LocalPackage, installed ProductCode, or registered PatchCode matches should be kept.",
+            "Files with an exact registry path, installed ProductCode, registered PatchCode, or installed MSP target match should be kept.",
             "Probable orphan and unknown results are review evidence, not safe-to-delete verdicts.",
             "MSI product packages and MSP patch packages are evaluated with separate registration checks.",
+            "MSP applicability is evaluated through Windows Installer APIs without launching or applying the patch.",
+            "Permission or source errors lower confidence and are listed as incomplete checks.",
+            "Only probable-orphan files with High confidence, complete checks, and full source visibility become backup review candidates.",
+            "Backup review candidacy permits manifest export only; it does not authorize moving or deleting the file.",
             "Before any manual removal, export candidates, identify the related product where possible, keep a backup outside the Installer folder, and verify updates/uninstallers still work.",
         ],
+    }
+
+
+def build_installer_backup_review_manifest(review, current_review=None):
+    candidates = [
+        item for item in review.get("files", [])
+        if item.get("backup_review", {}).get("eligible_for_manifest")
+    ]
+    cache_root = INSTALLER_CACHE_DIR.resolve()
+    manifest_files = []
+    current_files = {
+        normalize_installer_reference(item.get("path")): item
+        for item in (current_review or {}).get("files", [])
+    }
+
+    for candidate in candidates:
+        manifest_item = {
+            "name": candidate.get("name"),
+            "path": candidate.get("path"),
+            "package_type": candidate.get("package_type"),
+            "size_bytes": candidate.get("size_bytes"),
+            "modified_at": candidate.get("modified_at"),
+            "modified_at_ns": candidate.get("modified_at_ns"),
+            "classification": candidate.get("classification"),
+            "confidence": candidate.get("confidence"),
+            "product_code": candidate.get("product_code"),
+            "patch_code": candidate.get("patch_code"),
+            "target_product_codes": candidate.get("target_product_codes", []),
+            "target_versions": candidate.get("target_versions", []),
+            "checks": candidate.get("checks", []),
+            "backup_review": dict(candidate.get("backup_review", {})),
+            "sha256": None,
+            "snapshot_matches": False,
+            "hash_error": None,
+        }
+        try:
+            if current_review is not None:
+                current = current_files.get(normalize_installer_reference(candidate.get("path")))
+                if not current:
+                    raise ValueError("The file is absent from the latest review. Run Installer Cache review again.")
+                manifest_item["current_classification"] = current.get("classification")
+                manifest_item["current_confidence"] = current.get("confidence")
+                eligibility = installer_backup_review_eligibility(
+                    current.get("classification", "Unknown"), current.get("confidence", "Unknown"),
+                    current.get("incomplete_checks", []), current_review.get("coverage", {}),
+                )
+                if not eligibility["eligible_for_manifest"]:
+                    raise ValueError("Current installer checks no longer qualify this file for a backup-review manifest. Run the review again.")
+
+            path = Path(candidate.get("path", "")).resolve(strict=True)
+            if path.parent != cache_root or path.suffix.lower() not in INSTALLER_CACHE_EXTENSIONS:
+                raise ValueError("Candidate path is outside the Windows Installer cache.")
+
+            before = path.stat()
+            manifest_item["current_size_bytes"] = int(before.st_size)
+            manifest_item["current_modified_at"] = dt.datetime.fromtimestamp(before.st_mtime).isoformat(timespec="seconds")
+            scan_time_ns = candidate.get("modified_at_ns")
+            matches_scan = (
+                int(before.st_size) == candidate.get("size_bytes")
+                and (str(before.st_mtime_ns) == str(scan_time_ns) if scan_time_ns is not None
+                     else manifest_item["current_modified_at"] == candidate.get("modified_at"))
+            )
+            if not matches_scan:
+                raise ValueError("The file changed since the displayed scan. Run Installer Cache review again.")
+            digest = file_sha256(path)
+            after = path.stat()
+            unchanged_during_hash = (before.st_size, before.st_mtime_ns, before.st_ino) == (after.st_size, after.st_mtime_ns, after.st_ino)
+            scan_modified_at = dt.datetime.fromtimestamp(after.st_mtime).isoformat(timespec="seconds")
+            snapshot_matches = (
+                unchanged_during_hash
+                and matches_scan
+            )
+            if not snapshot_matches:
+                raise ValueError("The file changed while it was being hashed. Run Installer Cache review again.")
+            manifest_item.update({
+                "sha256": digest if unchanged_during_hash else None,
+                "current_size_bytes": int(after.st_size),
+                "current_modified_at": scan_modified_at,
+                "snapshot_matches": snapshot_matches,
+                "hash_error": None,
+            })
+        except Exception as ex:
+            manifest_item["hash_error"] = str(ex)
+            manifest_item["backup_review"].update({
+                "status": "Manual investigation",
+                "eligible_for_manifest": False,
+                "reason": str(ex),
+                "requirements": [*candidate.get("backup_review", {}).get("requirements", []),
+                                 {"name": "Manifest revalidation", "met": False}],
+            })
+        manifest_files.append(manifest_item)
+
+    return {
+        "schema_version": "installer-backup-review-manifest-v2",
+        "generated_at": now_iso(),
+        "app_version": APP_VERSION,
+        "source_review_collected_at": review.get("collected_at"),
+        "source_review_id": review.get("review_id"),
+        "revalidated_at": (current_review or {}).get("collected_at"),
+        "revalidation_coverage": (current_review or {}).get("coverage"),
+        "revalidation_errors": (current_review or {}).get("errors", []),
+        "cache_path": review.get("cache_path"),
+        "coverage": review.get("coverage"),
+        "candidate_count": len(manifest_files),
+        "eligible_candidate_count": sum(1 for item in manifest_files if item["backup_review"].get("eligible_for_manifest")),
+        "invalidated_candidate_count": sum(1 for item in manifest_files if not item["backup_review"].get("eligible_for_manifest")),
+        "files": manifest_files,
+        "safety_statement": "Read-only manifest only. Backup review candidacy is not proof that a file is safe to move or delete.",
+        "actions_performed": [],
     }
 
 
@@ -4301,6 +4929,7 @@ class DashboardApp:
         self.active_scan = None
         self.active_scanner = None
         self.active_security_check = None
+        self.last_installer_cache_review = None
         self.shutting_down = False
         self.version_metadata = ensure_version_metadata()
 
@@ -4437,6 +5066,8 @@ class DashboardApp:
         return self.scan_status()
 
     def start_security_check(self, data):
+        if data.get("registryBackup"):
+            raise ValueError("Registry backup creation is not available in this version. Leave that option disabled.")
         with self.lock:
             if self.active_security_check and self.active_security_check.get("status") == "running":
                 raise RuntimeError("A Security Check is already running.")
@@ -4534,12 +5165,7 @@ class DashboardApp:
             self._set_security_step(active, "registry_backup", "Running", "Recording whether the user explicitly opted into registry backups.")
             if wait_or_cancel():
                 raise ScanCancelled("Security Check cancelled by user.")
-            backup_detail = (
-                "User opted into registry backups. Backup file creation is still planned for a later slice, so no backup file was created."
-                if active["options"]["registry_backup_opt_in"]
-                else "User did not opt into registry backups."
-            )
-            self._set_security_step(active, "registry_backup", "Complete", backup_detail)
+            self._set_security_step(active, "registry_backup", "Skipped", "Registry backup creation is unavailable in this version.")
 
             self._set_security_step(active, "standard_locations", "Running", "Reading standard Windows review locations in read-only mode.")
             findings, skipped_items = collect_standard_security_review(active["cancel_event"])
@@ -4780,7 +5406,29 @@ class DashboardApp:
         return [record_summary(record) for record in load_scan_records()]
 
     def installer_cache_review(self):
-        return analyze_installer_cache()
+        review = analyze_installer_cache()
+        with self.lock:
+            self.last_installer_cache_review = review
+        return review
+
+    def installer_backup_review_manifest(self, data):
+        if not bool(data.get("acknowledgeManifest", False)):
+            raise ValueError("Confirm that this export is a read-only review manifest, not permission to move or delete files.")
+        with self.lock:
+            review = self.last_installer_cache_review
+        if not review:
+            raise RuntimeError("Run Installer Cache review before exporting a backup-review manifest.")
+        if not data.get("reviewId") or data.get("reviewId") != review.get("review_id"):
+            raise RuntimeError("The displayed Installer Cache review is no longer current. Run the review again before exporting.")
+        current_review = analyze_installer_cache()
+        with self.lock:
+            if self.last_installer_cache_review is not review:
+                raise RuntimeError("Another Installer Cache review completed during export. Refresh the review and try again.")
+        manifest = build_installer_backup_review_manifest(review, current_review)
+        with self.lock:
+            if self.last_installer_cache_review is not review:
+                raise RuntimeError("Another Installer Cache review completed during export. Refresh the review and try again.")
+        return manifest
 
     def record(self, scan_id):
         path = scan_record_path(scan_id)
@@ -4943,6 +5591,20 @@ tr:hover td {{ background: #f8fbff; }}
 }}
 .process-controls input, .process-controls select {{ margin-top: 5px; }}
 .process-controls input[type="checkbox"] {{ width: auto; margin-right: 6px; }}
+.installer-controls {{
+    display: grid;
+    grid-template-columns: repeat(4, minmax(145px, 1fr)) minmax(170px, auto);
+    gap: 10px;
+    align-items: end;
+    margin: 12px 0;
+}}
+.installer-controls select {{ margin-top: 5px; }}
+.installer-controls input[type="checkbox"] {{ width: auto; margin-right: 6px; }}
+.installer-filter-count {{ color: var(--muted); font-size: 13px; margin-bottom: 8px; }}
+.installer-evidence {{ margin: 8px 0 0; }}
+.installer-evidence summary {{ padding: 4px 0; font-weight: 600; color: var(--accent-strong); }}
+.installer-evidence ul {{ margin: 6px 0 6px 18px; padding: 0; }}
+.installer-evidence li {{ margin: 4px 0; }}
 .tooltip-wrap {{
     display: inline-block;
     position: relative;
@@ -5112,6 +5774,7 @@ body.resizing-process-panes {{
 .pill {{ display: inline-block; padding: 3px 7px; border-radius: 999px; background: #e9eef5; margin: 2px 3px 2px 0; font-size: 12px; }}
 .pill.review {{ background: #fff2d8; color: var(--warn); }}
 .pill.info {{ background: #e8f3ff; color: var(--accent-strong); }}
+.pill.ok {{ background: #e5f5ec; color: var(--ok); }}
 .pill.bad {{ background: #fde8e7; color: var(--bad); }}
 .detail-panel {{ border-left: 3px solid var(--accent); padding-left: 12px; }}
 .tree {{ max-height: 460px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }}
@@ -5242,7 +5905,7 @@ summary {{ cursor: pointer; padding: 6px; }}
 .security-badge.future {{ background: #f3f5f8; color: var(--muted); }}
 @media (max-width: 980px) {{
     .layout, .form-grid, .grid, .manual-grid, .category-list, .security-layout, .security-mode-grid {{ grid-template-columns: 1fr; }}
-    .process-controls, .process-summary-grid {{ grid-template-columns: 1fr; }}
+    .process-controls, .installer-controls, .process-summary-grid {{ grid-template-columns: 1fr; }}
     .process-layout {{ display: block; }}
     .process-panel {{
         height: 58vh;
@@ -5461,10 +6124,11 @@ summary {{ cursor: pointer; padding: 6px; }}
 
         <section class="section">
             <h2>Installer Cache Review</h2>
-            <p class="muted">This read-only check compares <code>LocalPackage</code> references, reads MSI product metadata, checks installed product records, and evaluates MSP patch registrations separately. Use it to create a review list, not to clean automatically.</p>
+            <p class="muted">This read-only check compares exact registry paths, reads MSI/MSP metadata, checks installed products and patches, and asks Windows Installer whether an MSP applies to an installed target without launching it. Use it to create a review list, not to clean automatically.</p>
             <div class="actions">
                 <button id="refreshInstallerCache" class="primary">Scan installer cache</button>
                 <button id="exportInstallerCandidates" disabled>Export review candidates CSV</button>
+                <button id="exportInstallerBackupManifest" disabled>Export backup-review manifest</button>
             </div>
             <div id="installerCacheStatus" class="status-line">Installer cache has not been scanned yet.</div>
             <div id="installerCacheSummary" class="grid" style="margin-top:12px">
@@ -5473,18 +6137,29 @@ summary {{ cursor: pointer; padding: 6px; }}
                 <div class="metric"><div class="label">Direct References</div><div class="value">0</div></div>
                 <div class="metric"><div class="label">Installed Matches</div><div class="value">0</div></div>
                 <div class="metric"><div class="label">Patch Matches</div><div class="value">0</div></div>
+                <div class="metric"><div class="label">Installed MSP Targets</div><div class="value">0</div></div>
+                <div class="metric"><div class="label">Backup Review Candidates</div><div class="value">0</div></div>
                 <div class="metric"><div class="label">Probable Orphans</div><div class="value">0</div></div>
                 <div class="metric"><div class="label">Unknown</div><div class="value">0</div></div>
             </div>
+            <details class="installer-evidence"><summary>View installer context coverage</summary><div id="installerCoverageDetails" class="muted">Run the review to see which product, patch, and registry scopes were checked.</div></details>
         </section>
 
         <section class="section">
             <h2>Largest Installer Cache Files</h2>
             <p class="muted">Keep direct references and installed product or patch matches. Probable orphan and unknown rows still require manual review because registration visibility can be limited.</p>
+            <div class="installer-controls">
+                <div><label for="installerStatusFilter">Decision</label><select id="installerStatusFilter"><option value="all">All decisions</option><option value="keep">Keep evidence</option><option value="review">Needs review</option></select></div>
+                <div><label for="installerConfidenceFilter">Confidence</label><select id="installerConfidenceFilter"><option value="all">All confidence levels</option><option>Definitive</option><option>Strong</option><option>High</option><option>Medium</option><option>Low</option><option>Unknown</option></select></div>
+                <div><label for="installerTypeFilter">Package type</label><select id="installerTypeFilter"><option value="all">MSI and MSP</option><option value=".msi">MSI products</option><option value=".msp">MSP patches</option></select></div>
+                <div><label for="installerEligibilityFilter">Backup review</label><select id="installerEligibilityFilter"><option value="all">All eligibility states</option><option>Backup review candidate</option><option>Manual investigation</option><option>Not eligible</option></select></div>
+                <div><label><input id="installerIncompleteOnly" type="checkbox"> Incomplete checks only</label></div>
+            </div>
+            <div id="installerVisibleCount" class="installer-filter-count">0 files shown</div>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>File</th><th>Size</th><th>Modified</th><th>Status</th><th>Product / Publisher</th><th>Recommendation</th></tr></thead>
-                    <tbody id="installerCacheRows"><tr><td colspan="6">Scan installer cache to populate this table.</td></tr></tbody>
+                    <thead><tr><th>File</th><th>Size</th><th>Modified</th><th>Status</th><th>Confidence</th><th>Applicability</th><th>Product / Publisher</th><th>Recommendation / Evidence</th></tr></thead>
+                    <tbody id="installerCacheRows"><tr><td colspan="8">Scan installer cache to populate this table.</td></tr></tbody>
                 </table>
             </div>
         </section>
@@ -5506,7 +6181,7 @@ summary {{ cursor: pointer; padding: 6px; }}
                 <li>Use Windows Storage settings and Disk Cleanup first.</li>
                 <li>Run this read-only cache review.</li>
                 <li>Export review candidates if any are found.</li>
-                <li>Review the ProductCode, PatchCode, product, version, manufacturer, and registration evidence.</li>
+                <li>Review the ProductCode, PatchCode, target ProductCodes, applicability, confidence, and incomplete checks.</li>
                 <li>Keep a backup outside <code>C:\\Windows\\Installer</code> before any manual removal.</li>
                 <li>Confirm Windows Update, app updates, repair, modify, and uninstall operations still work.</li>
             </ol>
@@ -5544,7 +6219,7 @@ summary {{ cursor: pointer; padding: 6px; }}
 
                     <h3>Options</h3>
                     <div class="security-option-list">
-                        <label><input id="securityRegistryBackup" type="checkbox"> Create registry backups before reading selected registry locations</label>
+                        <label><input id="securityRegistryBackup" type="checkbox" disabled> Registry backups (unavailable in this version)</label>
                         <label>Compare against baseline
                             <select id="securityBaselineSelect">
                                 <option value="">No baseline comparison</option>
@@ -6082,16 +6757,86 @@ function installerJoined(values) {{
 
 function installerStatusBadge(file) {{
     const label = file.classification || (file.referenced ? 'Registered' : 'Unknown');
-    const keepMatch = ['Registered', 'Installed product match', 'Installed app name match', 'Registered patch match'].includes(label);
+    const keepMatch = ['Registered', 'Installed product match', 'Installed app name match', 'Registered patch match', 'Installed target match'].includes(label);
     const badgeClass = keepMatch ? 'info' : (label.startsWith('Unknown') ? 'bad' : 'review');
     return `<span class="pill ${{badgeClass}}">${{esc(label)}}</span>`;
+}}
+
+function installerConfidenceBadge(file) {{
+    const label = file.confidence || 'Unknown';
+    const badgeClass = ['Definitive', 'Strong'].includes(label) ? 'info' : (label === 'High' ? 'ok' : (label === 'Medium' ? 'review' : 'bad'));
+    return `<span class="pill ${{badgeClass}}">${{esc(label)}}</span>`;
+}}
+
+function installerBackupReviewBadge(file) {{
+    const label = file.backup_review?.status || 'Not eligible';
+    const badgeClass = label === 'Backup review candidate' ? 'ok' : (label === 'Manual investigation' ? 'review' : 'info');
+    return `<span class="pill ${{badgeClass}}">${{esc(label)}}</span>`;
+}}
+
+function installerManifestReady() {{
+    return !state.installerCache?.manifestRequiresRefresh
+        && asArray(state.installerCache?.files).some(file => file.backup_review?.eligible_for_manifest);
+}}
+
+function installerManifestIssues(manifest) {{
+    return asArray(manifest.files).filter(file => file.hash_error || !file.snapshot_matches || !file.backup_review?.eligible_for_manifest);
+}}
+
+function installerEvidenceDetails(file) {{
+    const checks = asArray(file.checks);
+    const evidence = asArray(file.evidence);
+    const registryMatches = asArray(file.registry_matches);
+    const targets = asArray(file.installed_target_products);
+    const backupReview = file.backup_review || {{}};
+    const checkItems = checks.map(check => `<li><strong>${{esc(check.name || 'Check')}}: ${{esc(check.status || 'Unknown')}}</strong> - ${{esc(check.detail || '')}}</li>`).join('');
+    const evidenceItems = evidence.map(item => `<li>${{esc(item)}}</li>`).join('');
+    const registryItems = registryMatches.map(item => `<li><code>${{esc(item.registry_path || '')}}</code> [${{esc(item.property || '')}}]</li>`).join('');
+    const targetItems = targets.map(item => `<li>${{esc(item.product_name || 'Unnamed product')}} ${{esc(item.product_version || '')}} <code>${{esc(item.product_code || '')}}</code></li>`).join('');
+    const targetCodes = asArray(file.target_product_codes).length
+        ? `<li><strong>Declared target ProductCodes:</strong> <code>${{esc(installerJoined(file.target_product_codes))}}</code></li>`
+        : '';
+    const requirementItems = asArray(backupReview.requirements).map(item => `<li><strong>${{item.met ? 'Met' : 'Not met'}}:</strong> ${{esc(item.name || 'Requirement')}}</li>`).join('');
+    return `<details class="installer-evidence"><summary>View evidence</summary><p><strong>Backup review:</strong> ${{esc(backupReview.reason || 'No eligibility assessment is available.')}}</p><ul>${{requirementItems}}${{checkItems}}${{targetCodes}}${{targetItems}}${{registryItems}}${{evidenceItems}}</ul></details>`;
+}}
+
+function renderInstallerFiles() {{
+    const files = asArray(state.installerCache?.files);
+    const statusFilter = $('installerStatusFilter').value;
+    const confidenceFilter = $('installerConfidenceFilter').value;
+    const typeFilter = $('installerTypeFilter').value;
+    const eligibilityFilter = $('installerEligibilityFilter').value;
+    const incompleteOnly = $('installerIncompleteOnly').checked;
+    const visible = files.filter(file => {{
+        if (statusFilter === 'keep' && file.needs_review) return false;
+        if (statusFilter === 'review' && !file.needs_review) return false;
+        if (confidenceFilter !== 'all' && file.confidence !== confidenceFilter) return false;
+        if (typeFilter !== 'all' && file.extension !== typeFilter) return false;
+        if (eligibilityFilter !== 'all' && file.backup_review?.status !== eligibilityFilter) return false;
+        if (incompleteOnly && !asArray(file.incomplete_checks).length) return false;
+        return true;
+    }});
+
+    $('installerVisibleCount').textContent = `${{visible.length}} of ${{files.length}} files shown`;
+    $('installerCacheRows').innerHTML = visible.map(file => `
+        <tr>
+            <td><strong>${{esc(file.name)}}</strong><br><span class="muted">${{esc(file.package_type || file.extension || 'Installer package')}}</span><br><code>${{esc(file.path)}}</code></td>
+            <td data-sort="${{esc(file.size_bytes || 0)}}">${{esc(file.size || '0 B')}}</td>
+            <td>${{esc(file.modified_at || 'Unavailable')}}</td>
+            <td>${{installerStatusBadge(file)}}</td>
+            <td>${{installerConfidenceBadge(file)}}<br>${{installerBackupReviewBadge(file)}}${{asArray(file.incomplete_checks).length ? `<br><span class="muted">${{file.incomplete_checks.length}} incomplete</span>` : ''}}</td>
+            <td>${{esc(file.applicability?.status || 'Not checked')}}</td>
+            <td>${{esc(installerJoined(file.products))}}<br><span class="muted">${{esc(installerJoined(file.publishers))}} | ${{esc(installerJoined(file.versions))}}</span><br><code>${{esc(file.product_code || file.patch_code || 'No package identifier')}}</code></td>
+            <td>${{esc(file.recommendation || 'Review before making any manual change.')}}${{installerEvidenceDetails(file)}}</td>
+        </tr>
+    `).join('') || '<tr><td colspan="8">No installer files match the current filters.</td></tr>';
 }}
 
 function renderInstallerCache(data) {{
     state.installerCache = data || null;
     const summary = data?.summary || {{}};
     $('installerCacheStatus').innerHTML = data
-        ? `<strong>${{esc(summary.status || 'Review complete')}}</strong><br><span class="muted">Cache path: <code>${{esc(data.cache_path || 'Unavailable')}}</code> | Collected: ${{esc(data.collected_at || 'Unavailable')}}</span>`
+        ? `<strong>${{esc(summary.status || 'Review complete')}}</strong><br><span class="muted">Coverage: ${{esc(data.coverage?.status || 'Unavailable')}} | Cache path: <code>${{esc(data.cache_path || 'Unavailable')}}</code> | Collected: ${{esc(data.collected_at || 'Unavailable')}}</span>`
         : 'Installer cache has not been scanned yet.';
     $('installerCacheSummary').innerHTML = [
         metric('Status', summary.status || 'Not Run'),
@@ -6099,23 +6844,22 @@ function renderInstallerCache(data) {{
         metric('Direct References', summary.registered_files || 0),
         metric('Installed MSI Matches', summary.installed_product_matches || 0),
         metric('Registered MSP Matches', summary.registered_patch_matches || 0),
+        metric('Installed MSP Targets', summary.installed_target_matches || 0),
+        metric('Backup Review Candidates', summary.backup_review_candidates || 0),
         metric('Probable Orphans', summary.probable_orphans || 0),
         metric('Unknown', summary.unknown_files || 0),
         metric('Review Size', summary.orphan_candidate_size || '0 B'),
         metric('Missing Registered', summary.missing_registered_files || 0)
     ].join('');
 
+    const registryCoverage = data?.coverage?.registry || {{}};
+    const contextRows = asArray(data?.coverage?.installer_contexts).map(item =>
+        `<li><strong>${{esc(item.source || 'Installer')}} - ${{esc(item.scope || 'scope')}}:</strong> ${{esc(item.status || 'Unknown')}}; contexts: ${{esc(installerJoined(item.contexts))}}; items: ${{esc(item.items_enumerated || 0)}}${{item.detail ? `; ${{esc(item.detail)}}` : ''}}</li>`
+    ).join('');
+    $('installerCoverageDetails').innerHTML = `<p><strong>Registry views:</strong> ${{esc(registryCoverage.status || 'Unavailable')}}. Attempted: ${{esc(installerJoined(registryCoverage.attempted_views))}}. Readable: ${{esc(installerJoined(registryCoverage.readable_views))}}.</p><ul>${{contextRows || '<li>No installer context details are available.</li>'}}</ul>`;
+
     const files = asArray(data?.files);
-    $('installerCacheRows').innerHTML = files.map(file => `
-        <tr>
-            <td><strong>${{esc(file.name)}}</strong><br><span class="muted">${{esc(file.package_type || file.extension || 'Installer package')}}</span><br><code>${{esc(file.path)}}</code></td>
-            <td data-sort="${{esc(file.size_bytes || 0)}}">${{esc(file.size || '0 B')}}</td>
-            <td>${{esc(file.modified_at || 'Unavailable')}}</td>
-            <td>${{installerStatusBadge(file)}}</td>
-            <td>${{esc(installerJoined(file.products))}}<br><span class="muted">${{esc(installerJoined(file.publishers))}} | ${{esc(installerJoined(file.versions))}}</span><br><code>${{esc(file.product_code || file.patch_code || 'No package identifier')}}</code></td>
-            <td>${{esc(file.recommendation || 'Review before making any manual change.')}}<br><span class="muted">${{esc(installerJoined(file.evidence))}}</span></td>
-        </tr>
-    `).join('') || '<tr><td colspan="6">No MSI/MSP cache files were found or available to read.</td></tr>';
+    renderInstallerFiles();
 
     const missing = asArray(data?.missing_registered_files);
     $('installerMissingRows').innerHTML = missing.map(item => `
@@ -6127,6 +6871,7 @@ function renderInstallerCache(data) {{
     `).join('') || '<tr><td colspan="3">No missing registered cache files were reported.</td></tr>';
 
     $('exportInstallerCandidates').disabled = !files.some(file => file.needs_review);
+    $('exportInstallerBackupManifest').disabled = !installerManifestReady();
 
     const errors = asArray(data?.errors);
     if (errors.length) {{
@@ -6135,9 +6880,11 @@ function renderInstallerCache(data) {{
 }}
 
 async function refreshInstallerCache() {{
+    state.installerCache = null;
     $('refreshInstallerCache').disabled = true;
     $('exportInstallerCandidates').disabled = true;
-    $('installerCacheStatus').innerHTML = 'Reading Windows Installer cache and registry references...';
+    $('exportInstallerBackupManifest').disabled = true;
+    $('installerCacheStatus').innerHTML = 'Reading cache files, registry paths, package metadata, installed targets, and patch applicability...';
     showActionAlert('info', 'Installer Cache Scan Started', 'The dashboard is running a local read-only review of cached MSI/MSP files.', [
         'No files will be deleted or changed.',
         'This can take a moment on systems with many installer packages.'
@@ -6153,6 +6900,8 @@ async function refreshInstallerCache() {{
             `Direct references: ${{summary.registered_files || 0}}`,
             `Installed product matches: ${{summary.installed_product_matches || 0}}`,
             `Registered patch matches: ${{summary.registered_patch_matches || 0}}`,
+            `Installed MSP target matches: ${{summary.installed_target_matches || 0}}`,
+            `Backup review candidates: ${{summary.backup_review_candidates || 0}}`,
             `Probable orphans: ${{summary.probable_orphans || 0}}`,
             `Unknown files: ${{summary.unknown_files || 0}}`,
             'Review candidates still require manual verification before any cleanup decision.',
@@ -6160,7 +6909,7 @@ async function refreshInstallerCache() {{
         ]);
     }} catch (error) {{
         $('installerCacheStatus').textContent = error.message;
-        $('installerCacheRows').innerHTML = '<tr><td colspan="6">Installer cache review failed.</td></tr>';
+        $('installerCacheRows').innerHTML = '<tr><td colspan="8">Installer cache review failed.</td></tr>';
         $('installerMissingRows').innerHTML = '<tr><td colspan="3">Installer cache review failed.</td></tr>';
         showActionAlert('error', 'Installer Cache Review Failed', error.message, [
             'Run the dashboard as Administrator if Windows blocks access to installer cache or registry metadata.',
@@ -6169,6 +6918,7 @@ async function refreshInstallerCache() {{
     }} finally {{
         $('refreshInstallerCache').disabled = false;
         $('exportInstallerCandidates').disabled = !asArray(state.installerCache?.files).some(file => file.needs_review);
+        $('exportInstallerBackupManifest').disabled = !installerManifestReady();
     }}
 }}
 
@@ -6186,19 +6936,29 @@ function exportInstallerCandidatesCsv() {{
         return;
     }}
 
-    const header = ['File', 'Package Type', 'Size MB', 'Modified', 'Status', 'Product', 'Publisher', 'Version', 'ProductCode', 'UpgradeCode', 'PatchCode', 'Evidence', 'Full Path', 'Recommendation'];
+    const header = ['File', 'Package Type', 'Size MB', 'Modified', 'Status', 'Confidence', 'Backup Review Status', 'Backup Review Reason', 'Applicability', 'Product', 'Publisher', 'Version', 'ProductCode', 'UpgradeCode', 'PatchCode', 'Target ProductCodes', 'Target Versions', 'Installed Targets', 'Completed Checks', 'Incomplete Checks', 'Exact Registry Matches', 'Evidence', 'Full Path', 'Recommendation'];
     const rows = candidates.map(file => [
         file.name,
         file.package_type || file.extension || '',
         ((file.size_bytes || 0) / 1048576).toFixed(2),
         file.modified_at || '',
         file.classification || 'Unknown',
+        file.confidence || 'Unknown',
+        file.backup_review?.status || 'Not eligible',
+        file.backup_review?.reason || '',
+        file.applicability?.status || 'Not checked',
         installerJoined(file.products),
         installerJoined(file.publishers),
         installerJoined(file.versions),
         file.product_code || '',
         file.upgrade_code || '',
         file.patch_code || '',
+        installerJoined(file.target_product_codes),
+        installerJoined(file.target_versions),
+        asArray(file.installed_target_products).map(item => `${{item.product_name || 'Unnamed product'}} ${{item.product_version || ''}} ${{item.product_code || ''}}`),
+        installerJoined(file.completed_checks),
+        installerJoined(file.incomplete_checks),
+        asArray(file.registry_matches).map(item => `${{item.registry_path || ''}} [${{item.property || ''}}]`),
         installerJoined(file.evidence),
         file.path || '',
         file.recommendation || ''
@@ -6210,6 +6970,65 @@ function exportInstallerCandidatesCsv() {{
         `Candidates exported: ${{candidates.length}}`,
         'This CSV is a review list, not a delete list.'
     ]);
+}}
+
+async function exportInstallerBackupManifest() {{
+    const eligible = asArray(state.installerCache?.files).filter(file => file.backup_review?.eligible_for_manifest);
+    if (!installerManifestReady()) {{
+        showActionAlert('info', 'No Backup Review Candidates', 'The latest review has no files that meet every manifest requirement.', [
+            'Low, Medium, Unknown, incomplete, registered, and installed-match results are excluded.'
+        ]);
+        return;
+    }}
+
+    const button = $('exportInstallerBackupManifest');
+    const originalText = button.textContent;
+    button.disabled = true;
+    $('refreshInstallerCache').disabled = true;
+    button.textContent = 'Validating candidates...';
+    showActionAlert('info', 'Building Backup Review Manifest', 'The server is repeating installer checks and calculating SHA-256 hashes for qualifying candidates.', [
+        `Files to hash: ${{eligible.length}}`,
+        'No installer files will be moved, deleted, launched, or changed.'
+    ]);
+    try {{
+        const manifest = await api('/api/installer-cache/backup-review-manifest', {{
+            method: 'POST',
+            body: JSON.stringify({{ acknowledgeManifest: true, reviewId: state.installerCache.review_id }})
+        }});
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        downloadSecurityBlob(`installer-backup-review-manifest-${{stamp}}.json`, JSON.stringify(manifest, null, 2), 'application/json');
+        const issues = installerManifestIssues(manifest);
+        if (issues.length) {{
+            const invalidPaths = new Map(issues.map(file => [file.path, file]));
+            asArray(state.installerCache.files).forEach(file => {{
+                const invalid = invalidPaths.get(file.path);
+                if (!invalid) return;
+                file.backup_review = invalid.backup_review;
+                file.recommendation = invalid.hash_error || 'Run Installer Cache review again.';
+                file.incomplete_checks = [...new Set([...asArray(file.incomplete_checks), 'Manifest revalidation'])];
+                file.checks = [...asArray(file.checks), {{ name: 'Manifest revalidation', status: 'Invalidated', detail: file.recommendation, complete: false }}];
+            }});
+            state.installerCache.manifestRequiresRefresh = true;
+            state.installerCache.summary.backup_review_candidates = asArray(state.installerCache.files).filter(file => file.backup_review?.eligible_for_manifest).length;
+            renderInstallerCache(state.installerCache);
+        }}
+        showActionAlert(issues.length ? 'warning' : 'success', issues.length ? 'Manifest Requires A New Review' : 'Backup Review Manifest Exported', 'The manifest records current validation results for the displayed candidates.', [
+            `Candidates checked: ${{manifest.candidate_count || 0}}`,
+            `Validated candidates: ${{manifest.eligible_candidate_count || 0}}`,
+            `Invalidated files: ${{issues.length}}`,
+            'The manifest is evidence for supervised review, not permission to move or delete files.'
+        ]);
+    }} catch (error) {{
+        if (state.installerCache) state.installerCache.manifestRequiresRefresh = true;
+        showActionAlert('error', 'Manifest Export Failed', error.message, [
+            'Run Installer Cache review again if the server was restarted.',
+            'No installer files were changed.'
+        ]);
+    }} finally {{
+        button.textContent = originalText;
+        button.disabled = !installerManifestReady();
+        $('refreshInstallerCache').disabled = false;
+    }}
 }}
 
 function renderSecurityProgress(steps = []) {{
@@ -8019,6 +8838,9 @@ $('downloadProcessReport').addEventListener('click', downloadProcessReport);
 $('downloadVerificationReport').addEventListener('click', downloadVerificationReport);
 $('refreshInstallerCache').addEventListener('click', refreshInstallerCache);
 $('exportInstallerCandidates').addEventListener('click', exportInstallerCandidatesCsv);
+$('exportInstallerBackupManifest').addEventListener('click', exportInstallerBackupManifest);
+['installerStatusFilter', 'installerConfidenceFilter', 'installerTypeFilter', 'installerEligibilityFilter'].forEach(id => $(id).addEventListener('change', renderInstallerFiles));
+$('installerIncompleteOnly').addEventListener('change', renderInstallerFiles);
 $('downloadSecurityFullReport').addEventListener('click', () => downloadSecurityReport('full'));
 $('downloadSecurityFindingsReport').addEventListener('click', () => downloadSecurityReport('findings'));
 $('downloadSecurityVerificationReport').addEventListener('click', () => downloadSecurityReport('verification'));
@@ -8203,6 +9025,11 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 json_response(self, APP_STATE.remove_security_allowlist_entry(data))
             elif path == "/api/security-allowlist/import":
                 json_response(self, APP_STATE.import_security_allowlist(data))
+            elif path == "/api/installer-cache/backup-review-manifest":
+                if not self.is_local_request():
+                    json_response(self, {"error": "Installer manifest export is only allowed from localhost."}, status=403)
+                    return
+                json_response(self, APP_STATE.installer_backup_review_manifest(data))
             elif path == "/api/shutdown":
                 if not self.is_local_request():
                     json_response(self, {"error": "Shutdown is only allowed from localhost."}, status=403)
