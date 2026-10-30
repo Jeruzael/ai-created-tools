@@ -114,6 +114,10 @@ markup and controller tests are not visual proof. Pixel layout, overflow,
 screen-reader behavior, native clipboard/confirm dialogs and actual browser
 focus handling still need human verification. Text/focus colors were selected
 for contrast, but a complete rendered WCAG AA audit is **NOT VERIFIED**.
+The attempted hidden background launch of the synthetic preview was also blocked
+by the local execution policy. No alternate launch method was attempted, and no
+running preview server or working preview URL is claimed. The successful
+controlled `--smoke` check above is a separate, completed test, not a live server.
 
 Administrator behavior, native Advanced Review, successful Authenticode checks
 and eligible real-cache manifest hashing also remain **NOT VERIFIED**. Existing

@@ -58,7 +58,8 @@ tests and binds native DOM controls for the browser.
 - [x] Run focused tests, full strict suite and controlled synthetic flow checks.
 - [x] Review complete diff; resolve material findings and rerun verification.
 - [x] Document actual evidence, manual viewport procedure and Phase 2 remainder.
-- [ ] Commit/push; open and attach PR against master; report CI and limitations.
+- [x] Commit/push; open and attach draft PR #2 against master. Hosted head-specific
+  CI outcomes and limitations are recorded on the PR after execution.
 
 ## Verification Ledger
 
@@ -76,3 +77,6 @@ tests and binds native DOM controls for the browser.
   incomplete completion warnings. Focused 42-test gate is green.
 - Reviewer recheck: no unresolved original findings; 42 focused tests rerun and
   passed. Final full strict suite: 258 passed, all failure/skip counters zero.
+- Publishing: draft PR #2 opened and attached; visual approval is pending.
+  Hidden background preview launch was policy-blocked; no alternate launch or
+  active URL is claimed. Human startup remains documented.
