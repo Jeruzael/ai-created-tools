@@ -2,13 +2,13 @@
 
 - Document: Folder README and operations guide
 - Project: Windows Disk Usage Dashboard
-- App version: `1.28.0`
-- Documentation version: `1.28`
-- Date: 2026-10-30
+- App version: `1.29.0`
+- Documentation version: `1.29`
+- Date: 2026-10-31
 - Prepared by: Codex
 - Prepared for: users and maintainers working inside the `windows/` folder
 - Status: Revised
-- Revision notes: Fixed incomplete coverage reporting and stale manifest eligibility, added export revalidation and automated regression tests, and disabled the unfinished registry-backup option.
+- Revision notes: Hardened local API requests, job admission and shutdown, atomic local persistence, collector coverage reporting, and Windows CI while retaining read-only Installer Cache protections.
 
 ## 1. Purpose
 
@@ -247,7 +247,7 @@ Do not commit generated reports or records. They may contain private paths, user
 
 ## 11. Technical Notes
 
-- Requires Python 3.9 or newer.
+- Use Python 3.11 or newer; CI validates Python 3.11 and 3.13.
 - No external Python packages are required.
 - The local server binds only to `127.0.0.1` or `localhost`.
 - PowerShell/CIM is used for local Windows process and system metadata.
@@ -258,13 +258,30 @@ Do not commit generated reports or records. They may contain private paths, user
 
 ## 12. Verification
 
-Run the automated suite from this `windows` folder:
+For release verification, install Node.js as a development tool and run the strict
+entry point from this folder. Python is the application's only runtime dependency;
+CI tests Python 3.11 and 3.13 with Node.js 22.
+
+```powershell
+python tests/verify_project.py
+```
+
+This checks syntax, side-effect-free imports, startup/help, loopback binding,
+version metadata, dependencies, private-file ignore rules, and the full test suite.
+Any skipped or expected-failing test makes this command fail. Windows GitHub
+Actions runs the same checks in [.github/workflows/windows-hardening.yml](.github/workflows/windows-hardening.yml).
+
+For development-only test discovery:
 
 ```powershell
 python -m unittest discover -s tests -v
 ```
 
-The tests use temporary fixtures and simulate Windows API failures. They do not modify the system Installer cache or registry. Embedded JavaScript behavior tests run when Node.js is available and are explicitly skipped otherwise.
+The tests use temporary fixtures and simulate Windows API failures. They do not
+scan private runner data or modify the system Installer cache, registry or
+Defender settings. Plain `unittest` may skip JavaScript checks without Node.js;
+that is not sufficient for release verification. The original 28 Installer/JS
+regression behaviors remain covered alongside the hardening tests.
 
 Compile check:
 
@@ -313,7 +330,7 @@ Try:
 py .\DiskUsageHtmlReport.py
 ```
 
-If that fails, install Python 3.9 or newer and add it to PATH.
+If that fails, install Python 3.11 or newer and add it to PATH.
 
 ### Port is busy
 
@@ -345,6 +362,7 @@ Before handing off changes:
 
 - Run `python -m py_compile .\DiskUsageHtmlReport.py`.
 - Run `python -m unittest discover -s tests -v`.
+- Run `python tests/verify_project.py` with Node.js installed; do not accept skipped release checks.
 - Run `python .\DiskUsageHtmlReport.py --help`.
 - Start the local dashboard and check the main tabs.
 - Confirm generated/private files are ignored by Git.
@@ -354,4 +372,27 @@ Before handing off changes:
 
 ## 15. Current Version Summary
 
-Version `1.28.0` fixes hidden registry/API failures and stale manifest eligibility. Exports repeat registration checks, validate precise file snapshots, and reject superseded scans. Invalidated entries lose eligibility and trigger a warning. Registry backup creation is visibly unavailable and rejected by the backend. A standard-library regression suite covers these behaviors.
+Version `1.29.0` is a stabilization release. Requests are checked before actions
+run; disk/security/Installer work cannot overlap; failed writes preserve the last
+valid local JSON; and collector coverage is reported separately from findings.
+Installer manifests remain read-only, revalidated and bound to the displayed
+review. Registry backups remain unavailable.
+
+For users:
+
+- Refresh a previously open dashboard tab after upgrading. Its old session token
+  will no longer work; do not disable the protection to work around an error.
+- A completed Security Check is not a claim of complete inspection. Read the
+  collector coverage and skipped-source details. Disabled, denied and unavailable
+  sources are not clean results.
+- If local data needs recovery, stop the dashboard, preserve the affected file,
+  and restore a checked private backup or repair it deliberately. Do not reset an
+  unexpected damaged allowlist to empty just to dismiss the error.
+- No automatic cleanup, quarantine, Windows changes, telemetry or upload was added.
+
+For maintainers, see the [v1.29 hardening and API guide](docs/v1.29-hardening.md),
+[pre-implementation audit](docs/v1.29-hardening-audit.md), and
+[verification record](docs/v1.29-verification.md). The dated requirements,
+design context and original Word document are historical design artifacts, not
+the current release contract. This folder is the Git application repository;
+the parent folder is a separate checkout and is not reorganized by this release.

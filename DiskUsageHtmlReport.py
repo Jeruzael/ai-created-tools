@@ -1,14 +1,18 @@
 import argparse
+import copy
 import ctypes
 import ctypes.wintypes as wintypes
 import datetime as dt
+import errno
 import hashlib
 import heapq
 import html
 import json
+import math
 import os
 from pathlib import Path
 import re
+import secrets
 import shutil
 import stat
 import subprocess
@@ -20,6 +24,7 @@ import uuid
 import webbrowser
 import xml.etree.ElementTree as ET
 from collections import defaultdict
+from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -30,8 +35,8 @@ except ImportError:  # pragma: no cover - non-Windows fallback
 
 sys.setrecursionlimit(10000)
 
-APP_VERSION = "1.28.0"
-DOC_VERSION = "1.28"
+APP_VERSION = "1.29.0"
+DOC_VERSION = "1.29"
 APP_DIR = Path(__file__).resolve().parent
 RECORDS_DIR = APP_DIR / "scan_records"
 REPORTS_DIR = APP_DIR / "generated_reports"
@@ -42,6 +47,9 @@ VERSION_FILE = APP_DIR / "dashboard_version.json"
 INSTALLER_CACHE_DIR = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Installer"
 INSTALLER_CACHE_EXTENSIONS = {".msi", ".msp"}
 INSTALLER_USERDATA_SUBKEY = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData"
+MAX_JSON_REQUEST_BYTES = 4 * 1024 * 1024
+HTTP_REQUEST_TIMEOUT_SECONDS = 10
+MAX_HTTP_WORKERS = 16
 
 
 class ScanCancelled(Exception):
@@ -958,6 +966,125 @@ def now_iso() -> str:
     return dt.datetime.now().isoformat(timespec="seconds")
 
 
+class PersistenceCorruptionError(RuntimeError):
+    """Existing local data requires deliberate repair or checked backup recovery."""
+
+
+class PersistenceLockError(RuntimeError):
+    """A competing allowlist transaction did not release its lock in time."""
+
+
+_ALLOWLIST_THREAD_LOCK = threading.RLock()
+_ALLOWLIST_LOCK_TIMEOUT_SECONDS = 5.0
+
+
+def _lock_allowlist_file(handle, release=False):
+    if os.name == "nt":
+        import msvcrt
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK if release else msvcrt.LK_NBLCK, 1)
+    else:
+        import fcntl
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN if release else fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+@contextmanager
+def _allowlist_transaction():
+    # Lock a stable sibling, not the destination inode replaced by atomic writes.
+    deadline = time.monotonic() + _ALLOWLIST_LOCK_TIMEOUT_SECONDS
+    message = "Allowlist transaction lock is busy; retry after the other writer finishes."
+    if not _ALLOWLIST_THREAD_LOCK.acquire(timeout=max(0.0, deadline - time.monotonic())):
+        raise PersistenceLockError(message)
+    try:
+        if time.monotonic() >= deadline:
+            raise PersistenceLockError(message)
+        ensure_app_dirs()
+        lock_path = ALLOWLIST_FILE.with_name(f".{ALLOWLIST_FILE.name}.lock")
+        descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+        with os.fdopen(descriptor, "r+b") as handle:
+            while True:
+                if time.monotonic() >= deadline:
+                    raise PersistenceLockError(message)
+                try:
+                    _lock_allowlist_file(handle)
+                    break
+                except OSError as error:
+                    if error.errno not in (errno.EACCES, errno.EAGAIN, errno.EDEADLK):
+                        raise
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise PersistenceLockError(message) from error
+                    time.sleep(min(0.05, remaining))
+            try:
+                if time.monotonic() >= deadline:
+                    raise PersistenceLockError(message)
+                yield
+            finally:
+                _lock_allowlist_file(handle, release=True)
+        # Do not unlink: waiters must continue locking the same file.
+    finally:
+        _ALLOWLIST_THREAD_LOCK.release()
+
+
+def atomic_write_json(path, payload):
+    """Publish JSON and return payload unchanged; callers own schemas and locking.
+
+    The parent must exist. Failure before replacement preserves the destination.
+    This does not promise filesystem-independent power-loss durability.
+    """
+    encoded = json.dumps(payload, indent=2, ensure_ascii=False, allow_nan=False).encode("utf-8")
+    path = Path(path)
+    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            descriptor = None
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        Path(temporary).unlink(missing_ok=True)
+    return payload
+
+
+def _reject_json_constant(value):
+    raise ValueError(f"Non-finite JSON number: {value}")
+
+
+def _parse_finite_json_float(value):
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError("JSON number exceeds the finite numeric range.")
+    return number
+
+
+def _corruption_error(path):
+    return PersistenceCorruptionError(
+        f"Invalid local data in {Path(path).name}. Stop the app, preserve this file, "
+        "then restore a validated private backup or repair it manually. "
+        "The existing file has not been replaced."
+    )
+
+
+def _require_json_object(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("Saved JSON must be an object.")
+    return payload
+
+
+def load_validated_json(path, validator):
+    """Read without repair; preserve OS errors and distinguish invalid saved data."""
+    path = Path(path)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"), parse_constant=_reject_json_constant,
+                          parse_float=_parse_finite_json_float)
+        return validator(data)
+    except (ValueError, TypeError) as error:
+        raise _corruption_error(path) from error
+
+
 def ensure_app_dirs():
     RECORDS_DIR.mkdir(exist_ok=True)
     REPORTS_DIR.mkdir(exist_ok=True)
@@ -965,17 +1092,21 @@ def ensure_app_dirs():
     BASELINES_DIR.mkdir(exist_ok=True)
 
 
-def ensure_version_metadata():
-    ensure_app_dirs()
+def ensure_version_metadata(persist=True):
     metadata = {
         "app_version": APP_VERSION,
         "documentation_version": DOC_VERSION,
-        "last_updated": "2026-10-30",
+        "last_updated": "2026-10-31",
         "revision_notes": (
-            "Fixed installer coverage error reporting and stale manifest eligibility, "
-            "added scan-bound export revalidation and regression tests, and disabled unavailable registry backups."
+            "Hardened local HTTP requests, serialized job lifecycles and atomic local persistence, "
+            "added explicit collector coverage and Windows CI, while preserving read-only installer safeguards."
         ),
         "affected_areas": [
+            "local_api_security",
+            "job_lifecycle",
+            "atomic_persistence",
+            "security_collector_coverage",
+            "windows_ci",
             "browser_dashboard",
             "installer_cache_review",
             "installer_cache_api",
@@ -1001,16 +1132,20 @@ def ensure_version_metadata():
             "safety_messaging",
             "documentation_versioning"
         ],
-        "compatibility_notes": "Default run starts the browser app. Use --scan-once for legacy one-shot HTML report generation."
+        "compatibility_notes": "Private API requests require the session token; POST bodies require bounded JSON. Historical missing collector coverage is not recorded. Use --scan-once for legacy HTML reports."
     }
 
+    if not persist:
+        return metadata
+
+    ensure_app_dirs()
     try:
-        existing = json.loads(VERSION_FILE.read_text(encoding="utf-8")) if VERSION_FILE.exists() else {}
-    except Exception:
+        existing = load_validated_json(VERSION_FILE, _require_json_object)
+    except FileNotFoundError:
         existing = {}
 
     if existing != metadata:
-        VERSION_FILE.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        atomic_write_json(VERSION_FILE, metadata)
 
     return metadata
 
@@ -1035,12 +1170,54 @@ def html_response(handler, content, status=200):
     handler.wfile.write(body)
 
 
+class HttpRequestError(ValueError):
+    def __init__(self, message, status=400):
+        super().__init__(message)
+        self.status = status
+
+
 def read_request_json(handler):
-    length = int(handler.headers.get("Content-Length", "0") or "0")
-    if length <= 0:
-        return {}
-    body = handler.rfile.read(length).decode("utf-8")
-    return json.loads(body) if body.strip() else {}
+    content_types = handler.headers.get_all("Content-Type", [])
+    if len(content_types) != 1 or content_types[0].split(";", 1)[0].strip().lower() != "application/json":
+        raise HttpRequestError("Use Content-Type: application/json.", 415)
+    if handler.headers.get_all("Transfer-Encoding", []):
+        raise HttpRequestError("Transfer-Encoding is not supported.")
+    lengths = handler.headers.get_all("Content-Length", [])
+    if not lengths:
+        raise HttpRequestError("Content-Length is required.", 411)
+    if len(lengths) != 1 or not re.fullmatch(r"[0-9]+", lengths[0]):
+        raise HttpRequestError("A single valid Content-Length is required.")
+    if len(lengths[0]) > 12 or int(lengths[0]) > MAX_JSON_REQUEST_BYTES:
+        raise HttpRequestError("JSON request exceeds the 4 MiB limit.", 413)
+    length = int(lengths[0])
+    if length == 0:
+        raise HttpRequestError("A JSON object is required.")
+    try:
+        raw = handler.rfile.read(length)
+    except TimeoutError:
+        raise HttpRequestError("Request body timed out.", 408) from None
+    if len(raw) != length:
+        raise HttpRequestError("Request body is truncated.")
+
+    def object_values(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("Duplicate JSON object key.")
+            result[key] = value
+        return result
+
+    def invalid_constant(_value):
+        raise ValueError("Non-finite JSON number.")
+
+    try:
+        payload = json.loads(raw.decode("utf-8"), object_pairs_hook=object_values,
+                             parse_constant=invalid_constant, parse_float=_parse_finite_json_float)
+    except (ValueError, UnicodeError, RecursionError):
+        raise HttpRequestError("Request body must be valid UTF-8 JSON without duplicate keys.") from None
+    if not isinstance(payload, dict):
+        raise HttpRequestError("A JSON object is required.")
+    return payload
 
 
 def get_available_drives():
@@ -1095,50 +1272,117 @@ def parse_scan_settings(data):
     }
 
 
+def _record_path(directory, record_id):
+    if not isinstance(record_id, str) or not re.fullmatch(r"[0-9a-fA-F]{32}", record_id):
+        raise ValueError("Record ID must contain exactly 32 hexadecimal characters.")
+    path = Path(directory) / f"{record_id}.json"
+    if path.resolve().parent != Path(directory).resolve():
+        raise ValueError("Record path is outside its storage directory.")
+    return path
+
+
 def scan_record_path(scan_id: str) -> Path:
-    return RECORDS_DIR / f"{scan_id}.json"
+    return _record_path(RECORDS_DIR, scan_id)
 
 
 def security_check_record_path(check_id: str) -> Path:
-    return SECURITY_RECORDS_DIR / f"{check_id}.json"
+    return _record_path(SECURITY_RECORDS_DIR, check_id)
 
 
 def security_baseline_path(baseline_id: str) -> Path:
-    return BASELINES_DIR / f"{baseline_id}.json"
+    return _record_path(BASELINES_DIR, baseline_id)
+
+
+def _validate_saved_record(payload, id_field, path_builder):
+    _require_json_object(payload)
+    path_builder(payload.get(id_field))
+    if payload.get("status") not in ("completed", "cancelled", "failed"):
+        raise ValueError("Saved record must have a terminal status.")
+    for field in ("started_at", "completed_at"):
+        if payload.get(field) is not None and not isinstance(payload[field], str):
+            raise ValueError(f"Saved record {field} must be a string or null.")
+    return payload
+
+
+def validate_scan_record_payload(payload):
+    _validate_saved_record(payload, "scan_id", scan_record_path)
+    for field in ("result", "settings"):
+        if payload.get(field) is not None and not isinstance(payload[field], dict):
+            raise ValueError(f"Saved scan {field} must be an object or null.")
+    return payload
+
+
+def validate_security_check_record_payload(payload):
+    _validate_saved_record(payload, "check_id", security_check_record_path)
+    if payload.get("schema_version") != "security-check-lifecycle-v1":
+        raise ValueError("Unsupported Security Check record schema_version.")
+    findings = payload.get("findings")
+    if not isinstance(findings, list) or any(not isinstance(item, dict) for item in findings):
+        raise ValueError("Security Check findings must be an array of objects.")
+    for finding in findings:
+        if finding.get("severity") is not None and not isinstance(finding["severity"], str):
+            raise ValueError("Security finding severity must be a string or null.")
+        if finding.get("evidence") is not None and not isinstance(finding["evidence"], dict):
+            raise ValueError("Security finding evidence must be an object or null.")
+    comparison = payload.get("baseline_comparison")
+    if comparison is not None:
+        if not isinstance(comparison, dict):
+            raise ValueError("Security Check baseline_comparison must be an object or null.")
+        for field in ("new", "changed", "unchanged", "removed", "current_count", "baseline_count"):
+            if field in comparison and (type(comparison[field]) is not int or comparison[field] < 0):
+                raise ValueError(f"Security Check baseline_comparison {field} must be a non-negative integer.")
+    for field in ("summary", "options"):
+        if field in payload and not isinstance(payload[field], dict):
+            raise ValueError(f"Security Check {field} must be an object.")
+    for field in ("steps", "skipped_items"):
+        if field in payload and (not isinstance(payload[field], list) or any(not isinstance(item, dict) for item in payload[field])):
+            raise ValueError(f"Security Check {field} must be an array of objects.")
+    if "errors" in payload and (not isinstance(payload["errors"], list) or any(not isinstance(item, str) for item in payload["errors"])):
+        raise ValueError("Security Check errors must be an array of strings.")
+    return payload
+
+
+def _load_saved_records(directory, validator, id_field, path_builder):
+    ensure_app_dirs()
+    records = []
+    for candidate in directory.glob("*.json"):
+        try:
+            path = path_builder(candidate.stem)
+        except ValueError as error:
+            raise _corruption_error(candidate) from error
+        try:
+            record = load_validated_json(path, validator)
+        except FileNotFoundError:
+            continue
+        if record[id_field].lower() != path.stem.lower():
+            raise _corruption_error(path)
+        records.append(record)
+    return records
 
 
 def load_scan_records():
-    ensure_app_dirs()
-    records = []
-    for path in RECORDS_DIR.glob("*.json"):
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            records.append(data)
-        except Exception:
-            continue
-
-    return sorted(
-        records,
-        key=lambda item: item.get("started_at") or item.get("completed_at") or "",
-        reverse=True
-    )
+    records = _load_saved_records(RECORDS_DIR, validate_scan_record_payload, "scan_id", scan_record_path)
+    return sorted(records, key=lambda item: item.get("started_at") or item.get("completed_at") or "", reverse=True)
 
 
 def load_security_check_records():
-    ensure_app_dirs()
-    records = []
-    for path in SECURITY_RECORDS_DIR.glob("*.json"):
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            records.append(data)
-        except Exception:
-            continue
+    records = _load_saved_records(SECURITY_RECORDS_DIR, validate_security_check_record_payload, "check_id", security_check_record_path)
+    records = [project_security_check_record(record) for record in records]
+    return sorted(records, key=lambda item: item.get("started_at") or item.get("completed_at") or "", reverse=True)
 
-    return sorted(
-        records,
-        key=lambda item: item.get("started_at") or item.get("completed_at") or "",
-        reverse=True
+
+def project_security_check_record(record):
+    """Recompute display summaries from saved evidence without rewriting history."""
+    validate_security_check_record_payload(record)
+    projected = project_security_coverage(record)
+    projected["summary"] = security_check_summary(
+        projected["status"],
+        projected["findings"],
+        projected.get("skipped_items"),
+        projected.get("baseline_comparison"),
+        collector_coverage=projected.get("collector_coverage"),
     )
+    return projected
 
 
 def baseline_public_summary(baseline):
@@ -1154,15 +1398,36 @@ def baseline_public_summary(baseline):
     }
 
 
+def validate_security_baseline_payload(payload):
+    _require_json_object(payload)
+    if payload.get("schema_version") != "security-baseline-v1":
+        raise ValueError("Unsupported security baseline schema_version.")
+    security_baseline_path(payload.get("baseline_id"))
+    security_check_record_path(payload.get("source_check_id"))
+    if not isinstance(payload.get("created_at"), str):
+        raise ValueError("Security baseline created_at must be a string.")
+    fingerprints = payload.get("fingerprints")
+    if not isinstance(fingerprints, list):
+        raise ValueError("Security baseline fingerprints must be an array.")
+    if type(payload.get("item_count")) is not int or payload["item_count"] != len(fingerprints):
+        raise ValueError("Security baseline item_count must match its fingerprints.")
+    if "findings_summary" in payload and not isinstance(payload["findings_summary"], dict):
+        raise ValueError("Security baseline findings_summary must be an object.")
+    for item in fingerprints:
+        if not isinstance(item, dict):
+            raise ValueError("Security baseline fingerprints must be objects.")
+        for field in ("key", "content_hash"):
+            if not isinstance(item.get(field), str) or not re.fullmatch(r"[0-9a-f]{64}", item[field]):
+                raise ValueError(f"Security baseline fingerprint {field} must be a SHA-256 digest.")
+        if "score" in item and (type(item["score"]) not in (int, float) or not 0 <= item["score"] <= 100):
+            raise ValueError("Security baseline fingerprint score must be between 0 and 100.")
+    return payload
+
+
 def load_security_baselines(include_private=False):
-    ensure_app_dirs()
-    baselines = []
-    for path in BASELINES_DIR.glob("*.json"):
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            baselines.append(data if include_private else baseline_public_summary(data))
-        except Exception:
-            continue
+    baselines = _load_saved_records(BASELINES_DIR, validate_security_baseline_payload, "baseline_id", security_baseline_path)
+    if not include_private:
+        baselines = [baseline_public_summary(baseline) for baseline in baselines]
 
     return sorted(
         baselines,
@@ -1172,13 +1437,11 @@ def load_security_baselines(include_private=False):
 
 
 def load_security_baseline(baseline_id: str):
-    clean_id = re.sub(r"[^0-9a-fA-F]", "", str(baseline_id or ""))
-    if not clean_id:
-        raise FileNotFoundError("Security baseline was not found.")
-    path = security_baseline_path(clean_id)
-    if not path.exists():
-        raise FileNotFoundError("Security baseline was not found.")
-    return json.loads(path.read_text(encoding="utf-8"))
+    path = security_baseline_path(baseline_id)
+    baseline = load_validated_json(path, validate_security_baseline_payload)
+    if baseline["baseline_id"].lower() != path.stem.lower():
+        raise _corruption_error(path)
+    return baseline
 
 
 def default_allowlist():
@@ -1191,22 +1454,22 @@ def default_allowlist():
 
 def load_security_allowlist():
     ensure_app_dirs()
-    if not ALLOWLIST_FILE.exists():
-        return default_allowlist()
     try:
-        data = json.loads(ALLOWLIST_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return default_allowlist()
-    try:
-        return validate_security_allowlist_payload(data)
-    except ValueError:
+        return load_validated_json(ALLOWLIST_FILE, validate_security_allowlist_payload)
+    except FileNotFoundError:
         return default_allowlist()
 
 
 def save_security_allowlist(allowlist):
-    allowlist["updated_at"] = now_iso()
-    ALLOWLIST_FILE.write_text(json.dumps(allowlist, indent=2), encoding="utf-8")
-    return allowlist
+    with _allowlist_transaction():
+        load_security_allowlist()
+        return _save_security_allowlist_unlocked(allowlist)
+
+
+def _save_security_allowlist_unlocked(allowlist):
+    clean = validate_security_allowlist_payload(allowlist)
+    clean["updated_at"] = now_iso()
+    return atomic_write_json(ALLOWLIST_FILE, clean)
 
 
 def allowlist_public_entry(entry):
@@ -1220,6 +1483,7 @@ def allowlist_public_entry(entry):
         "match_scope": entry.get("match_scope", "finding_identity"),
         "match_key": entry.get("match_key"),
         "source_check_id": entry.get("source_check_id"),
+        "source_finding_id": entry.get("source_finding_id"),
         "note": entry.get("note"),
         "active": bool(entry.get("active", True)),
     }
@@ -1236,9 +1500,12 @@ def security_allowlist_public(allowlist=None):
     }
 
 
-def validate_security_allowlist_payload(payload):
+def validate_security_allowlist_payload(payload, *, for_import=False):
     if not isinstance(payload, dict):
         raise ValueError("Allowlist import must be a JSON object.")
+    schemas = ("security-allowlist-v1", "security-allowlist-export-v1") if for_import else ("security-allowlist-v1",)
+    if payload.get("schema_version") not in schemas:
+        raise ValueError("Allowlist must declare a supported schema_version.")
     entries = payload.get("entries")
     if not isinstance(entries, list):
         raise ValueError("Allowlist import must include an entries array.")
@@ -1246,14 +1513,23 @@ def validate_security_allowlist_payload(payload):
         raise ValueError("Allowlist import has too many entries.")
 
     clean_entries = []
+    entry_ids = set()
     for raw in entries:
         if not isinstance(raw, dict):
             raise ValueError("Every allowlist entry must be an object.")
-        match_key = str(raw.get("match_key", "") or "").strip()
-        if not re.fullmatch(r"[0-9a-f]{64}", match_key):
+        match_key = raw.get("match_key")
+        if not isinstance(match_key, str) or not re.fullmatch(r"[0-9a-f]{64}", match_key):
             raise ValueError("Allowlist entries must include valid match keys.")
-        entry_id = str(raw.get("entry_id") or uuid.uuid4().hex)
-        entry_id = re.sub(r"[^0-9a-fA-F]", "", entry_id)[:32] or uuid.uuid4().hex
+        if type(raw.get("active", True)) is not bool:
+            raise ValueError("Allowlist entry active must be a JSON Boolean.")
+        if raw.get("match_scope", "finding_identity") != "finding_identity":
+            raise ValueError("Unsupported allowlist match_scope.")
+        entry_id = raw.get("entry_id", uuid.uuid4().hex)
+        if not isinstance(entry_id, str) or not re.fullmatch(r"[0-9a-fA-F]{32}", entry_id):
+            raise ValueError("Allowlist entry_id must contain exactly 32 hexadecimal characters.")
+        if entry_id.lower() in entry_ids:
+            raise ValueError("Allowlist entry_id values must be unique.")
+        entry_ids.add(entry_id.lower())
         clean_entries.append({
             "entry_id": entry_id,
             "created_at": str(raw.get("created_at") or now_iso())[:40],
@@ -1264,8 +1540,9 @@ def validate_security_allowlist_payload(payload):
             "match_scope": "finding_identity",
             "match_key": match_key,
             "source_check_id": str(raw.get("source_check_id") or "")[:80],
+            "source_finding_id": str(raw.get("source_finding_id") or "")[:160],
             "note": str(raw.get("note") or "")[:500],
-            "active": bool(raw.get("active", True)),
+            "active": raw.get("active", True),
         })
 
     return {
@@ -1286,71 +1563,72 @@ def add_security_allowlist_entry_from_finding(record, finding_id, note=""):
     if record.get("status") not in ("completed", "cancelled"):
         raise ValueError("Allowlist entries can be created only from completed or cancelled Security Check records.")
     finding = find_security_finding(record, finding_id)
-    allowlist = load_security_allowlist()
-    match_key = baseline_finding_identity(finding)
-    for entry in allowlist.get("entries", []):
-        if entry.get("match_key") == match_key and entry.get("active", True):
-            entry["updated_at"] = now_iso()
-            entry["note"] = str(note or entry.get("note") or "")[:500]
-            save_security_allowlist(allowlist)
-            return allowlist_public_entry(entry), security_allowlist_public(allowlist)
+    with _allowlist_transaction():
+        allowlist = load_security_allowlist()
+        match_key = baseline_finding_identity(finding)
+        for entry in allowlist.get("entries", []):
+            if entry.get("match_key") == match_key and entry.get("active", True):
+                entry["updated_at"] = now_iso()
+                entry["note"] = str(note or entry.get("note") or "")[:500]
+                saved = _save_security_allowlist_unlocked(allowlist)
+                return allowlist_public_entry(entry), security_allowlist_public(saved)
 
-    entry = {
-        "entry_id": uuid.uuid4().hex,
-        "created_at": now_iso(),
-        "updated_at": now_iso(),
-        "label": f"{finding.get('category') or 'Finding'}: {finding.get('title') or 'Untitled'}"[:160],
-        "category": finding.get("category") or "Uncategorized",
-        "title": finding.get("title") or "Untitled",
-        "match_scope": "finding_identity",
-        "match_key": match_key,
-        "source_check_id": record.get("check_id"),
-        "source_finding_id": finding.get("finding_id"),
-        "note": str(note or "")[:500],
-        "active": True,
-    }
-    allowlist.setdefault("entries", []).append(entry)
-    save_security_allowlist(allowlist)
-    return allowlist_public_entry(entry), security_allowlist_public(allowlist)
+        entry = {
+            "entry_id": uuid.uuid4().hex,
+            "created_at": now_iso(),
+            "updated_at": now_iso(),
+            "label": f"{finding.get('category') or 'Finding'}: {finding.get('title') or 'Untitled'}"[:160],
+            "category": finding.get("category") or "Uncategorized",
+            "title": finding.get("title") or "Untitled",
+            "match_scope": "finding_identity",
+            "match_key": match_key,
+            "source_check_id": record.get("check_id"),
+            "source_finding_id": finding.get("finding_id"),
+            "note": str(note or "")[:500],
+            "active": True,
+        }
+        allowlist["entries"].append(entry)
+        saved = _save_security_allowlist_unlocked(allowlist)
+        return allowlist_public_entry(entry), security_allowlist_public(saved)
 
 
 def remove_security_allowlist_entry(entry_id):
-    clean_id = re.sub(r"[^0-9a-fA-F]", "", str(entry_id or ""))
-    if not clean_id:
-        raise ValueError("Allowlist entry id is required.")
-    allowlist = load_security_allowlist()
-    removed = None
-    for entry in allowlist.get("entries", []):
-        if entry.get("entry_id") == clean_id and entry.get("active", True):
-            entry["active"] = False
-            entry["updated_at"] = now_iso()
-            removed = entry
-            break
-    if removed is None:
-        raise FileNotFoundError("Allowlist entry was not found.")
-    save_security_allowlist(allowlist)
-    return allowlist_public_entry(removed), security_allowlist_public(allowlist)
+    if not isinstance(entry_id, str) or not re.fullmatch(r"[0-9a-fA-F]{32}", entry_id):
+        raise ValueError("Allowlist entry id must contain exactly 32 hexadecimal characters.")
+    with _allowlist_transaction():
+        allowlist = load_security_allowlist()
+        removed = None
+        for entry in allowlist.get("entries", []):
+            if entry.get("entry_id") == entry_id and entry.get("active", True):
+                entry["active"] = False
+                entry["updated_at"] = now_iso()
+                removed = entry
+                break
+        if removed is None:
+            raise FileNotFoundError("Allowlist entry was not found.")
+        saved = _save_security_allowlist_unlocked(allowlist)
+        return allowlist_public_entry(removed), security_allowlist_public(saved)
 
 
 def import_security_allowlist(payload):
-    imported = validate_security_allowlist_payload(payload)
-    current = load_security_allowlist()
-    by_key = {
-        entry.get("match_key"): entry
-        for entry in current.get("entries", [])
-        if entry.get("match_key") and entry.get("active", True)
-    }
-    for entry in imported.get("entries", []):
-        if not entry.get("active", True):
-            continue
-        by_key[entry["match_key"]] = entry
-    merged = {
-        "schema_version": "security-allowlist-v1",
-        "updated_at": now_iso(),
-        "entries": list(by_key.values()),
-    }
-    save_security_allowlist(merged)
-    return security_allowlist_public(merged)
+    imported = validate_security_allowlist_payload(payload, for_import=True)
+    with _allowlist_transaction():
+        current = load_security_allowlist()
+        by_key = {
+            entry["match_key"]: entry
+            for entry in current["entries"]
+            if entry["active"]
+        }
+        for entry in imported["entries"]:
+            if entry["active"]:
+                by_key[entry["match_key"]] = entry
+        merged = {
+            "schema_version": "security-allowlist-v1",
+            "updated_at": now_iso(),
+            "entries": list(by_key.values()),
+        }
+        saved = _save_security_allowlist_unlocked(merged)
+        return security_allowlist_public(saved)
 
 
 def apply_security_allowlist(findings, allowlist=None):
@@ -1457,9 +1735,10 @@ def baseline_fingerprint_for_finding(finding):
 
 
 def create_security_baseline_from_record(record, label):
+    validate_security_check_record_payload(record)
     if record.get("status") != "completed":
         raise ValueError("Create a baseline only from a completed Security Check record.")
-    findings = record.get("findings") or []
+    findings = record["findings"]
     baseline_id = uuid.uuid4().hex
     fingerprints = [baseline_fingerprint_for_finding(finding) for finding in findings]
     baseline = {
@@ -1475,11 +1754,14 @@ def create_security_baseline_from_record(record, label):
         "findings_summary": record.get("summary") or {},
         "fingerprints": fingerprints,
     }
-    security_baseline_path(baseline_id).write_text(json.dumps(baseline, indent=2), encoding="utf-8")
+    validate_security_baseline_payload(baseline)
+    ensure_app_dirs()
+    atomic_write_json(security_baseline_path(baseline_id), baseline)
     return baseline_public_summary(baseline)
 
 
 def apply_security_baseline_comparison(findings, baseline):
+    validate_security_baseline_payload(baseline)
     baseline_items = {item.get("key"): item for item in baseline.get("fingerprints", []) if item.get("key")}
     current_keys = set()
     summary = {
@@ -1570,7 +1852,255 @@ def security_check_steps():
     ]
 
 
-def security_check_summary(status="not_run", findings=None, skipped_items=None, baseline_comparison=None):
+SECURITY_COLLECTORS = (
+    ("registry_startup", "Registry Startup", "standard", "Current-user Run/RunOnce and machine Run/RunOnce/WOW6432Node Run keys"),
+    ("startup_folders", "Startup Folder", "standard", "Current-user and all-users Startup folders; immediate children only"),
+    ("browser_policies", "Browser Policy", "standard", "Chrome/Edge HKCU/HKLM policy trees, through depth 3"),
+    ("proxy_settings", "Proxy Settings", "standard", "Common current-user Internet Settings proxy/PAC values"),
+    ("dns_settings", "DNS Settings", "standard", "IPv4/IPv6 DNS client server addresses returned for network adapters"),
+    ("defender_exclusions", "Microsoft Defender Exclusions", "standard", "Get-MpPreference path/process/extension/IP exclusions"),
+    ("scheduled_tasks", "Scheduled Task", "standard", "Visible scheduled tasks, actions, triggers and task-info reads"),
+    ("services_summary", "Windows Service", "standard", "Visible Win32_Service summary and automatic-service command indicators"),
+    ("file_verification", "File Verification", "verification", "Explicit absolute local-drive references, at most 500 unique candidates; network/device/relative references remain unverified"),
+    ("wmi_persistence", "WMI Persistence", "advanced", "root/subscription filters, command/script consumers and bindings"),
+    ("event_logs", "Event Log Correlation", "advanced", "Selected Defender/PowerShell/System IDs, last 7 days, at most 40 events per log"),
+    ("sysmon", "Sysmon Correlation", "advanced", "Existing enabled Sysmon log, IDs 1/3/7/11/13, last 3 days, at most 60 events"),
+    ("services_drivers", "Advanced Services And Drivers", "advanced", "Visible Win32_Service and Win32_SystemDriver summaries and path indicators"),
+    ("explorer_extensions", "Explorer Extension", "advanced", "Five selected Explorer autorun registry trees, through depth 2"),
+)
+SECURITY_COVERAGE_STATES = frozenset({
+    "pending", "running", "complete", "disabled", "unavailable", "access_denied", "partial", "failed", "cancelled",
+})
+
+
+def security_coverage_options(mode, options=None):
+    if not isinstance(mode, str) or mode not in ("standard", "advanced"):
+        raise ValueError("Invalid coverage mode.")
+    if options is None:
+        options = {}
+    if not isinstance(options, dict):
+        raise ValueError("Coverage options must be an object.")
+    selected = {}
+    for name in ("wmi_check", "event_log_correlation", "sysmon_correlation"):
+        value = options.get(name, mode == "advanced")
+        if type(value) is not bool:
+            raise ValueError("Coverage selection options must be Boolean.")
+        selected[name] = value
+    return selected
+
+
+def new_security_coverage(mode="standard", options=None):
+    options = security_coverage_options(mode, options)
+    switches = {"wmi_persistence": "wmi_check", "event_logs": "event_log_correlation", "sysmon": "sysmon_correlation"}
+    entries = []
+    for collector_id, category, phase, scope in SECURITY_COLLECTORS:
+        enabled = phase != "advanced" or (mode == "advanced" and options.get(switches.get(collector_id), True))
+        entries.append({
+            "collector_id": collector_id, "category": category, "phase": phase, "scope": scope,
+            "selected": bool(enabled), "status": "pending" if enabled else "disabled",
+            "reason_code": "" if enabled else "not_selected", "findings_count": 0, "sources": [],
+        })
+    return {"schema_version": "security-coverage-v1", "mode": mode, "options": options, "collectors": entries}
+
+
+def security_source_result(source, status, item_count=0, reason_code="", detail=None):
+    if status not in SECURITY_COVERAGE_STATES - {"pending", "running"}:
+        raise ValueError("Invalid security source status.")
+    if not isinstance(source, str) or not source or type(item_count) is not int or item_count < 0:
+        raise ValueError("Invalid security source identity or count.")
+    return {"source": source, "status": status, "item_count": item_count, "reason_code": reason_code, "detail": detail}
+
+
+def security_sources_status(sources):
+    if not sources:
+        return "unavailable"
+    states = {source["status"] for source in sources}
+    if states == {"complete"}:
+        return "complete"
+    if "cancelled" in states:
+        return "cancelled"
+    if "complete" in states or "partial" in states or any(source["item_count"] for source in sources):
+        return "partial"
+    for state in ("failed", "access_denied", "unavailable", "disabled"):
+        if state in states:
+            return state
+    return "failed"
+
+
+class SecurityCollection(tuple):
+    """Two-value collector result with coverage independent of finding counts."""
+    def __new__(cls, findings, skipped_items, sources):
+        value = super().__new__(cls, (findings, skipped_items))
+        value.sources = sources
+        value.coverage_status = security_sources_status(sources)
+        return value
+
+
+class SecuritySourceError(RuntimeError):
+    def __init__(self, message, status="failed", reason_code="source_failed"):
+        super().__init__(message)
+        self.coverage_status = status
+        self.reason_code = reason_code
+
+
+def security_exception_status(error):
+    if isinstance(error, SecuritySourceError):
+        return error.coverage_status, error.reason_code
+    if isinstance(error, PermissionError) or getattr(error, "winerror", None) == 5:
+        return "access_denied", "access_denied"
+    if isinstance(error, (FileNotFoundError, NotImplementedError)):
+        return "unavailable", "source_unavailable"
+    if isinstance(error, subprocess.TimeoutExpired):
+        return "failed", "timeout"
+    return "failed", "source_failed"
+
+
+def security_source_failure(category, source, error, item_count=0):
+    status, reason = security_exception_status(error)
+    issue = security_skip(category, f"Could not fully read {source}.", status.replace("_", " ").title(), str(error),
+                          source=source, reason_code=reason, coverage_status=status)
+    return issue, security_source_result(source, status, item_count, reason, str(error))
+
+
+def update_security_coverage(coverage, collector_id, result=None, status=None, reason_code=""):
+    if coverage is None:
+        return
+    entry = next(item for item in coverage["collectors"] if item["collector_id"] == collector_id)
+    if result is not None:
+        sources = getattr(result, "sources", None)
+        if sources is None:
+            # Old extension collectors can still return tuples, but cannot assert complete coverage.
+            sources = [security_source_result(collector_id, "partial" if result[0] else "unavailable",
+                                             len(result[0]), "coverage_not_reported")]
+        entry.update(sources=sources, findings_count=len(result[0]), status=security_sources_status(sources))
+        entry["reason_code"] = "" if entry["status"] == "complete" else next(
+            (source["reason_code"] for source in sources if source["status"] != "complete"), "coverage_not_reported")
+    else:
+        if status not in SECURITY_COVERAGE_STATES:
+            raise ValueError("Invalid collector coverage status.")
+        entry.update(status=status, reason_code=reason_code)
+
+
+def finalize_security_coverage(coverage, run_status):
+    if coverage is not None:
+        for entry in coverage["collectors"]:
+            if entry["status"] in ("pending", "running"):
+                entry.update(status="cancelled" if run_status == "cancelled" else "failed",
+                             reason_code="run_cancelled" if run_status == "cancelled" else "not_completed")
+    return coverage
+
+
+def validate_security_coverage(coverage, mode=None, options=None):
+    """Return a detached canonical ledger or None; malformed data cannot assert coverage."""
+    if not isinstance(coverage, dict) or coverage.get("schema_version") != "security-coverage-v1":
+        return None
+    try:
+        ledger_options = security_coverage_options(coverage.get("mode"), coverage.get("options"))
+        if not isinstance(coverage.get("options"), dict) or set(coverage["options"]) != set(ledger_options):
+            return None
+        if mode is not None and (not isinstance(mode, str) or coverage["mode"] != mode):
+            return None
+        if options is not None and security_coverage_options(mode or coverage["mode"], options) != ledger_options:
+            return None
+        expected = new_security_coverage(coverage["mode"], ledger_options)
+    except ValueError:
+        return None
+    entries = coverage.get("collectors")
+    if not isinstance(entries, list) or len(entries) != len(SECURITY_COLLECTORS):
+        return None
+    by_id = {}
+    for entry in entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get("collector_id"), str) or entry["collector_id"] in by_id:
+            return None
+        by_id[entry["collector_id"]] = entry
+    if set(by_id) != {entry["collector_id"] for entry in expected["collectors"]}:
+        return None
+    for canonical in expected["collectors"]:
+        entry = by_id[canonical["collector_id"]]
+        if any(entry.get(name) != canonical[name] for name in ("category", "phase", "scope")):
+            return None
+        state = entry.get("status")
+        count = entry.get("findings_count")
+        reason = entry.get("reason_code")
+        if (not isinstance(state, str) or state not in SECURITY_COVERAGE_STATES
+                or type(entry.get("selected")) is not bool or entry["selected"] != canonical["selected"]
+                or type(count) is not int or count < 0 or not isinstance(reason, str)
+                or not isinstance(entry.get("sources"), list)):
+            return None
+        sources = []
+        for source in entry["sources"]:
+            if not isinstance(source, dict):
+                return None
+            source_state = source.get("status")
+            source_count = source.get("item_count")
+            source_reason = source.get("reason_code")
+            if (not isinstance(source.get("source"), str) or not source["source"].strip()
+                    or not isinstance(source_state, str) or source_state not in SECURITY_COVERAGE_STATES - {"pending", "running"}
+                    or type(source_count) is not int or source_count < 0 or not isinstance(source_reason, str)
+                    or (source_state != "complete" and not source_reason.strip())
+                    or (source.get("detail") is not None and not isinstance(source["detail"], str))):
+                return None
+            sources.append(security_source_result(source["source"], source_state, source_count, source_reason, source.get("detail")))
+        if not canonical["selected"]:
+            if state != "disabled" or sources or count or reason != "not_selected":
+                return None
+        elif state == "disabled":
+            return None
+        elif state == "pending":
+            if sources or count or reason:
+                return None
+        elif state == "running":
+            if reason:
+                return None
+        elif state == "complete":
+            if not sources or reason or security_sources_status(sources) != "complete":
+                return None
+        else:
+            if not reason.strip():
+                return None
+            interrupted = (state == "cancelled" and reason == "run_cancelled") or (state == "failed" and reason == "not_completed")
+            if not interrupted and security_sources_status(sources) != state:
+                return None
+        canonical.update(status=state, findings_count=count, reason_code=reason, sources=sources)
+    return expected
+
+
+def project_security_coverage(record):
+    """Sanitize display coverage without mutating or rewriting a saved record."""
+    projected = dict(record)
+    coverage = validate_security_coverage(record.get("collector_coverage"), record.get("mode"), record.get("options"))
+    projected["collector_coverage"] = coverage
+    summary = record.get("summary")
+    projected["summary"] = {key: value for key, value in (summary.items() if isinstance(summary, dict) else [])
+                            if not key.startswith("collectors_") and key not in ("coverage_recorded", "coverage_status")}
+    projected["summary"].update(security_coverage_summary(coverage))
+    return projected
+
+
+def security_coverage_summary(coverage, mode=None, options=None):
+    coverage = validate_security_coverage(coverage, mode, options)
+    if coverage is None:
+        return {"coverage_status": "not_recorded", "coverage_recorded": False, "collectors_connected": False}
+    entries = coverage["collectors"]
+    counts = {state: sum(entry["status"] == state for entry in entries) for state in SECURITY_COVERAGE_STATES}
+    selected = [entry for entry in entries if entry.get("selected")]
+    complete = bool(selected) and all(entry["status"] == "complete" for entry in selected)
+    if counts["running"]:
+        status = "running"
+    elif counts["pending"]:
+        status = "pending"
+    elif complete:
+        status = "complete"
+    else:
+        status = security_sources_status([security_source_result(entry["collector_id"], entry["status"], entry.get("findings_count", 0))
+                                          for entry in selected])
+    return {"coverage_recorded": True, "coverage_status": status, "collectors_total": len(entries),
+            "collectors_selected": len(selected), "collectors_connected": complete,
+            **{f"collectors_{state}": count for state, count in counts.items()}}
+
+
+def security_check_summary(status="not_run", findings=None, skipped_items=None, baseline_comparison=None,
+                           collector_coverage=None):
     findings = findings or []
     skipped_items = skipped_items or []
     label = {
@@ -1602,7 +2132,7 @@ def security_check_summary(status="not_run", findings=None, skipped_items=None, 
         ) if baseline_comparison else 0,
         "findings_total": len(findings),
         "skipped_count": len(skipped_items),
-        "collectors_connected": True,
+        **security_coverage_summary(collector_coverage),
     }
 
 
@@ -1630,12 +2160,15 @@ def security_finding(category, title, severity="Info", score=10, status="Found",
     return normalize_security_finding(finding)
 
 
-def security_skip(category, message, status="Skipped", detail=None):
+def security_skip(category, message, status="Skipped", detail=None, source=None, reason_code=None, coverage_status=None):
     return {
         "category": category,
         "status": status,
         "message": message,
         "detail": detail,
+        "source": source,
+        "reason_code": reason_code,
+        "coverage_status": coverage_status,
     }
 
 
@@ -1933,6 +2466,41 @@ def has_drive_or_unc(path):
     return bool(re.match(r"^[A-Za-z]:\\", path or "")) or str(path or "").startswith("\\\\")
 
 
+def security_verification_reference_kind(path):
+    text = str(path or "").replace("/", "\\").lower()
+    if text.startswith(("\\\\?\\", "\\\\.\\", "\\??\\", "\\\\??\\", "\\device\\", "\\global??\\")):
+        return "device_reference"
+    if text.startswith("\\\\") or text.startswith("file:"):
+        return "network_reference"
+    return None
+
+
+def security_verification_drive_type(root):
+    if os.name != "nt":
+        return None
+    try:
+        get_drive_type = ctypes.WinDLL("kernel32", use_last_error=True).GetDriveTypeW
+        get_drive_type.argtypes = [wintypes.LPCWSTR]
+        get_drive_type.restype = wintypes.UINT
+        return get_drive_type(root)
+    except (AttributeError, OSError):
+        return None
+
+
+def security_verification_path_restriction(path):
+    reason = security_verification_reference_kind(path)
+    if reason:
+        return reason
+    if not re.match(r"^[A-Za-z]:\\", path or ""):
+        return "non_absolute_reference"
+    drive_type = security_verification_drive_type(path[:3])
+    if drive_type == 4:
+        return "remote_drive"
+    if drive_type not in (2, 3, 5, 6):
+        return "local_drive_unverified"
+    return None
+
+
 def normalize_candidate_path(raw_value):
     if raw_value in (None, ""):
         return ""
@@ -1944,10 +2512,13 @@ def normalize_candidate_path(raw_value):
     path = os.path.expandvars(path).strip().strip("'\"")
     if not path:
         return ""
+    path = path.replace("/", "\\")
+    if security_verification_reference_kind(path):
+        return path
     if has_drive_or_unc(path):
         return os.path.normpath(path)
-    resolved = shutil.which(path)
-    return os.path.normpath(resolved) if resolved else ""
+    # Do not search PATH: it can contain network locations or depend on an untrusted working directory.
+    return path if os.path.splitext(path)[1].lower() in VERIFIABLE_EXTENSIONS else ""
 
 
 def add_verification_candidate(candidates, raw_value, source_finding, source_field):
@@ -1955,7 +2526,7 @@ def add_verification_candidate(candidates, raw_value, source_finding, source_fie
     if not path:
         return
     extension = os.path.splitext(path)[1].lower()
-    if extension and extension not in VERIFIABLE_EXTENSIONS:
+    if extension and extension not in VERIFIABLE_EXTENSIONS and not security_verification_reference_kind(path):
         return
     key = os.path.normcase(path)
     item = candidates.setdefault(key, {
@@ -1969,11 +2540,12 @@ def add_verification_candidate(candidates, raw_value, source_finding, source_fie
     item["source_fields"].add(source_field)
 
 
-def referenced_file_candidates(findings, max_candidates=500):
+def referenced_file_candidates(findings, max_candidates=500, with_metadata=False):
     candidates = {}
     for finding in findings:
         evidence = finding.get("evidence") or {}
-        for field in ("value_data", "file_path", "path_name", "value"):
+        for field in ("value_data", "file_path", "path_name", "value", "command_line",
+                      "commandlinetemplate", "executablepath", "scriptfilename"):
             add_verification_candidate(candidates, evidence.get(field), finding, field)
         for command in as_list(evidence.get("action_commands")):
             add_verification_candidate(candidates, command, finding, "action_commands")
@@ -1987,7 +2559,8 @@ def referenced_file_candidates(findings, max_candidates=500):
         row["source_categories"] = sorted(row["source_categories"])
         row["source_titles"] = sorted(row["source_titles"])[:10]
         row["source_fields"] = sorted(row["source_fields"])
-    return rows
+    metadata = {"discovered": len(candidates), "limit": max_candidates, "omitted": max(0, len(candidates) - max_candidates)}
+    return (rows, metadata) if with_metadata else rows
 
 
 def file_sha256(path):
@@ -2001,62 +2574,108 @@ def file_sha256(path):
 def authenticode_signatures(paths):
     if not paths:
         return {}
-    temp_path = None
-    try:
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False, dir=str(APP_DIR)) as handle:
-            json.dump(paths, handle)
-            temp_path = handle.name
-        temp_literal = json.dumps(temp_path)
-        command = f"""
-$paths = Get-Content -Raw -LiteralPath {temp_literal} | ConvertFrom-Json
-$items = foreach ($path in $paths) {{
-    try {{
-        $sig = Get-AuthenticodeSignature -LiteralPath $path -ErrorAction Stop
-        [PSCustomObject]@{{
-            Path = $path
-            SignatureStatus = [string]$sig.Status
-            StatusMessage = $sig.StatusMessage
-            SignerSubject = if ($sig.SignerCertificate) {{ $sig.SignerCertificate.Subject }} else {{ $null }}
-            SignerIssuer = if ($sig.SignerCertificate) {{ $sig.SignerCertificate.Issuer }} else {{ $null }}
-            SignerNotBefore = if ($sig.SignerCertificate) {{ [string]$sig.SignerCertificate.NotBefore }} else {{ $null }}
-            SignerNotAfter = if ($sig.SignerCertificate) {{ [string]$sig.SignerCertificate.NotAfter }} else {{ $null }}
-        }}
-    }} catch {{
-        [PSCustomObject]@{{
-            Path = $path
-            SignatureStatus = "Unavailable"
-            StatusMessage = $_.Exception.Message
-            SignerSubject = $null
-            SignerIssuer = $null
-            SignerNotBefore = $null
-            SignerNotAfter = $null
-        }}
-    }}
+    queries = []
+    result = {}
+    for path in paths:
+        reason = security_verification_path_restriction(path)
+        if reason:
+            result[os.path.normcase(path)] = {"Path": path, "SignatureStatus": "Unavailable", "CoverageStatus": "unavailable",
+                                             "ReasonCode": reason, "StatusMessage": "Automatic verification did not access this non-local or unverified reference."}
+            continue
+        literal = "'" + path.replace("'", "''") + "'"
+        queries.append((path, f"""
+$sig = Get-AuthenticodeSignature -LiteralPath {literal} -ErrorAction Stop
+[PSCustomObject]@{{
+    Path = {literal}
+    SignatureStatus = [string]$sig.Status
+    StatusMessage = $sig.StatusMessage
+    SignerSubject = if ($sig.SignerCertificate) {{ $sig.SignerCertificate.Subject }} else {{ $null }}
+    SignerIssuer = if ($sig.SignerCertificate) {{ $sig.SignerCertificate.Issuer }} else {{ $null }}
+    SignerNotBefore = if ($sig.SignerCertificate) {{ [string]$sig.SignerCertificate.NotBefore }} else {{ $null }}
+    SignerNotAfter = if ($sig.SignerCertificate) {{ [string]$sig.SignerCertificate.NotAfter }} else {{ $null }}
 }}
-$items | ConvertTo-Json -Depth 5 -Compress
 """
-        rows = run_powershell_json(command, timeout_seconds=90)
-        return {os.path.normcase(row.get("Path") or ""): row for row in rows}
-    finally:
-        if temp_path:
-            try:
-                os.unlink(temp_path)
-            except OSError:
-                pass
+        ))
+    rows, _issues, sources = run_security_powershell_sources("File Verification", queries, 90)
+    result.update({os.path.normcase(row.get("Path") or ""): row for row in rows})
+    for source in sources:
+        key = os.path.normcase(source["source"])
+        item = result.setdefault(key, {"Path": source["source"], "SignatureStatus": "Unavailable"})
+        item.update(CoverageStatus=source["status"], ReasonCode=source["reason_code"] or "signature_unavailable")
+        if source["detail"]:
+            item["StatusMessage"] = source["detail"]
+    return result
 
 
-def collect_file_verification(findings, cancel_event=None):
+def collect_file_verification(findings, cancel_event=None, collector_coverage=None, evidence_callback=None):
     verification_findings = []
     skipped = []
-    candidates = referenced_file_candidates(findings)
+    sources = []
+    candidates, candidate_meta = referenced_file_candidates(findings, with_metadata=True)
+    update_security_coverage(collector_coverage, "file_verification", status="running")
+    if evidence_callback:
+        evidence_callback("file_verification", [], [])
+    if not candidates:
+        sources.append(security_source_result("candidate_extraction", "complete", 0))
+    if candidate_meta["omitted"]:
+        issue, source = security_source_failure("File Verification", "candidate_limit", SecuritySourceError(
+            f"{candidate_meta['omitted']} of {candidate_meta['discovered']} candidates were omitted by the {candidate_meta['limit']}-file limit.",
+            "partial", "candidate_limit"))
+        skipped.append(issue)
+        sources.append(source)
+    upstream_incomplete = collector_coverage is not None and any(
+        entry["selected"] and entry["collector_id"] != "file_verification" and entry["status"] != "complete"
+        for entry in collector_coverage["collectors"])
+    if upstream_incomplete:
+        issue, source = security_source_failure("File Verification", "upstream_collectors", SecuritySourceError(
+            "Referenced-file coverage is limited by incomplete source collectors.", "unavailable", "upstream_incomplete"))
+        skipped.append(issue)
+        sources.append(source)
+    published_findings = 0
+    published_skips = 0
+
+    def publish(cancelled=False, final=False):
+        nonlocal published_findings, published_skips
+        result = SecurityCollection(verification_findings, skipped, sources)
+        update_security_coverage(collector_coverage, "file_verification", result)
+        if cancelled:
+            update_security_coverage(collector_coverage, "file_verification", status="cancelled", reason_code="run_cancelled")
+        elif not final:
+            update_security_coverage(collector_coverage, "file_verification", status="running")
+        if evidence_callback:
+            evidence_callback("file_verification", verification_findings[published_findings:], skipped[published_skips:])
+        published_findings, published_skips = len(verification_findings), len(skipped)
+        return result
+
+    def check_cancelled():
+        if cancel_event and cancel_event.is_set():
+            publish(cancelled=True)
+            security_cancel_collection(verification_findings, skipped, collector_coverage, ["file_verification"])
     existing_paths = []
     existing_candidates = []
 
     for candidate in candidates:
-        if cancel_event and cancel_event.is_set():
-            raise ScanCancelled("Security Check cancelled by user.")
+        check_cancelled()
         path = candidate["path"]
-        if not os.path.exists(path):
+        restriction = security_verification_path_restriction(path)
+        if restriction:
+            issue, source = security_source_failure("File Verification", path, SecuritySourceError(
+                "Automatic verification is limited to explicit local-drive paths; this reference was not accessed.",
+                "unavailable", restriction))
+            skipped.append(issue)
+            sources.append(source)
+            continue
+        try:
+            path_stat = os.stat(path)
+        except (FileNotFoundError, NotADirectoryError):
+            path_stat = None
+        except Exception as ex:
+            issue, source = security_source_failure("File Verification", path, ex)
+            skipped.append(issue)
+            sources.append(source)
+            continue
+        if path_stat is None:
+            sources.append(security_source_result(f"existence:{path}", "complete", 1, "file_missing"))
             verification_findings.append(security_finding(
                 category="File Verification",
                 title=f"File Missing: {path}",
@@ -2081,21 +2700,25 @@ def collect_file_verification(findings, cancel_event=None):
                 ],
             ))
             continue
-        if not os.path.isfile(path):
-            skipped.append(security_skip("File Verification", f"Referenced path is not a regular file: {path}", "Skipped"))
+        if not stat.S_ISREG(path_stat.st_mode):
+            issue, source = security_source_failure("File Verification", path, SecuritySourceError(
+                "Referenced path is not a regular file.", "unavailable", "not_regular_file"))
+            skipped.append(issue)
+            sources.append(source)
             continue
         existing_paths.append(path)
         existing_candidates.append(candidate)
 
     signatures = {}
     try:
-        signatures = authenticode_signatures(existing_paths)
+        signatures = authenticode_signatures(existing_paths) if existing_paths else {}
     except Exception as ex:
-        skipped.append(security_skip("File Verification", "Authenticode signature collection was unavailable.", "Unavailable", str(ex)))
+        issue, source = security_source_failure("File Verification", "authenticode", ex)
+        skipped.append(issue)
+        sources.append(source)
 
     for candidate in existing_candidates:
-        if cancel_event and cancel_event.is_set():
-            raise ScanCancelled("Security Check cancelled by user.")
+        check_cancelled()
         path = candidate["path"]
         evidence = {
             "path": path,
@@ -2117,13 +2740,29 @@ def collect_file_verification(findings, cancel_event=None):
                 "sha256": file_sha256(path),
             })
             reasons.append("SHA-256 hash collected")
+            sources.append(security_source_result(f"hash:{path}", "complete", 1))
         except Exception as ex:
+            status = "Partially Verified"
             evidence["hash_status"] = "Unavailable"
             evidence["hash_error"] = str(ex)
-            skipped.append(security_skip("File Verification", f"Could not hash referenced file: {path}", "Unavailable", str(ex)))
+            issue, source = security_source_failure("File Verification", f"hash:{path}", ex)
+            skipped.append(issue)
+            sources.append(source)
 
         signature = signatures.get(os.path.normcase(path), {})
         signature_status = signature.get("SignatureStatus") or ("Unavailable" if signatures else "Unavailable")
+        if signature_status not in ("Valid", "NotSigned", "HashMismatch", "NotTrusted") or signature.get("CoverageStatus", "complete") != "complete":
+            status = "Partially Verified"
+            signature_coverage = signature.get("CoverageStatus") or "unavailable"
+            if signature_coverage == "complete":
+                signature_coverage = "unavailable"
+            issue, source = security_source_failure("File Verification", f"signature:{path}", SecuritySourceError(
+                signature.get("StatusMessage") or "Signature result unavailable.", signature_coverage,
+                signature.get("ReasonCode") or "signature_unavailable"))
+            skipped.append(issue)
+            sources.append(source)
+        else:
+            sources.append(security_source_result(f"signature:{path}", "complete", 1))
         evidence.update({
             "signature_status": signature_status,
             "signature_status_message": signature.get("StatusMessage"),
@@ -2159,8 +2798,9 @@ def collect_file_verification(findings, cancel_event=None):
                 "Unsigned files are not automatically harmful, but unfamiliar unsigned autorun files deserve review.",
             ],
         ))
+        publish()
 
-    if not candidates:
+    if not candidates and not upstream_incomplete:
         verification_findings.append(security_finding(
             category="File Verification",
             title="No referenced files found for verification",
@@ -2171,7 +2811,8 @@ def collect_file_verification(findings, cancel_event=None):
             explanation="The Standard Review did not expose file paths suitable for signature or hash verification.",
             evidence={"source": "Standard Review findings"},
         ))
-    return verification_findings, skipped
+    check_cancelled()
+    return publish(final=True)
 
 
 def registry_value_to_text(value):
@@ -2191,17 +2832,25 @@ def open_registry_key(root, subkey):
 def collect_registry_values(root_label, root, subkey, category, explanation, severity="Low Review", score=25):
     findings = []
     skipped = []
+    sources = []
+    source = f"{root_label}\\{subkey}"
+    opened = False
     if winreg is None:
-        return findings, [security_skip(category, "Windows registry APIs are not available on this platform.")]
+        issue, outcome = security_source_failure(category, source, SecuritySourceError(
+            "Windows registry APIs are not available on this platform.", "unavailable", "registry_unavailable"))
+        return SecurityCollection(findings, [issue], [outcome])
 
     try:
         with open_registry_key(root, subkey) as key:
+            opened = True
             index = 0
             while True:
                 try:
                     name, value, value_type = winreg.EnumValue(key, index)
-                except OSError:
-                    break
+                except OSError as ex:
+                    if getattr(ex, "winerror", None) == 259:
+                        break
+                    raise
                 index += 1
                 value_text = registry_value_to_text(value)
                 findings.append(security_finding(
@@ -2223,32 +2872,48 @@ def collect_registry_values(root_label, root, subkey, category, explanation, sev
                         "Prefer app settings or official uninstallers before changing startup behavior.",
                     ],
                 ))
-    except FileNotFoundError:
-        pass
-    except PermissionError as ex:
-        skipped.append(security_skip(category, f"Access denied reading {root_label}\\{subkey}.", "Access Denied", str(ex)))
+        sources.append(security_source_result(source, "complete", len(findings)))
+    except FileNotFoundError as ex:
+        if not opened:
+            sources.append(security_source_result(source, "complete", 0, "optional_key_absent"))
+        else:
+            issue, outcome = security_source_failure(category, source, ex, len(findings))
+            skipped.append(issue)
+            sources.append(outcome)
     except Exception as ex:
-        skipped.append(security_skip(category, f"Could not read {root_label}\\{subkey}.", "Error", str(ex)))
+        issue, outcome = security_source_failure(category, source, ex, len(findings))
+        skipped.append(issue)
+        sources.append(outcome)
 
-    return findings, skipped
+    return SecurityCollection(findings, skipped, sources)
 
 
 def collect_registry_tree_values(root_label, root, subkey, category, browser_name, max_depth=3):
     findings = []
     skipped = []
+    sources = []
     if winreg is None:
-        return findings, [security_skip(category, "Windows registry APIs are not available on this platform.")]
+        issue, outcome = security_source_failure(category, f"{root_label}\\{subkey}", SecuritySourceError(
+            "Windows registry APIs are not available on this platform.", "unavailable", "registry_unavailable"))
+        return SecurityCollection(findings, [issue], [outcome])
 
     def walk(current_subkey, depth):
+        source = f"{root_label}\\{current_subkey}"
+        count = 0
+        opened = False
         try:
             with open_registry_key(root, current_subkey) as key:
+                opened = True
                 index = 0
                 while True:
                     try:
                         name, value, value_type = winreg.EnumValue(key, index)
-                    except OSError:
-                        break
+                    except OSError as ex:
+                        if getattr(ex, "winerror", None) == 259:
+                            break
+                        raise
                     index += 1
+                    count += 1
                     value_text = registry_value_to_text(value)
                     reason = f"{browser_name} managed policy value is present"
                     severity = "Medium Review" if any(token in current_subkey.lower() for token in ("extension", "proxy", "homepage", "search")) else "Low Review"
@@ -2277,24 +2942,33 @@ def collect_registry_tree_values(root_label, root, subkey, category, browser_nam
                     ))
 
                 if depth >= max_depth:
+                    sources.append(security_source_result(source, "complete", count, "declared_depth_bound"))
                     return
                 sub_index = 0
                 while True:
                     try:
                         child = winreg.EnumKey(key, sub_index)
-                    except OSError:
-                        break
+                    except OSError as ex:
+                        if getattr(ex, "winerror", None) == 259:
+                            break
+                        raise
                     sub_index += 1
                     walk(current_subkey + "\\" + child, depth + 1)
-        except FileNotFoundError:
-            return
-        except PermissionError as ex:
-            skipped.append(security_skip(category, f"Access denied reading {root_label}\\{current_subkey}.", "Access Denied", str(ex)))
+                sources.append(security_source_result(source, "complete", count))
+        except FileNotFoundError as ex:
+            if not opened and depth == 0:
+                sources.append(security_source_result(source, "complete", 0, "optional_key_absent"))
+            else:
+                issue, outcome = security_source_failure(category, source, ex, count)
+                skipped.append(issue)
+                sources.append(outcome)
         except Exception as ex:
-            skipped.append(security_skip(category, f"Could not read {root_label}\\{current_subkey}.", "Error", str(ex)))
+            issue, outcome = security_source_failure(category, source, ex, count)
+            skipped.append(issue)
+            sources.append(outcome)
 
     walk(subkey, 0)
-    return findings, skipped
+    return SecurityCollection(findings, skipped, sources)
 
 
 def collect_startup_registry_entries():
@@ -2307,28 +2981,36 @@ def collect_startup_registry_entries():
     ]
     findings = []
     skipped = []
+    sources = []
     explanation = "This registry location can start a program automatically when Windows starts or when the user signs in."
     for root_label, root, subkey in locations:
-        rows, issues = collect_registry_values(root_label, root, subkey, "Registry Startup", explanation)
+        result = collect_registry_values(root_label, root, subkey, "Registry Startup", explanation)
+        rows, issues = result
+        sources.extend(result.sources)
         for row in rows:
             apply_command_review_to_finding(row, row.get("evidence", {}).get("value_data", ""))
         findings.extend(rows)
         skipped.extend(issues)
-    return findings, skipped
+    return SecurityCollection(findings, skipped, sources)
 
 
 def collect_startup_folder_entries():
     findings = []
     skipped = []
+    sources = []
     folders = [
         ("Current user startup folder", os.path.join(os.environ.get("APPDATA", ""), r"Microsoft\Windows\Start Menu\Programs\Startup")),
         ("All users startup folder", os.path.join(os.environ.get("ProgramData", ""), r"Microsoft\Windows\Start Menu\Programs\Startup")),
     ]
     for label, folder in folders:
-        if not folder or not os.path.isdir(folder):
-            continue
+        count = 0
+        entries = None
         try:
-            for entry in os.scandir(folder):
+            environment_key = "APPDATA" if label.startswith("Current") else "ProgramData"
+            if not os.environ.get(environment_key):
+                raise SecuritySourceError(f"{environment_key} is unavailable.", "unavailable", "environment_unavailable")
+            entries = os.scandir(folder)
+            for entry in entries:
                 finding = security_finding(
                     category="Startup Folder",
                     title=entry.name,
@@ -2349,11 +3031,23 @@ def collect_startup_folder_entries():
                 )
                 apply_command_review_to_finding(finding, entry.path, entry.path)
                 findings.append(finding)
-        except PermissionError as ex:
-            skipped.append(security_skip("Startup Folder", f"Access denied reading {folder}.", "Access Denied", str(ex)))
+                count += 1
+            sources.append(security_source_result(label, "complete", count))
+        except FileNotFoundError as ex:
+            if entries is None:
+                sources.append(security_source_result(label, "complete", 0, "optional_folder_absent"))
+            else:
+                issue, outcome = security_source_failure("Startup Folder", label, ex, count)
+                skipped.append(issue)
+                sources.append(outcome)
         except Exception as ex:
-            skipped.append(security_skip("Startup Folder", f"Could not read {folder}.", "Error", str(ex)))
-    return findings, skipped
+            issue, outcome = security_source_failure("Startup Folder", label, ex, count)
+            skipped.append(issue)
+            sources.append(outcome)
+        finally:
+            if entries is not None:
+                entries.close()
+    return SecurityCollection(findings, skipped, sources)
 
 
 def collect_browser_policies():
@@ -2365,10 +3059,13 @@ def collect_browser_policies():
     ]
     findings = []
     skipped = []
+    sources = []
     browser_counts = defaultdict(int)
     browser_skips = defaultdict(int)
     for browser, root_label, root, subkey in policies:
-        rows, issues = collect_registry_tree_values(root_label, root, subkey, "Browser Policy", browser)
+        result = collect_registry_tree_values(root_label, root, subkey, "Browser Policy", browser)
+        rows, issues = result
+        sources.extend(result.sources)
         findings.extend(rows)
         skipped.extend(issues)
         browser_counts[browser] += len(rows)
@@ -2398,14 +3095,14 @@ def collect_browser_policies():
                     "No action is needed for this browser policy source unless you expected work, school, or security software policies.",
                 ],
             ))
-    return findings, skipped
+    return SecurityCollection(findings, skipped, sources)
 
 
 def collect_proxy_settings():
     findings = []
     skipped = []
     subkey = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
-    rows, issues = collect_registry_values(
+    result = collect_registry_values(
         "HKCU",
         winreg.HKEY_CURRENT_USER if winreg else None,
         subkey,
@@ -2414,6 +3111,7 @@ def collect_proxy_settings():
         severity="Info",
         score=10,
     )
+    rows, issues = result
     skipped.extend(issues)
     interesting = {"ProxyEnable", "ProxyServer", "AutoConfigURL", "AutoDetect", "ProxyOverride"}
     filtered = [row for row in rows if row.get("evidence", {}).get("value_name") in interesting]
@@ -2437,19 +3135,100 @@ def collect_proxy_settings():
             evidence={"registry_root": "HKCU", "registry_key": subkey},
             review_reasons=["No proxy setting was found in this location"],
         ))
-    return findings, skipped
+    return SecurityCollection(findings, skipped, result.sources)
+
+
+def run_security_powershell_sources(category, queries, timeout_seconds=20):
+    """Read typed per-source outcomes; transport errors are never empty success."""
+    command = r"""
+$ErrorActionPreference = 'Stop'
+$queries = ConvertFrom-Json -InputObject $env:DISK_SECURITY_QUERIES
+$outcomes = foreach ($query in $queries) {
+    $items = New-Object 'System.Collections.Generic.List[object]'
+    $status = 'complete'; $reason = ''; $detail = $null
+    try {
+        & ([scriptblock]::Create($query.script)) | ForEach-Object { $items.Add($_) }
+    } catch {
+        $detail = $_.Exception.Message
+        $category = [string]$_.CategoryInfo.Category
+        if ($query.allow_no_events -and $_.FullyQualifiedErrorId -like 'NoMatchingEventsFound*') {
+            $reason = 'no_matching_events'
+        } elseif ($category -in @('PermissionDenied','SecurityError') -or $_.Exception -is [UnauthorizedAccessException]) {
+            $status = 'access_denied'; $reason = 'access_denied'
+        } elseif ($category -in @('ObjectNotFound','ResourceUnavailable','NotImplemented') -or $_.FullyQualifiedErrorId -like 'SecuritySourceUnavailable*') {
+            $status = 'unavailable'; $reason = 'source_unavailable'
+        } else {
+            $status = 'failed'; $reason = 'source_failed'
+        }
+    }
+    [PSCustomObject]@{
+        schema_version = 'security-source-v1'; source = $query.source
+        status = $status; reason_code = $reason; detail = $detail; items = @($items.ToArray())
+    }
+}
+@($outcomes) | ConvertTo-Json -Depth 30 -Compress
+"""
+    rows, skipped, sources = [], [], []
+    for offset in range(0, len(queries), 20):
+        batch = queries[offset:offset + 20]
+        specs = [{"source": query[0], "script": query[1], "allow_no_events": bool(query[2]) if len(query) > 2 else False}
+                 for query in batch]
+        encoded = json.dumps(specs)
+        if len(encoded) > 24000 and len(batch) > 1:
+            for query in batch:
+                subrows, subissues, subsources = run_security_powershell_sources(category, [query], timeout_seconds)
+                rows.extend(subrows)
+                skipped.extend(subissues)
+                sources.extend(subsources)
+            continue
+        try:
+            if len(encoded) > 24000:
+                raise SecuritySourceError("Source query exceeds the bounded transport size.", "unavailable", "query_size_limit")
+            payload = run_powershell_json(command, timeout_seconds=timeout_seconds,
+                                          env_extra={"DISK_SECURITY_QUERIES": encoded}, strict=True)
+            if not isinstance(payload, list) or len(payload) != len(batch):
+                raise SecuritySourceError("Missing security source envelopes.", reason_code="invalid_source_envelope")
+        except Exception as ex:
+            for spec in specs:
+                issue, source = security_source_failure(category, spec["source"], ex)
+                skipped.append(issue)
+                sources.append(source)
+            continue
+        for spec, item in zip(specs, payload):
+            try:
+                if (not isinstance(item, dict) or item.get("schema_version") != "security-source-v1"
+                        or item.get("source") != spec["source"] or item.get("status") not in
+                        {"complete", "unavailable", "access_denied", "failed"}
+                        or not isinstance(item.get("items"), list)
+                        or any(not isinstance(row, dict) for row in item["items"])
+                        or not isinstance(item.get("reason_code"), str)
+                        or (item["status"] != "complete" and not item["reason_code"])
+                        or (item.get("detail") is not None and not isinstance(item["detail"], str))):
+                    raise SecuritySourceError("Invalid security source envelope.", reason_code="invalid_source_envelope")
+            except Exception as ex:
+                issue, source = security_source_failure(category, spec["source"], ex)
+                skipped.append(issue)
+                sources.append(source)
+                continue
+            rows.extend(item["items"])
+            sources.append(security_source_result(item["source"], item["status"], len(item["items"]), item["reason_code"], item.get("detail")))
+            if item["status"] != "complete":
+                skipped.append(security_skip(category, f"Could not fully read {item['source']}.",
+                    item["status"].replace("_", " ").title(), item.get("detail"), source=item["source"],
+                    reason_code=item["reason_code"], coverage_status=item["status"]))
+    return rows, skipped, sources
 
 
 def collect_dns_settings():
     command = r"""
 Get-DnsClientServerAddress -AddressFamily IPv4,IPv6 |
-Select-Object InterfaceAlias,InterfaceIndex,AddressFamily,ServerAddresses |
-ConvertTo-Json -Depth 5
+Select-Object InterfaceAlias,InterfaceIndex,AddressFamily,ServerAddresses
 """
     findings = []
     skipped = []
+    sources = []
     try:
-        rows = run_powershell_json(command, timeout_seconds=20)
+        rows, skipped, sources = run_security_powershell_sources("DNS Settings", [("dns_client", command)], 20)
         for row in rows:
             servers = row.get("ServerAddresses") or []
             if isinstance(servers, str):
@@ -2475,8 +3254,10 @@ ConvertTo-Json -Depth 5
                 ],
             ))
     except Exception as ex:
-        skipped.append(security_skip("DNS Settings", "Could not read DNS client server addresses.", "Error", str(ex)))
-    return findings, skipped
+        issue, outcome = security_source_failure("DNS Settings", "dns_client", ex, len(findings))
+        skipped.append(issue)
+        sources.append(outcome)
+    return SecurityCollection(findings, skipped, sources)
 
 
 def collect_defender_exclusions():
@@ -2487,12 +3268,19 @@ $pref = Get-MpPreference
     ExclusionProcess = @($pref.ExclusionProcess)
     ExclusionExtension = @($pref.ExclusionExtension)
     ExclusionIpAddress = @($pref.ExclusionIpAddress)
-} | ConvertTo-Json -Depth 5
+}
 """
     findings = []
     skipped = []
+    sources = []
     try:
-        rows = run_powershell_json(command, timeout_seconds=25)
+        rows, skipped, sources = run_security_powershell_sources("Microsoft Defender Exclusions", [("defender_preferences", command)], 25)
+        if skipped and not rows:
+            return SecurityCollection(findings, skipped, sources)
+        if len(rows) != 1 or not all(field in rows[0] for field in (
+                "ExclusionPath", "ExclusionProcess", "ExclusionExtension", "ExclusionIpAddress")):
+            raise SecuritySourceError("Defender preferences were not returned in the expected structure.",
+                                      reason_code="invalid_source_data")
         data = rows[0] if rows else {}
         mapping = [
             ("Excluded Path", "ExclusionPath", data.get("ExclusionPath") or []),
@@ -2528,7 +3316,7 @@ $pref = Get-MpPreference
                         "Do not remove exclusions blindly; some apps require them, but broad exclusions deserve review.",
                     ],
                 ))
-        if not findings:
+        if not findings and not skipped:
             findings.append(security_finding(
                 category="Microsoft Defender Exclusions",
                 title="No Defender exclusions reported",
@@ -2540,20 +3328,18 @@ $pref = Get-MpPreference
                 review_reasons=["No exclusions reported"],
             ))
     except Exception as ex:
-        skipped.append(security_skip("Microsoft Defender Exclusions", "Could not read Microsoft Defender exclusions. Defender may be unavailable, disabled, or managed by policy.", "Error", str(ex)))
-    return findings, skipped
+        issue, outcome = security_source_failure("Microsoft Defender Exclusions", "defender_preferences", ex, len(findings))
+        skipped.append(issue)
+        sources.append(outcome)
+    return SecurityCollection(findings, skipped, sources)
 
 
 def collect_scheduled_tasks():
     command = r"""
 $WarningPreference = 'SilentlyContinue'
-$items = foreach ($task in Get-ScheduledTask) {
+$tasks = @(Get-ScheduledTask -ErrorAction Stop)
+foreach ($task in $tasks) {
     $info = $null
-    try {
-        $info = Get-ScheduledTaskInfo -TaskName $task.TaskName -TaskPath $task.TaskPath -ErrorAction Stop
-    } catch {
-        $info = $null
-    }
     [PSCustomObject]@{
         TaskName = $task.TaskName
         TaskPath = $task.TaskPath
@@ -2561,9 +3347,6 @@ $items = foreach ($task in Get-ScheduledTask) {
         Author = $task.Author
         PrincipalUserId = $task.Principal.UserId
         RunLevel = [string]$task.Principal.RunLevel
-        LastRunTime = if ($info) { [string]$info.LastRunTime } else { $null }
-        NextRunTime = if ($info) { [string]$info.NextRunTime } else { $null }
-        LastTaskResult = if ($info) { $info.LastTaskResult } else { $null }
         Actions = @($task.Actions | ForEach-Object {
             [PSCustomObject]@{
                 Execute = $_.Execute
@@ -2582,13 +3365,25 @@ $items = foreach ($task in Get-ScheduledTask) {
         })
     }
 }
-$items | ConvertTo-Json -Depth 20 -Compress
 """
     findings = []
     skipped = []
+    sources = []
     try:
-        rows = run_powershell_json(command, timeout_seconds=45)
+        rows, skipped, sources = run_security_powershell_sources("Scheduled Task", [("scheduled_tasks", command)], 45)
+        detail_queries = []
         for row in rows:
+            name = str(row.get("TaskName") or "").replace("'", "''")
+            path = str(row.get("TaskPath") or "\\").replace("'", "''")
+            detail_queries.append((f"task_info:{row.get('TaskPath')}{row.get('TaskName')}",
+                f"Get-ScheduledTaskInfo -TaskName '{name}' -TaskPath '{path}' -ErrorAction Stop | "
+                "Select-Object TaskName,TaskPath,LastRunTime,NextRunTime,LastTaskResult"))
+        details, detail_issues, detail_sources = run_security_powershell_sources("Scheduled Task", detail_queries, 45)
+        skipped.extend(detail_issues)
+        sources.extend(detail_sources)
+        by_task = {(item.get("TaskPath"), item.get("TaskName")): item for item in details}
+        for row in rows:
+            row.update(by_task.get((row.get("TaskPath"), row.get("TaskName")), {}))
             actions = as_list(row.get("Actions"))
             triggers = as_list(row.get("Triggers"))
             action_texts = []
@@ -2644,7 +3439,7 @@ $items | ConvertTo-Json -Depth 20 -Compress
             for action_text in action_texts:
                 apply_command_review_to_finding(finding, action_text)
             findings.append(finding)
-        if not findings:
+        if not findings and not skipped:
             findings.append(security_finding(
                 category="Scheduled Task",
                 title="No scheduled tasks reported",
@@ -2656,20 +3451,24 @@ $items | ConvertTo-Json -Depth 20 -Compress
                 evidence={"source": "Get-ScheduledTask"},
             ))
     except Exception as ex:
-        skipped.append(security_skip("Scheduled Task", "Could not read scheduled tasks.", "Error", str(ex)))
-    return findings, skipped
+        issue, outcome = security_source_failure("Scheduled Task", "scheduled_tasks", ex, len(findings))
+        skipped.append(issue)
+        sources.append(outcome)
+    return SecurityCollection(findings, skipped, sources)
 
 
 def collect_windows_services_summary():
     command = r"""
 Get-CimInstance Win32_Service |
-Select-Object Name,DisplayName,State,StartMode,PathName,StartName,Description |
-ConvertTo-Json -Depth 5
+Select-Object Name,DisplayName,State,StartMode,PathName,StartName,Description
 """
     findings = []
     skipped = []
+    sources = []
     try:
-        rows = run_powershell_json(command, timeout_seconds=35)
+        rows, skipped, sources = run_security_powershell_sources("Windows Service", [("services", command)], 35)
+        if not rows and skipped:
+            return SecurityCollection(findings, skipped, sources)
         total = len(rows)
         automatic = [row for row in rows if str(row.get("StartMode") or "").lower() == "auto"]
         findings.append(security_finding(
@@ -2726,14 +3525,15 @@ ConvertTo-Json -Depth 5
             apply_command_review_to_finding(finding, command_text)
             findings.append(finding)
     except Exception as ex:
-        skipped.append(security_skip("Windows Service", "Could not read Windows services summary.", "Error", str(ex)))
-    return findings, skipped
+        issue, outcome = security_source_failure("Windows Service", "services", ex, len(findings))
+        skipped.append(issue)
+        sources.append(outcome)
+    return SecurityCollection(findings, skipped, sources)
 
 
 def collect_wmi_persistence():
-    command = r"""
-$ErrorActionPreference = 'Stop'
-$filters = @(Get-CimInstance -Namespace root/subscription -ClassName __EventFilter -ErrorAction Stop | ForEach-Object {
+    filters = r"""
+Get-CimInstance -Namespace root/subscription -ClassName __EventFilter -ErrorAction Stop | ForEach-Object {
     [PSCustomObject]@{
         GroupType = 'Filter'
         Name = $_.Name
@@ -2742,8 +3542,10 @@ $filters = @(Get-CimInstance -Namespace root/subscription -ClassName __EventFilt
         EventNamespace = $_.EventNamespace
         CreatorSID = if ($_.CreatorSID) { [Convert]::ToBase64String($_.CreatorSID) } else { $null }
     }
-})
-$commandConsumers = @(Get-CimInstance -Namespace root/subscription -ClassName CommandLineEventConsumer -ErrorAction Stop | ForEach-Object {
+}
+"""
+    command_consumers = r"""
+Get-CimInstance -Namespace root/subscription -ClassName CommandLineEventConsumer -ErrorAction Stop | ForEach-Object {
     [PSCustomObject]@{
         GroupType = 'Consumer'
         ConsumerType = 'CommandLineEventConsumer'
@@ -2752,8 +3554,10 @@ $commandConsumers = @(Get-CimInstance -Namespace root/subscription -ClassName Co
         ExecutablePath = $_.ExecutablePath
         WorkingDirectory = $_.WorkingDirectory
     }
-})
-$scriptConsumers = @(Get-CimInstance -Namespace root/subscription -ClassName ActiveScriptEventConsumer -ErrorAction Stop | ForEach-Object {
+}
+"""
+    script_consumers = r"""
+Get-CimInstance -Namespace root/subscription -ClassName ActiveScriptEventConsumer -ErrorAction Stop | ForEach-Object {
     [PSCustomObject]@{
         GroupType = 'Consumer'
         ConsumerType = 'ActiveScriptEventConsumer'
@@ -2762,21 +3566,25 @@ $scriptConsumers = @(Get-CimInstance -Namespace root/subscription -ClassName Act
         ScriptFilename = $_.ScriptFilename
         ScriptTextPreview = if ($_.ScriptText) { $_.ScriptText.Substring(0, [Math]::Min(500, $_.ScriptText.Length)) } else { $null }
     }
-})
-$bindings = @(Get-CimInstance -Namespace root/subscription -ClassName __FilterToConsumerBinding -ErrorAction Stop | ForEach-Object {
+}
+"""
+    bindings = r"""
+Get-CimInstance -Namespace root/subscription -ClassName __FilterToConsumerBinding -ErrorAction Stop | ForEach-Object {
     [PSCustomObject]@{
         GroupType = 'Binding'
         Filter = [string]$_.Filter
         Consumer = [string]$_.Consumer
         CreatorSID = if ($_.CreatorSID) { [Convert]::ToBase64String($_.CreatorSID) } else { $null }
     }
-})
-@($filters + $commandConsumers + $scriptConsumers + $bindings) | ConvertTo-Json -Depth 8 -Compress
+}
 """
     findings = []
     skipped = []
+    sources = []
     try:
-        rows = run_powershell_json(command, timeout_seconds=35)
+        rows, skipped, sources = run_security_powershell_sources("WMI Persistence", [
+            ("wmi_filters", filters), ("wmi_command_consumers", command_consumers),
+            ("wmi_script_consumers", script_consumers), ("wmi_bindings", bindings)], 35)
         grouped = defaultdict(int)
         for row in rows:
             group_type = row.get("GroupType") or "WMI Item"
@@ -2805,7 +3613,7 @@ $bindings = @(Get-CimInstance -Namespace root/subscription -ClassName __FilterTo
             if command_text:
                 apply_command_review_to_finding(finding, command_text)
             findings.append(finding)
-        if not rows:
+        if not rows and not skipped:
             findings.append(security_finding(
                 category="WMI Persistence",
                 title="No WMI persistence items reported",
@@ -2818,22 +3626,16 @@ $bindings = @(Get-CimInstance -Namespace root/subscription -ClassName __FilterTo
                 source="advanced_review",
             ))
     except Exception as ex:
-        skipped.append(security_skip("WMI Persistence", "Could not read WMI persistence data. Administrator permission may be required.", "Error", str(ex)))
-    return findings, skipped
+        issue, outcome = security_source_failure("WMI Persistence", "wmi", ex, len(findings))
+        skipped.append(issue)
+        sources.append(outcome)
+    return SecurityCollection(findings, skipped, sources)
 
 
 def collect_event_log_correlation():
     command = r"""
-$ErrorActionPreference = 'SilentlyContinue'
 $start = (Get-Date).AddDays(-7)
-$queries = @(
-    @{ LogName = 'Microsoft-Windows-Windows Defender/Operational'; Id = @(1116,1117,1121,5007); Label = 'Microsoft Defender' },
-    @{ LogName = 'Microsoft-Windows-PowerShell/Operational'; Id = @(4103,4104); Label = 'PowerShell' },
-    @{ LogName = 'System'; Id = @(7045); Label = 'Service Control Manager' }
-)
-$items = foreach ($query in $queries) {
-    try {
-        Get-WinEvent -FilterHashtable @{ LogName = $query.LogName; Id = $query.Id; StartTime = $start } -MaxEvents 40 -ErrorAction Stop | ForEach-Object {
+Get-WinEvent -FilterHashtable @{ LogName = 'LOG_NAME'; Id = @(EVENT_IDS); StartTime = $start } -MaxEvents 40 -ErrorAction Stop | ForEach-Object {
             [PSCustomObject]@{
                 TimeCreated = [string]$_.TimeCreated
                 Source = $_.ProviderName
@@ -2841,31 +3643,21 @@ $items = foreach ($query in $queries) {
                 EventId = $_.Id
                 LevelDisplayName = $_.LevelDisplayName
                 Summary = ($_.Message -replace '\s+', ' ').Substring(0, [Math]::Min(500, ($_.Message -replace '\s+', ' ').Length))
-                RelatedItem = $query.Label
+                RelatedItem = 'SOURCE_LABEL'
             }
-        }
-    } catch {
-        [PSCustomObject]@{
-            TimeCreated = $null
-            Source = 'Collector'
-            LogName = $query.LogName
-            EventId = $null
-            LevelDisplayName = 'Skipped'
-            Summary = $_.Exception.Message
-            RelatedItem = $query.Label
-        }
-    }
 }
-$items | ConvertTo-Json -Depth 6 -Compress
 """
     findings = []
     skipped = []
+    sources = []
     try:
-        rows = run_powershell_json(command, timeout_seconds=45)
+        queries = [(log, command.replace("LOG_NAME", log).replace("EVENT_IDS", ids).replace("SOURCE_LABEL", label), True)
+                   for log, ids, label in (
+                       ("Microsoft-Windows-Windows Defender/Operational", "1116,1117,1121,5007", "Microsoft Defender"),
+                       ("Microsoft-Windows-PowerShell/Operational", "4103,4104", "PowerShell"),
+                       ("System", "7045", "Service Control Manager"))]
+        rows, skipped, sources = run_security_powershell_sources("Event Log Correlation", queries, 45)
         for row in rows:
-            if row.get("LevelDisplayName") == "Skipped":
-                skipped.append(security_skip("Event Log Correlation", f"Could not read {row.get('LogName')}.", "Skipped", row.get("Summary")))
-                continue
             event_id = row.get("EventId")
             title = f"{row.get('RelatedItem') or row.get('Source')}: Event {event_id}"
             severity = "Medium Review" if event_id in (1116, 7045, 4104) else "Low Review"
@@ -2908,17 +3700,18 @@ $items | ConvertTo-Json -Depth 6 -Compress
                 source="advanced_review",
             ))
     except Exception as ex:
-        skipped.append(security_skip("Event Log Correlation", "Could not run event log correlation.", "Error", str(ex)))
-    return findings, skipped
+        issue, outcome = security_source_failure("Event Log Correlation", "event_logs", ex, len(findings))
+        skipped.append(issue)
+        sources.append(outcome)
+    return SecurityCollection(findings, skipped, sources)
 
 
 def collect_sysmon_correlation():
     command = r"""
 $logName = 'Microsoft-Windows-Sysmon/Operational'
-$log = Get-WinEvent -ListLog $logName -ErrorAction SilentlyContinue
+$log = Get-WinEvent -ListLog $logName -ErrorAction Stop
 if (-not $log -or -not $log.IsEnabled) {
-    [PSCustomObject]@{ SysmonInstalled = $false; Skipped = $true; Message = 'Sysmon operational log was not detected or is not enabled.' } | ConvertTo-Json -Depth 5 -Compress
-    return
+    Write-Error -ErrorId SecuritySourceUnavailable -Category ResourceUnavailable -Message 'Sysmon operational log is unavailable or disabled.' -ErrorAction Stop
 }
 $start = (Get-Date).AddDays(-3)
 Get-WinEvent -FilterHashtable @{ LogName = $logName; Id = @(1,3,7,11,13); StartTime = $start } -MaxEvents 60 -ErrorAction Stop |
@@ -2931,15 +3724,13 @@ ForEach-Object {
         EventId = $_.Id
         Summary = ($_.Message -replace '\s+', ' ').Substring(0, [Math]::Min(700, ($_.Message -replace '\s+', ' ').Length))
     }
-} | ConvertTo-Json -Depth 6 -Compress
+}
 """
     findings = []
     skipped = []
+    sources = []
     try:
-        rows = run_powershell_json(command, timeout_seconds=35)
-        if rows and rows[0].get("Skipped"):
-            skipped.append(security_skip("Sysmon Correlation", rows[0].get("Message") or "Sysmon was not detected.", "Skipped"))
-            return findings, skipped
+        rows, skipped, sources = run_security_powershell_sources("Sysmon Correlation", [("sysmon_events", command, True)], 35)
         for row in rows:
             event_id = row.get("EventId")
             findings.append(security_finding(
@@ -2966,7 +3757,7 @@ ForEach-Object {
                 ],
                 source="advanced_review",
             ))
-        if not findings:
+        if not findings and not skipped:
             findings.append(security_finding(
                 category="Sysmon Correlation",
                 title="No selected recent Sysmon events reported",
@@ -2979,26 +3770,25 @@ ForEach-Object {
                 source="advanced_review",
             ))
     except Exception as ex:
-        skipped.append(security_skip("Sysmon Correlation", "Could not read optional Sysmon data. The app does not install Sysmon.", "Error", str(ex)))
-    return findings, skipped
+        issue, outcome = security_source_failure("Sysmon Correlation", "sysmon_events", ex, len(findings))
+        skipped.append(issue)
+        sources.append(outcome)
+    return SecurityCollection(findings, skipped, sources)
 
 
 def collect_deep_services_and_drivers():
-    command = r"""
-$services = Get-CimInstance Win32_Service | Select-Object Name,DisplayName,State,StartMode,PathName,StartName,ServiceType
-$drivers = Get-CimInstance Win32_SystemDriver | Select-Object Name,DisplayName,State,StartMode,PathName,ServiceType
-[PSCustomObject]@{
-    Services = @($services)
-    Drivers = @($drivers)
-} | ConvertTo-Json -Depth 7 -Compress
-"""
     findings = []
     skipped = []
+    sources = []
     try:
-        rows = run_powershell_json(command, timeout_seconds=45)
-        data = rows[0] if rows else {}
-        services = as_list(data.get("Services"))
-        drivers = as_list(data.get("Drivers"))
+        services, service_skips, service_sources = run_security_powershell_sources("Advanced Services And Drivers", [
+            ("advanced_services", "Get-CimInstance Win32_Service | Select-Object Name,DisplayName,State,StartMode,PathName,StartName,ServiceType")], 45)
+        drivers, driver_skips, driver_sources = run_security_powershell_sources("Advanced Services And Drivers", [
+            ("drivers", "Get-CimInstance Win32_SystemDriver | Select-Object Name,DisplayName,State,StartMode,PathName,ServiceType")], 45)
+        skipped = service_skips + driver_skips
+        sources = service_sources + driver_sources
+        if not services and not drivers and skipped:
+            return SecurityCollection(findings, skipped, sources)
         findings.append(security_finding(
             category="Advanced Services And Drivers",
             title="Advanced services and drivers summary",
@@ -3051,8 +3841,10 @@ $drivers = Get-CimInstance Win32_SystemDriver | Select-Object Name,DisplayName,S
                 apply_command_review_to_finding(finding, path)
                 findings.append(finding)
     except Exception as ex:
-        skipped.append(security_skip("Advanced Services And Drivers", "Could not read advanced services and drivers.", "Error", str(ex)))
-    return findings, skipped
+        issue, outcome = security_source_failure("Advanced Services And Drivers", "services_drivers", ex, len(findings))
+        skipped.append(issue)
+        sources.append(outcome)
+    return SecurityCollection(findings, skipped, sources)
 
 
 def collect_explorer_autorun_locations():
@@ -3065,11 +3857,16 @@ def collect_explorer_autorun_locations():
     ]
     findings = []
     skipped = []
+    sources = []
     if winreg is None:
-        return findings, [security_skip("Explorer Extension", "Windows registry APIs are not available on this platform.")]
+        issue, outcome = security_source_failure("Explorer Extension", "explorer_registry", SecuritySourceError(
+            "Windows registry APIs are not available on this platform.", "unavailable", "registry_unavailable"))
+        return SecurityCollection(findings, [issue], [outcome])
 
     for root_label, root, subkey in locations:
-        rows, issues = collect_registry_tree_values(root_label, root, subkey, "Explorer Extension", "Windows Explorer", max_depth=2)
+        result = collect_registry_tree_values(root_label, root, subkey, "Explorer Extension", "Windows Explorer", max_depth=2)
+        rows, issues = result
+        sources.extend(result.sources)
         for row in rows:
             row["source"] = "advanced_review"
             row["plain_explanation"] = (
@@ -3095,62 +3892,86 @@ def collect_explorer_autorun_locations():
             evidence={"locations_checked": [f"{root_label}\\{subkey}" for root_label, _root, subkey in locations]},
             source="advanced_review",
         ))
-    return findings, skipped
+    return SecurityCollection(findings, skipped, sources)
 
 
-def collect_standard_security_review(cancel_event=None):
+def security_cancel_collection(findings, skipped_items, coverage, collector_ids):
+    if coverage is not None:
+        for entry in coverage["collectors"]:
+            if entry["collector_id"] in collector_ids and entry["status"] in ("pending", "running"):
+                entry.update(status="cancelled", reason_code="run_cancelled")
+    error = ScanCancelled("Security Check cancelled by user.")
+    error.findings = list(findings)
+    error.skipped_items = list(skipped_items)
+    error.collector_coverage = coverage
+    raise error
+
+
+def run_security_collectors(collectors, cancel_event=None, collector_coverage=None, evidence_callback=None):
     findings = []
     skipped = []
-    collectors = [
-        ("Registry Startup", collect_startup_registry_entries),
-        ("Startup Folder", collect_startup_folder_entries),
-        ("Browser Policy", collect_browser_policies),
-        ("Proxy Settings", collect_proxy_settings),
-        ("DNS Settings", collect_dns_settings),
-        ("Microsoft Defender Exclusions", collect_defender_exclusions),
-        ("Scheduled Task", collect_scheduled_tasks),
-        ("Windows Service", collect_windows_services_summary),
-    ]
-    for label, collector in collectors:
-        if cancel_event and cancel_event.is_set():
-            raise ScanCancelled("Security Check cancelled by user.")
-        try:
-            rows, issues = collector()
-            findings.extend(rows)
-            skipped.extend(issues)
-        except ScanCancelled:
-            raise
-        except Exception as ex:
-            skipped.append(security_skip(label, f"{label} collector failed.", "Error", str(ex)))
-    return findings, skipped
-
-
-def collect_advanced_security_review(options=None, cancel_event=None):
-    options = options or {}
-    findings = []
-    skipped = []
-    collectors = [
-        ("WMI Persistence", collect_wmi_persistence, bool(options.get("wmi_check", True))),
-        ("Event Log Correlation", collect_event_log_correlation, bool(options.get("event_log_correlation", True))),
-        ("Sysmon Correlation", collect_sysmon_correlation, bool(options.get("sysmon_correlation", True))),
-        ("Advanced Services And Drivers", collect_deep_services_and_drivers, True),
-        ("Explorer Extension", collect_explorer_autorun_locations, True),
-    ]
-    for label, collector, enabled in collectors:
-        if cancel_event and cancel_event.is_set():
-            raise ScanCancelled("Security Check cancelled by user.")
+    sources = []
+    collector_ids = [item[0] for item in collectors]
+    for collector_id, label, collector, enabled in collectors:
         if not enabled:
-            skipped.append(security_skip(label, f"{label} collector was not selected.", "Skipped"))
+            update_security_coverage(collector_coverage, collector_id, status="disabled", reason_code="not_selected")
             continue
+        if cancel_event and cancel_event.is_set():
+            security_cancel_collection(findings, skipped, collector_coverage, collector_ids)
+        update_security_coverage(collector_coverage, collector_id, status="running")
+        if evidence_callback:
+            evidence_callback(collector_id, [], [])
         try:
-            rows, issues = collector()
+            result = collector()
+        except ScanCancelled as ex:
+            rows = getattr(ex, "findings", [])
+            issues = getattr(ex, "skipped_items", [])
             findings.extend(rows)
             skipped.extend(issues)
-        except ScanCancelled:
-            raise
+            update_security_coverage(collector_coverage, collector_id, SecurityCollection(rows, issues, [
+                security_source_result(collector_id, "cancelled", len(rows), "run_cancelled")]))
+            if evidence_callback:
+                evidence_callback(collector_id, rows, issues)
+            security_cancel_collection(findings, skipped, collector_coverage, collector_ids)
         except Exception as ex:
-            skipped.append(security_skip(label, f"{label} collector failed.", "Error", str(ex)))
-    return findings, skipped
+            issue, outcome = security_source_failure(label, collector_id, ex)
+            result = SecurityCollection([], [issue], [outcome])
+        rows, issues = result
+        findings.extend(rows)
+        skipped.extend(issues)
+        sources.extend(getattr(result, "sources", []))
+        update_security_coverage(collector_coverage, collector_id, result)
+        if evidence_callback:
+            evidence_callback(collector_id, rows, issues)
+        if cancel_event and cancel_event.is_set():
+            security_cancel_collection(findings, skipped, collector_coverage, collector_ids)
+    return SecurityCollection(findings, skipped, sources)
+
+
+def collect_standard_security_review(cancel_event=None, collector_coverage=None, evidence_callback=None):
+    collectors = [
+        ("registry_startup", "Registry Startup", collect_startup_registry_entries, True),
+        ("startup_folders", "Startup Folder", collect_startup_folder_entries, True),
+        ("browser_policies", "Browser Policy", collect_browser_policies, True),
+        ("proxy_settings", "Proxy Settings", collect_proxy_settings, True),
+        ("dns_settings", "DNS Settings", collect_dns_settings, True),
+        ("defender_exclusions", "Microsoft Defender Exclusions", collect_defender_exclusions, True),
+        ("scheduled_tasks", "Scheduled Task", collect_scheduled_tasks, True),
+        ("services_summary", "Windows Service", collect_windows_services_summary, True),
+    ]
+    return run_security_collectors(collectors, cancel_event, collector_coverage, evidence_callback)
+
+
+def collect_advanced_security_review(options=None, cancel_event=None, collector_coverage=None, evidence_callback=None):
+    options = options or {}
+    collectors = [
+        ("wmi_persistence", "WMI Persistence", collect_wmi_persistence, bool(options.get("wmi_check", True))),
+        ("event_logs", "Event Log Correlation", collect_event_log_correlation, bool(options.get("event_log_correlation", True))),
+        ("sysmon", "Sysmon Correlation", collect_sysmon_correlation, bool(options.get("sysmon_correlation", True))),
+        ("services_drivers", "Advanced Services And Drivers", collect_deep_services_and_drivers, True),
+        ("explorer_extensions", "Explorer Extension", collect_explorer_autorun_locations, True),
+    ]
+    return run_security_collectors(collectors, cancel_event, collector_coverage, evidence_callback)
 
 
 def build_scan_result_payload(root, root_node, scanner: DiskScanner):
@@ -3297,19 +4118,22 @@ def record_summary(record):
     }
 
 
-def run_powershell_json(command: str, timeout_seconds: int = 20, env_extra=None):
+def run_powershell_json(command: str, timeout_seconds: int = 20, env_extra=None, strict=False):
     env = os.environ.copy()
     if env_extra:
         env.update(env_extra)
 
     completed = subprocess.run(
-        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", command],
         capture_output=True,
         text=True,
         timeout=timeout_seconds,
         env=env,
     )
 
+    if strict and (completed.returncode != 0 or completed.stderr.strip()):
+        raise SecuritySourceError((completed.stderr or completed.stdout or "PowerShell command failed").strip(),
+                                  reason_code="powershell_transport_error")
     if completed.returncode != 0:
         raise RuntimeError((completed.stderr or completed.stdout or "PowerShell command failed").strip())
 
@@ -4924,25 +5748,70 @@ def build_installer_backup_review_manifest(review, current_review=None):
 
 
 class DashboardApp:
-    def __init__(self):
+    def __init__(self, initialize_storage=True):
         self.lock = threading.Lock()
+        self._operation = None
+        self.csrf_token = secrets.token_urlsafe(32)
         self.active_scan = None
         self.active_scanner = None
         self.active_security_check = None
         self.last_installer_cache_review = None
         self.shutting_down = False
-        self.version_metadata = ensure_version_metadata()
+        self.version_metadata = ensure_version_metadata(persist=initialize_storage)
+
+    def _admit_operation_locked(self, kind, owner):
+        if self.shutting_down:
+            raise RuntimeError("Dashboard server is shutting down. No new work can start.")
+        if self._operation is not None:
+            raise RuntimeError(f"Wait for the current {self._operation['kind']} operation to finish.")
+        self._operation = {"kind": kind, "owner": owner, "finalizing": False}
+
+    def _owns_operation_locked(self, owner):
+        return self._operation is not None and self._operation["owner"] is owner
+
+    def _start_worker(self, active, field, kind, target):
+        thread = threading.Thread(target=target, args=(active,), daemon=True)
+        with self.lock:
+            self._admit_operation_locked(kind, active)
+            previous = getattr(self, field)
+            previous_scanner = self.active_scanner
+            setattr(self, field, active)
+            if field == "active_scan":
+                self.active_scanner = None
+        try:
+            thread.start()
+        except Exception:
+            with self.lock:
+                if self._owns_operation_locked(active) and getattr(self, field) is active:
+                    setattr(self, field, previous)
+                    if field == "active_scan":
+                        self.active_scanner = previous_scanner
+                    self._operation = None
+            raise
+
+    def _begin_worker_finalization(self, active, field, record):
+        with self.lock:
+            if not self._owns_operation_locked(active) or getattr(self, field) is not active:
+                return False
+            if record["status"] == "completed" and active["cancel_event"].is_set():
+                record["status"] = "cancelled"
+            # Cancellation is closed here; ownership remains held through persistence.
+            self._operation["finalizing"] = True
+            return True
+
+    def _publish_worker_result(self, active, field, record):
+        with self.lock:
+            if self._owns_operation_locked(active) and getattr(self, field) is active:
+                setattr(self, field, record)
+                if field == "active_scan":
+                    self.active_scanner = None
+                self._operation = None
 
     def start_scan(self, data):
-        with self.lock:
-            if self.active_scan and self.active_scan.get("status") == "running":
-                raise RuntimeError("A scan is already running.")
-            if self.active_security_check and self.active_security_check.get("status") == "running":
-                raise RuntimeError("Cancel or wait for the current Security Check to finish before starting a scan.")
-
-        root = os.path.abspath(str(data.get("root", "")).strip())
-        if not root:
+        root_input = data.get("root")
+        if not isinstance(root_input, str) or not root_input.strip():
             raise ValueError("Choose a drive or folder before starting a scan.")
+        root = os.path.abspath(root_input.strip())
         if not os.path.exists(root):
             raise ValueError(f"Scan root does not exist: {root}")
         if not os.path.isdir(root):
@@ -4951,7 +5820,7 @@ class DashboardApp:
         settings = parse_scan_settings(data)
         scan_type = "drive" if is_drive_root(root) else "directory"
         requires_ack = scan_type == "drive" or is_sensitive_path(root)
-        acknowledgement = bool(data.get("acknowledgeSafety", False))
+        acknowledgement = data.get("acknowledgeSafety") is True
 
         if requires_ack and not acknowledgement:
             raise ValueError("Safety acknowledgement is required before scanning this location.")
@@ -4976,105 +5845,77 @@ class DashboardApp:
             "cancel_event": cancel_event,
         }
 
-        thread = threading.Thread(target=self._run_scan, args=(active,), daemon=True)
-
-        with self.lock:
-            self.active_scan = active
-            self.active_scanner = None
-
-        thread.start()
+        self._start_worker(active, "active_scan", "disk scan", self._run_scan)
         return self.scan_status()
 
     def _run_scan(self, active):
-        args = argparse.Namespace(
-            top=active["settings"]["top"],
-            max_tree_depth=active["settings"]["max_tree_depth"],
-            max_tree_children=active["settings"]["max_tree_children"],
-            min_tree_size_mb=active["settings"]["min_tree_size_mb"],
-            status_seconds=0.25,
-            include_reparse=active["settings"]["include_reparse"],
-            show_skipped_live=False,
-            quiet=True,
-            cancel_event=active["cancel_event"],
-        )
-        scanner = DiskScanner(args)
-
         with self.lock:
-            self.active_scanner = scanner
-
+            if not self._owns_operation_locked(active) or self.active_scan is not active:
+                return
         started = time.time()
-        root_node = None
-
+        record = {key: value for key, value in active.items() if key != "cancel_event"}
         try:
-            root_node = scanner.scan(active["root"])
-            status = "cancelled" if active["cancel_event"].is_set() else "completed"
-            error = None
-        except ScanCancelled:
-            status = "cancelled"
-            error = "Scan cancelled by user."
-            root_node = {"name": display_name(active["root"]), "path": active["root"], "size": scanner.total_bytes, "file_count": scanner.file_count, "children": []}
-        except Exception as ex:
-            status = "failed"
-            error = str(ex)
-            root_node = {"name": display_name(active["root"]), "path": active["root"], "size": scanner.total_bytes, "file_count": scanner.file_count, "children": []}
-
-        completed_at = now_iso()
-        duration = int(time.time() - started)
-        result = build_scan_result_payload(active["root"], root_node, scanner)
-        report_path = None
-
-        if status in ("completed", "cancelled"):
-            report_path = str((REPORTS_DIR / f"{active['scan_id']}.html").resolve())
+            args = argparse.Namespace(
+                top=active["settings"]["top"],
+                max_tree_depth=active["settings"]["max_tree_depth"],
+                max_tree_children=active["settings"]["max_tree_children"],
+                min_tree_size_mb=active["settings"]["min_tree_size_mb"],
+                status_seconds=0.25,
+                include_reparse=active["settings"]["include_reparse"],
+                show_skipped_live=False,
+                quiet=True,
+                cancel_event=active["cancel_event"],
+            )
+            scanner = DiskScanner(args)
+            with self.lock:
+                if not self._owns_operation_locked(active) or self.active_scan is not active:
+                    return
+                self.active_scanner = scanner
             try:
+                root_node = scanner.scan(active["root"])
+                record["status"] = "cancelled" if active["cancel_event"].is_set() else "completed"
+            except ScanCancelled:
+                record["status"] = "cancelled"
+                record["error"] = "Scan cancelled by user."
+                root_node = {"name": display_name(active["root"]), "path": active["root"], "size": scanner.total_bytes, "file_count": scanner.file_count, "children": []}
+            except Exception as ex:
+                record["status"] = "failed"
+                record["error"] = str(ex)
+                root_node = {"name": display_name(active["root"]), "path": active["root"], "size": scanner.total_bytes, "file_count": scanner.file_count, "children": []}
+            record["result"] = build_scan_result_payload(active["root"], root_node, scanner)
+            if record["status"] in ("completed", "cancelled"):
+                report_path = str((REPORTS_DIR / f"{active['scan_id']}.html").resolve())
                 report_html = build_html_report(active["root"], root_node, scanner)
                 Path(report_path).write_text(report_html, encoding="utf-8")
-            except Exception as ex:
-                status = "failed"
-                error = f"Could not write report: {ex}"
-
-        record = {
-            "scan_id": active["scan_id"],
-            "scan_type": active["scan_type"],
-            "root": active["root"],
-            "started_at": active["started_at"],
-            "completed_at": completed_at,
-            "duration_seconds": duration,
-            "status": status,
-            "settings": active["settings"],
-            "safety_acknowledged": active["safety_acknowledged"],
-            "requires_acknowledgement": active["requires_acknowledgement"],
-            "report_path": report_path,
-            "error": error,
-            "result": result,
-        }
-
+                record["report_path"] = report_path
+        except Exception as ex:
+            record["status"] = "failed"
+            record["error"] = str(ex)
+        record["completed_at"] = now_iso()
+        record["duration_seconds"] = int(time.time() - started)
+        if not self._begin_worker_finalization(active, "active_scan", record):
+            return
         try:
-            scan_record_path(active["scan_id"]).write_text(json.dumps(record, indent=2), encoding="utf-8")
+            atomic_write_json(scan_record_path(active["scan_id"]), record)
         except Exception as ex:
             record["error"] = f"{record.get('error') or ''} Record write failed: {ex}".strip()
             record["status"] = "failed"
-
-        with self.lock:
-            self.active_scan = record
-            self.active_scanner = None
+        finally:
+            self._publish_worker_result(active, "active_scan", record)
 
     def cancel_scan(self):
         with self.lock:
             if not self.active_scan or self.active_scan.get("status") != "running":
                 raise RuntimeError("No active scan is running.")
+            if not self._owns_operation_locked(self.active_scan) or self._operation["finalizing"]:
+                raise RuntimeError("The scan is already finishing; cancellation is no longer available.")
             self.active_scan["cancel_event"].set()
         return self.scan_status()
 
     def start_security_check(self, data):
         if data.get("registryBackup"):
             raise ValueError("Registry backup creation is not available in this version. Leave that option disabled.")
-        with self.lock:
-            if self.active_security_check and self.active_security_check.get("status") == "running":
-                raise RuntimeError("A Security Check is already running.")
-            if self.active_scan and self.active_scan.get("status") == "running":
-                raise RuntimeError("Cancel or wait for the current scan to finish before starting a Security Check.")
-
-        acknowledgement = bool(data.get("acknowledgeSafety", False))
+        acknowledgement = data.get("acknowledgeSafety") is True
         if not acknowledgement:
             raise ValueError("Security Check acknowledgement is required before starting.")
 
@@ -5101,6 +5942,7 @@ class DashboardApp:
         }
         check_id = uuid.uuid4().hex
         cancel_event = threading.Event()
+        coverage = new_security_coverage(mode, options)
         active = {
             "check_id": check_id,
             "schema_version": "security-check-lifecycle-v1",
@@ -5111,7 +5953,8 @@ class DashboardApp:
             "status": "running",
             "safety_acknowledged": acknowledgement,
             "options": options,
-            "summary": security_check_summary("running"),
+            "collector_coverage": coverage,
+            "summary": security_check_summary("running", collector_coverage=coverage),
             "findings": [],
             "skipped_items": [],
             "errors": [],
@@ -5123,16 +5966,13 @@ class DashboardApp:
             "cancel_event": cancel_event,
         }
 
-        thread = threading.Thread(target=self._run_security_check, args=(active,), daemon=True)
-
-        with self.lock:
-            self.active_security_check = active
-
-        thread.start()
+        self._start_worker(active, "active_security_check", "Security Check", self._run_security_check)
         return self.security_check_status()
 
     def _set_security_step(self, active, step_id, status, detail=None):
         with self.lock:
+            if not self._owns_operation_locked(active) or self.active_security_check is not active:
+                return
             for step in active["steps"]:
                 if step["id"] == step_id:
                     step["status"] = status
@@ -5144,9 +5984,50 @@ class DashboardApp:
         return active["cancel_event"].is_set()
 
     def _run_security_check(self, active):
+        with self.lock:
+            if not self._owns_operation_locked(active) or self.active_security_check is not active:
+                return
         started = time.time()
         status = "completed"
         error = None
+        coverage = copy.deepcopy(active["collector_coverage"])
+        findings = []
+        skipped_items = []
+        publications = 0
+
+        def publish(_collector_id, rows, issues):
+            nonlocal publications
+            findings.extend(copy.deepcopy(rows))
+            skipped_items.extend(copy.deepcopy(issues))
+            publications += 1
+            with self.lock:
+                if not self._owns_operation_locked(active) or self.active_security_check is not active:
+                    raise ScanCancelled("Security Check was superseded.")
+                active["findings"] = copy.deepcopy(findings)
+                active["skipped_items"] = copy.deepcopy(skipped_items)
+                active["collector_coverage"] = copy.deepcopy(coverage)
+                active["summary"] = security_check_summary(
+                    "running", findings, skipped_items, active.get("baseline_comparison"),
+                    collector_coverage=coverage,
+                )
+
+        def run_phase(step_id, phase, collector, *args):
+            before = publications
+            self._set_security_step(active, step_id, "Running", "Collecting read-only local evidence.")
+            try:
+                result = collector(*args, collector_coverage=coverage, evidence_callback=publish)
+            except ScanCancelled as ex:
+                if publications == before:
+                    publish(step_id, getattr(ex, "findings", []), getattr(ex, "skipped_items", []))
+                raise
+            if publications == before:
+                publish(step_id, result[0], result[1])
+            entries = [entry for entry in coverage["collectors"] if entry["phase"] == phase and entry["selected"]]
+            complete = bool(entries) and all(entry["status"] == "complete" for entry in entries)
+            self._set_security_step(active, step_id, "Complete" if complete else "Partial",
+                                    f"{sum(entry['status'] == 'complete' for entry in entries)} of {len(entries)} selected collectors complete; see coverage details.")
+            if self._security_cancelled(active):
+                raise ScanCancelled("Security Check cancelled by user.")
 
         def wait_or_cancel(seconds=0.35):
             end = time.time() + seconds
@@ -5167,118 +6048,70 @@ class DashboardApp:
                 raise ScanCancelled("Security Check cancelled by user.")
             self._set_security_step(active, "registry_backup", "Skipped", "Registry backup creation is unavailable in this version.")
 
-            self._set_security_step(active, "standard_locations", "Running", "Reading standard Windows review locations in read-only mode.")
-            findings, skipped_items = collect_standard_security_review(active["cancel_event"])
-            with self.lock:
-                active["findings"] = findings
-                active["skipped_items"] = skipped_items
-                active["summary"] = security_check_summary("running", findings, skipped_items)
-            self._set_security_step(
-                active,
-                "standard_locations",
-                "Complete",
-                f"Collected {len(findings)} review item(s); skipped {len(skipped_items)} source(s).",
-            )
-
-            self._set_security_step(active, "file_verification", "Running", "Verifying referenced files in read-only mode.")
-            verification_findings, verification_skips = collect_file_verification(active["findings"], active["cancel_event"])
-            with self.lock:
-                active["findings"].extend(verification_findings)
-                active["skipped_items"].extend(verification_skips)
-                active["summary"] = security_check_summary("running", active["findings"], active["skipped_items"])
-            self._set_security_step(
-                active,
-                "file_verification",
-                "Complete",
-                f"Verified {len(verification_findings)} referenced file item(s); skipped {len(verification_skips)} verification issue(s).",
-            )
-
+            run_phase("standard_locations", "standard", collect_standard_security_review, active["cancel_event"])
             if active["mode"] == "advanced":
-                self._set_security_step(active, "advanced_review", "Running", "Running optional Advanced Review collectors in read-only mode.")
-                advanced_findings, advanced_skips = collect_advanced_security_review(active["options"], active["cancel_event"])
-                with self.lock:
-                    active["findings"].extend(advanced_findings)
-                    active["skipped_items"].extend(advanced_skips)
-                    active["summary"] = security_check_summary("running", active["findings"], active["skipped_items"])
-                self._set_security_step(
-                    active,
-                    "advanced_review",
-                    "Complete",
-                    f"Collected {len(advanced_findings)} advanced review item(s); skipped {len(advanced_skips)} advanced source(s).",
-                )
+                run_phase("advanced_review", "advanced", collect_advanced_security_review, active["options"], active["cancel_event"])
             else:
                 self._set_security_step(active, "advanced_review", "Skipped", "Advanced Review was not selected for this run.")
 
+            run_phase("file_verification", "verification", collect_file_verification, list(findings), active["cancel_event"])
+            normalized = normalize_security_findings(findings)
+            allowlist_summary = apply_security_allowlist(normalized)
+            baseline_comparison = active.get("baseline_comparison")
+            if active["options"].get("baseline_id"):
+                baseline = load_security_baseline(active["options"]["baseline_id"])
+                baseline_comparison = apply_security_baseline_comparison(normalized, baseline)
             with self.lock:
-                active["findings"] = normalize_security_findings(active["findings"])
-                active["allowlist_summary"] = apply_security_allowlist(active["findings"])
-                if active["options"].get("baseline_id"):
-                    baseline = load_security_baseline(active["options"]["baseline_id"])
-                    active["baseline_comparison"] = apply_security_baseline_comparison(active["findings"], baseline)
+                active["findings"] = normalized
+                active["allowlist_summary"] = allowlist_summary
+                active["baseline_comparison"] = baseline_comparison
                 active["summary"] = security_check_summary(
                     "running",
                     active["findings"],
                     active["skipped_items"],
                     active.get("baseline_comparison"),
+                    collector_coverage=coverage,
                 )
         except ScanCancelled as ex:
             status = "cancelled"
             error = str(ex)
-            active["errors"].append(error)
-            for step in active["steps"]:
-                if step["status"] == "Running":
-                    step["status"] = "Skipped"
-                    step["detail"] = "Cancelled before this step completed."
-                    break
         except Exception as ex:
             status = "failed"
             error = str(ex)
-            active["errors"].append(error)
-            for step in active["steps"]:
-                if step["status"] == "Running":
-                    step["status"] = "Error"
-                    step["detail"] = error
-                    break
 
         self._set_security_step(active, "record", "Running", "Saving local lifecycle record.")
-        completed_at = now_iso()
-        duration = int(time.time() - started)
-        record = {
-            "check_id": active["check_id"],
-            "schema_version": active["schema_version"],
-            "mode": active["mode"],
-            "started_at": active["started_at"],
-            "completed_at": completed_at,
-            "duration_seconds": duration,
+        with self.lock:
+            record = copy.deepcopy({key: value for key, value in active.items() if key != "cancel_event"})
+        record.update({
+            "completed_at": now_iso(),
+            "duration_seconds": int(time.time() - started),
             "status": status,
-            "safety_acknowledged": active["safety_acknowledged"],
-            "options": active["options"],
-            "summary": security_check_summary(status, active["findings"], active["skipped_items"]),
-            "findings": active["findings"],
-            "skipped_items": active["skipped_items"],
-            "errors": active["errors"],
-            "baseline_comparison": active.get("baseline_comparison"),
-            "allowlist_summary": active.get("allowlist_summary"),
-            "steps": active["steps"],
-            "record_path": active["record_path"],
-            "app_version": APP_VERSION,
             "error": error,
-        }
-        record["summary"] = security_check_summary(
-            status,
-            active["findings"],
-            active["skipped_items"],
-            active.get("baseline_comparison"),
-        )
-
+            "errors": list(active["errors"]),
+            "steps": [dict(step) for step in active["steps"]],
+        })
+        if not self._begin_worker_finalization(active, "active_security_check", record):
+            return
         try:
-            security_check_record_path(active["check_id"]).write_text(json.dumps(record, indent=2), encoding="utf-8")
+            finalize_security_coverage(coverage, record["status"])
+            record["collector_coverage"] = copy.deepcopy(coverage)
+            record = project_security_coverage(record)
+            if error:
+                record["errors"].append(error)
+            record["summary"] = security_check_summary(
+                record["status"], record["findings"], record["skipped_items"], record.get("baseline_comparison"),
+                collector_coverage=record["collector_coverage"],
+            )
             for step in record["steps"]:
                 if step["id"] == "record":
                     step["status"] = "Complete"
                     step["detail"] = "Local lifecycle record saved."
-                    break
-            security_check_record_path(active["check_id"]).write_text(json.dumps(record, indent=2), encoding="utf-8")
+                elif step["status"] in ("Running", "Waiting"):
+                    disabled = step["id"] == "registry_backup" or (step["id"] == "advanced_review" and active["mode"] != "advanced")
+                    step["status"] = "Skipped" if disabled else "Cancelled" if record["status"] == "cancelled" else "Error"
+                    step["detail"] = "Not selected or unavailable in this version." if disabled else "Not completed; see run errors and collector coverage."
+            validate_security_check_record_payload(record)
+            atomic_write_json(security_check_record_path(active["check_id"]), record)
         except Exception as ex:
             record["status"] = "failed"
             record["error"] = f"{record.get('error') or ''} Record write failed: {ex}".strip()
@@ -5288,14 +6121,23 @@ class DashboardApp:
                     step["status"] = "Error"
                     step["detail"] = str(ex)
                     break
-
-        with self.lock:
-            self.active_security_check = record
+            record["summary"] = {**record.get("summary", {}), "overall_status": "Failed"}
+            try:
+                record["summary"] = security_check_summary(
+                    "failed", record["findings"], record["skipped_items"], record.get("baseline_comparison"),
+                    collector_coverage=record.get("collector_coverage"),
+                )
+            except Exception as summary_error:
+                record["errors"].append(f"Could not summarize failed record: {summary_error}")
+        finally:
+            self._publish_worker_result(active, "active_security_check", record)
 
     def cancel_security_check(self):
         with self.lock:
             if not self.active_security_check or self.active_security_check.get("status") != "running":
                 raise RuntimeError("No active Security Check is running.")
+            if not self._owns_operation_locked(self.active_security_check) or self._operation["finalizing"]:
+                raise RuntimeError("The Security Check is already finishing; cancellation is no longer available.")
             self.active_security_check["cancel_event"].set()
         return self.security_check_status()
 
@@ -5306,7 +6148,7 @@ class DashboardApp:
             if not active:
                 return {"active": False, "shutting_down": self.shutting_down}
 
-            payload = {key: value for key, value in active.items() if key != "cancel_event"}
+            payload = project_security_coverage(copy.deepcopy({key: value for key, value in active.items() if key != "cancel_event"}))
             payload["active"] = active.get("status") == "running"
             payload["shutting_down"] = self.shutting_down
             return payload
@@ -5315,7 +6157,10 @@ class DashboardApp:
         path = security_check_record_path(check_id)
         if not path.exists():
             raise FileNotFoundError("Security Check record was not found.")
-        return json.loads(path.read_text(encoding="utf-8"))
+        record = load_validated_json(path, validate_security_check_record_payload)
+        if record["check_id"].lower() != path.stem.lower():
+            raise _corruption_error(path)
+        return project_security_check_record(record)
 
     def security_baselines(self):
         return {"baselines": load_security_baselines()}
@@ -5323,7 +6168,7 @@ class DashboardApp:
     def create_security_baseline(self, data):
         if self.active_security_check and self.active_security_check.get("status") == "running":
             raise RuntimeError("Cancel or wait for the current Security Check to finish before creating a baseline.")
-        if not bool(data.get("acknowledgeKnownGood", False)):
+        if data.get("acknowledgeKnownGood") is not True:
             raise ValueError("Baseline creation requires confirmation that the current record has been reviewed.")
         check_id = str(data.get("checkId", "") or "").strip()
         if not check_id:
@@ -5337,7 +6182,7 @@ class DashboardApp:
         return security_allowlist_public()
 
     def add_security_allowlist_entry(self, data):
-        if not bool(data.get("acknowledgeAllowlist", False)):
+        if data.get("acknowledgeAllowlist") is not True:
             raise ValueError("Allowlist creation requires confirmation that this is only a local review-priority adjustment.")
         check_id = str(data.get("checkId", "") or "").strip()
         finding_id = str(data.get("findingId", "") or "").strip()
@@ -5352,7 +6197,7 @@ class DashboardApp:
         return {"entry": entry, "allowlist": allowlist}
 
     def import_security_allowlist(self, data):
-        if not bool(data.get("acknowledgeImport", False)):
+        if data.get("acknowledgeImport") is not True:
             raise ValueError("Allowlist import requires confirmation that imported entries are local review-priority hints only.")
         payload = data.get("allowlist")
         allowlist = import_security_allowlist(payload)
@@ -5360,10 +6205,8 @@ class DashboardApp:
 
     def request_shutdown(self):
         with self.lock:
-            if self.active_scan and self.active_scan.get("status") == "running":
-                raise RuntimeError("Cancel or wait for the current scan to finish before exiting.")
-            if self.active_security_check and self.active_security_check.get("status") == "running":
-                raise RuntimeError("Cancel or wait for the current Security Check to finish before exiting.")
+            if self._operation is not None:
+                raise RuntimeError(f"Wait for the current {self._operation['kind']} operation to finish before exiting.")
             if self.shutting_down:
                 return {
                     "status": "already_shutting_down",
@@ -5384,7 +6227,7 @@ class DashboardApp:
             if not active:
                 return {"active": False, "shutting_down": self.shutting_down}
 
-            payload = {key: value for key, value in active.items() if key != "cancel_event"}
+            payload = copy.deepcopy({key: value for key, value in active.items() if key != "cancel_event"})
             payload["active"] = active.get("status") == "running"
             payload["shutting_down"] = self.shutting_down
 
@@ -5406,38 +6249,57 @@ class DashboardApp:
         return [record_summary(record) for record in load_scan_records()]
 
     def installer_cache_review(self):
-        review = analyze_installer_cache()
+        owner = object()
         with self.lock:
-            self.last_installer_cache_review = review
-        return review
+            self._admit_operation_locked("Installer Cache review", owner)
+        try:
+            review = analyze_installer_cache()
+            with self.lock:
+                if self._owns_operation_locked(owner):
+                    self.last_installer_cache_review = review
+            return review
+        finally:
+            with self.lock:
+                if self._owns_operation_locked(owner):
+                    self._operation = None
 
     def installer_backup_review_manifest(self, data):
-        if not bool(data.get("acknowledgeManifest", False)):
+        if data.get("acknowledgeManifest") is not True:
             raise ValueError("Confirm that this export is a read-only review manifest, not permission to move or delete files.")
+        owner = object()
         with self.lock:
             review = self.last_installer_cache_review
-        if not review:
-            raise RuntimeError("Run Installer Cache review before exporting a backup-review manifest.")
-        if not data.get("reviewId") or data.get("reviewId") != review.get("review_id"):
-            raise RuntimeError("The displayed Installer Cache review is no longer current. Run the review again before exporting.")
-        current_review = analyze_installer_cache()
-        with self.lock:
-            if self.last_installer_cache_review is not review:
-                raise RuntimeError("Another Installer Cache review completed during export. Refresh the review and try again.")
-        manifest = build_installer_backup_review_manifest(review, current_review)
-        with self.lock:
-            if self.last_installer_cache_review is not review:
-                raise RuntimeError("Another Installer Cache review completed during export. Refresh the review and try again.")
-        return manifest
+            if not review:
+                raise RuntimeError("Run Installer Cache review before exporting a backup-review manifest.")
+            if not data.get("reviewId") or data.get("reviewId") != review.get("review_id"):
+                raise RuntimeError("The displayed Installer Cache review is no longer current. Run the review again before exporting.")
+            self._admit_operation_locked("Installer manifest export", owner)
+        try:
+            current_review = analyze_installer_cache()
+            with self.lock:
+                if not self._owns_operation_locked(owner) or self.last_installer_cache_review is not review:
+                    raise RuntimeError("Another Installer Cache review completed during export. Refresh the review and try again.")
+            manifest = build_installer_backup_review_manifest(review, current_review)
+            with self.lock:
+                if not self._owns_operation_locked(owner) or self.last_installer_cache_review is not review:
+                    raise RuntimeError("Another Installer Cache review completed during export. Refresh the review and try again.")
+            return manifest
+        finally:
+            with self.lock:
+                if self._owns_operation_locked(owner):
+                    self._operation = None
 
     def record(self, scan_id):
         path = scan_record_path(scan_id)
         if not path.exists():
             raise FileNotFoundError("Scan record was not found.")
-        return json.loads(path.read_text(encoding="utf-8"))
+        record = load_validated_json(path, validate_scan_record_payload)
+        if record["scan_id"].lower() != path.stem.lower():
+            raise _corruption_error(path)
+        return record
 
 
-APP_STATE = DashboardApp()
+APP_STATE = DashboardApp(initialize_storage=False)
 
 
 def build_dashboard_html():
@@ -6660,10 +7522,24 @@ async function copyDirectoryFromButton(button) {{
     }}
 }}
 
+let sessionTokenPromise = null;
+
 async function api(path, options = {{}}) {{
+    if (!path.startsWith('/api/') || path.includes('\\\\')) throw new Error('Invalid local API path.');
+    if (!sessionTokenPromise) {{
+        sessionTokenPromise = fetch('/api/session', {{
+            mode: 'same-origin', credentials: 'same-origin', redirect: 'error', cache: 'no-store'
+        }}).then(async response => {{
+            const session = await response.json();
+            if (!response.ok || typeof session.csrf_token !== 'string') throw new Error('Session unavailable. Refresh the dashboard.');
+            return session.csrf_token;
+        }}).catch(error => {{ sessionTokenPromise = null; throw error; }});
+    }}
+    const token = await sessionTokenPromise;
     const response = await fetch(path, {{
         ...options,
-        headers: {{ 'Content-Type': 'application/json', ...(options.headers || {{}}) }}
+        mode: 'same-origin', credentials: 'same-origin', redirect: 'error', cache: 'no-store',
+        headers: {{ 'Content-Type': 'application/json', ...(options.headers || {{}}), 'X-CSRF-Token': token }}
     }});
     const data = await response.json().catch(() => ({{ error: 'Server returned an unreadable response.' }}));
     if (!response.ok) throw new Error(data.error || 'Request failed');
@@ -7051,13 +7927,57 @@ function uniqueCount(items) {{
     return new Set(items.filter(Boolean)).size;
 }}
 
+function securityCoverageView(status) {{
+    const coverage = status?.collector_coverage;
+    const summary = status?.summary;
+    const missing = () => ({{ recorded: false, status: status?.check_id ? 'Not recorded' : 'Not run', entries: [], selected: 0, complete: 0, disabled: 0 }});
+    const ids = ['registry_startup','startup_folders','browser_policies','proxy_settings','dns_settings',
+        'defender_exclusions','scheduled_tasks','services_summary','file_verification','wmi_persistence',
+        'event_logs','sysmon','services_drivers','explorer_extensions'];
+    const states = ['pending','running','complete','disabled','unavailable','access_denied','partial','failed','cancelled'];
+    const entries = coverage?.collectors;
+    if (summary?.coverage_recorded !== true || !states.includes(summary.coverage_status)
+        || coverage?.schema_version !== 'security-coverage-v1' || !Array.isArray(entries) || entries.length !== ids.length
+        || new Set(entries.map(entry => entry?.collector_id)).size !== ids.length
+        || entries.some(entry => !ids.includes(entry?.collector_id) || !states.includes(entry?.status) || typeof entry.selected !== 'boolean'
+            || typeof entry.scope !== 'string' || !entry.scope || typeof entry.category !== 'string'
+            || !Number.isInteger(entry.findings_count) || entry.findings_count < 0 || !Array.isArray(entry.sources)
+            || entry.sources.some(source => !source || typeof source !== 'object' || Array.isArray(source)
+                || typeof source.source !== 'string' || !states.includes(source.status)
+                || !Number.isInteger(source.item_count) || source.item_count < 0
+                || typeof source.reason_code !== 'string' || (source.detail != null && typeof source.detail !== 'string'))
+            || (entry.status === 'complete' && (!entry.sources.length || entry.sources.some(source => source.status !== 'complete'))))) {{
+        return missing();
+    }}
+    if (summary.collectors_total !== ids.length || summary.collectors_selected !== entries.filter(entry => entry.selected).length
+        || states.some(state => summary['collectors_' + state] !== entries.filter(entry => entry.status === state).length)
+        || (summary.coverage_status === 'complete' && entries.some(entry => entry.selected && entry.status !== 'complete'))) return missing();
+    return {{ recorded: true, status: summary.coverage_status, entries, selected: summary.collectors_selected,
+        complete: summary.collectors_complete, disabled: summary.collectors_disabled }};
+}}
+
+function securityCoverageHtml(status) {{
+    const coverage = securityCoverageView(status);
+    if (!coverage.recorded) return `<h2>Collector Coverage</h2><p>${{esc(coverage.status)}}. Historical records without source outcomes do not establish complete coverage.</p>`;
+    const rows = coverage.entries.map(entry => {{
+        const details = asArray(entry.sources).map(source => `<li><code>${{esc(source.source)}}</code>: ${{esc(source.status)}}${{source.reason_code ? ' (' + esc(source.reason_code) + ')' : ''}}${{source.detail ? ': ' + esc(source.detail) : ''}}</li>`).join('');
+        return `<tr><td>${{esc(entry.category)}}</td><td>${{esc(entry.status)}}</td><td>${{esc(entry.scope)}}</td><td>${{esc(entry.reason_code || '')}}${{details ? '<ul>' + details + '</ul>' : ''}}</td></tr>`;
+    }}).join('');
+    const warning = coverage.status !== 'complete' ? '<p class="notice warning">Collector coverage is incomplete. Missing evidence must not be interpreted as a clean result.</p>' : '';
+    return `<h2>Collector Coverage</h2>${{warning}}<p>Status: <strong>${{esc(coverage.status)}}</strong>. Complete: ${{coverage.complete}} / ${{coverage.selected}} selected; disabled: ${{coverage.disabled}}. Complete refers only to the declared bounded scope, not a safety verdict.</p><table><thead><tr><th>Collector</th><th>Status</th><th>Scope</th><th>Source Outcomes</th></tr></thead><tbody>${{rows}}</tbody></table>`;
+}}
+
 function renderSecuritySummary(summary = {{}}, status = null) {{
     const findings = status?.findings || [];
     const needsReview = findings.filter(finding => finding.status === 'Needs Review').length;
     const noObvious = findings.filter(finding => finding.status === 'No Obvious Issue').length;
     const categories = uniqueCount(findings.map(finding => finding.category));
+    const coverage = securityCoverageView(status);
     $('securitySummary').innerHTML = [
         metric('Overall Status', summary.overall_status || 'Not Run'),
+        metric('Collector Coverage', coverage.status),
+        metric('Complete Collectors', coverage.recorded ? `${{coverage.complete}} / ${{coverage.selected}} selected` : coverage.status),
+        metric('Disabled Collectors', coverage.recorded ? coverage.disabled : coverage.status),
         metric('Findings', summary.findings_total || 0),
         metric('Needs Review', needsReview),
         metric('No Obvious Issue', noObvious),
@@ -7069,7 +7989,8 @@ function renderSecuritySummary(summary = {{}}, status = null) {{
         metric('Allowlist Matches', summary.allowlist_matches || 0),
         metric('Baseline Changes', summary.baseline_changes || 0),
         metric('Skipped Sources', summary.skipped_count || 0)
-    ].join('');
+    ].join('') + (coverage.recorded && !['complete','pending','running'].includes(coverage.status)
+        ? '<p class="notice warning" role="status">Collector coverage is incomplete. Review source limitations before interpreting missing findings.</p>' : '');
 }}
 
 function formatBaselineLabel(baseline) {{
@@ -7489,6 +8410,7 @@ function filteredSecurityFindings(status) {{
 function renderSecurityCategoryBlocks(status) {{
     const findings = status?.findings || [];
     const skipped = status?.skipped_items || [];
+    const coverage = securityCoverageView(status);
     const categories = [
         ['Registry Startup', 'Run keys and startup-folder entries.'],
         ['Startup Folder', 'Current-user and all-users startup folder entries.'],
@@ -7506,6 +8428,8 @@ function renderSecurityCategoryBlocks(status) {{
         ['Explorer Extension', 'Explorer shell extension and helper autorun-style registry locations.']
     ];
     $('securityCategoryBlocks').innerHTML = categories.map(([name, description]) => {{
+        const entry = coverage.entries.find(item => item.category === name);
+        const outcome = entry?.status || coverage.status;
         const matches = findings.filter(finding => finding.category === name);
         const categorySkipped = skipped.filter(item => item.category === name);
         const groups = new Set();
@@ -7525,8 +8449,9 @@ function renderSecurityCategoryBlocks(status) {{
         }});
         const groupText = groups.size ? `<p class="muted">Groups: ${{esc(Array.from(groups).join(', '))}}</p>` : '';
         const skippedText = categorySkipped.length ? `<p class="muted">Skipped: ${{esc(categorySkipped.length)}}</p>` : '';
-        const emptyText = (!matches.length && !categorySkipped.length) ? '<p class="muted">No findings in this category for the current run.</p>' : '';
-        return `<div class="category-item"><strong>${{esc(name)}}: ${{matches.length}}</strong><p>${{esc(description)}}</p>${{groupText}}${{skippedText}}${{emptyText}}</div>`;
+        const emptyText = (!matches.length && outcome === 'complete') ? '<p class="muted">No findings within the completed scope.</p>' : '';
+        const scopeText = entry?.scope ? `<p class="muted">Scope: ${{esc(entry.scope)}}</p>` : '';
+        return `<div class="category-item"><strong>${{esc(name)}}: ${{matches.length}}</strong> <span class="security-badge">${{esc(outcome)}}</span><p>${{esc(description)}}</p>${{scopeText}}${{groupText}}${{skippedText}}${{emptyText}}</div>`;
     }}).join('');
 }}
 
@@ -7700,7 +8625,7 @@ function securitySummaryHtml(status) {{
 <span class="badge">Allowlist matches: ${{esc(summary.allowlist_matches || 0)}}</span>
 <span class="badge">Baseline changes: ${{esc(summary.baseline_changes || 0)}}</span>
 <span class="badge">Skipped: ${{esc(summary.skipped_count || 0)}}</span>
-</p>`;
+</p>${{securityCoverageHtml(status)}}`;
 }}
 
 function securityFindingRows(findings, includeEvidence = false) {{
@@ -7792,6 +8717,7 @@ ${{securitySummaryHtml(status)}}
 ${{securityBaselineComparisonHtml(status)}}
 <h2>Findings</h2>
 ${{securityFindingRows(asArray(status.findings), false)}}
+${{securitySkippedHtml(status)}}
 <h2>What To Do Next</h2>
 <ul>
 <li>Use the finding details and evidence to decide what needs human review.</li>
@@ -7818,6 +8744,7 @@ ${{securitySummaryHtml(status)}}
 ${{securityBaselineComparisonHtml(status)}}
 <h2>File And Signature Verification Findings</h2>
 ${{securityFindingRows(findings, true)}}
+${{securitySkippedHtml(status)}}
 <h2>Verification Guidance</h2>
 <ul>
 <li>Valid signatures and expected publishers are useful signals, but they do not prove a file is safe forever.</li>
@@ -8944,22 +9871,194 @@ pollSecurityStatus();
 </html>"""
 
 
+class DashboardHTTPServer(ThreadingHTTPServer):
+    # Drain in-flight persistence requests on shutdown instead of killing daemon handlers.
+    daemon_threads = False
+    block_on_close = True
+
+    def __init__(self, *args, **kwargs):
+        self._request_slots = threading.BoundedSemaphore(MAX_HTTP_WORKERS)
+        self._admission_lock = threading.Lock()
+        self._inflight_requests = set()
+        self._closing = False
+        self._shutdown_owner = None
+        super().__init__(*args, **kwargs)
+
+    def process_request(self, request, client_address):
+        with self._admission_lock:
+            if self._closing:
+                rejection = (409, "Conflict", "The local server is shutting down.")
+            elif not self._request_slots.acquire(blocking=False):
+                rejection = (503, "Service Unavailable", "Local server is busy. Retry shortly.")
+            else:
+                self._inflight_requests.add(request)
+                rejection = None
+        if rejection:
+            self._reject_request(request, *rejection)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._release_request(request)
+            raise
+
+    def _reject_request(self, request, status, reason, message):
+        body = json.dumps({"error": message}).encode("utf-8")
+        try:
+            request.settimeout(1)
+            request.sendall(
+                f"HTTP/1.0 {status} {reason}\r\nContent-Type: application/json\r\n".encode("ascii")
+                + b"Cache-Control: no-store\r\nConnection: close\r\nContent-Length: "
+                + str(len(body)).encode("ascii") + b"\r\n\r\n" + body
+            )
+        except OSError:
+            pass
+        finally:
+            self.shutdown_request(request)
+
+    def _release_request(self, request):
+        with self._admission_lock:
+            self._inflight_requests.discard(request)
+            self._request_slots.release()
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._release_request(request)
+
+    def check_dispatch(self):
+        with self._admission_lock:
+            if self._closing:
+                raise HttpRequestError("The local server is shutting down.", 409)
+
+    def begin_shutdown(self, request):
+        with self._admission_lock:
+            if self._closing:
+                raise HttpRequestError("The local server is shutting down.", 409)
+            if self._inflight_requests != {request}:
+                raise HttpRequestError("Wait for other HTTP requests to finish before exiting.", 409)
+            self._closing = True
+            self._shutdown_owner = request
+
+    def rollback_shutdown(self, request):
+        with self._admission_lock:
+            if self._shutdown_owner is request:
+                self._closing = False
+                self._shutdown_owner = None
+
+
 class DashboardRequestHandler(BaseHTTPRequestHandler):
     server_version = f"DiskUsageDashboard/{APP_VERSION}"
+
+    def setup(self):
+        super().setup()
+        self.connection.settimeout(HTTP_REQUEST_TIMEOUT_SECONDS)
+        self._deadline_lock = threading.Lock()
+        self._request_deadline = time.monotonic() + HTTP_REQUEST_TIMEOUT_SECONDS
+        self._deadline_expired = False
+        self._deadline_disarmed = False
+        self._deadline_timer = threading.Timer(HTTP_REQUEST_TIMEOUT_SECONDS, self._expire_predispatch)
+        self._deadline_timer.daemon = True
+        self._deadline_timer.start()
+
+    def _expire_predispatch(self):
+        import socket
+        with self._deadline_lock:
+            if self._deadline_disarmed:
+                return
+            self._deadline_expired = True
+            self.close_connection = True
+            try:
+                self.connection.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            try:
+                # Buffered file references otherwise keep Windows readers blocked.
+                socket.close(self.connection.detach())
+            except OSError:
+                pass
+
+    def _stop_predispatch_deadline(self, check=False):
+        with self._deadline_lock:
+            expired = self._deadline_expired or time.monotonic() >= self._request_deadline
+            self._deadline_disarmed = True
+            self._deadline_timer.cancel()
+        # A callback waiting on the lock must finish before application code runs.
+        self._deadline_timer.join()
+        if check and expired:
+            raise HttpRequestError("Absolute request deadline exceeded.", 408)
+
+    def _begin_dispatch(self):
+        self._stop_predispatch_deadline(check=True)
+        self.server.check_dispatch()
+
+    def handle(self):
+        try:
+            super().handle()
+        except OSError:
+            self.close_connection = True
+
+    def finish(self):
+        try:
+            self._stop_predispatch_deadline()
+        finally:
+            super().finish()
+
+    def end_headers(self):
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Cross-Origin-Resource-Policy", "same-origin")
+        self.send_header("Content-Security-Policy", "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'none'")
+        super().end_headers()
 
     def log_message(self, format, *args):
         return
 
     def is_local_request(self):
-        return self.client_address[0] in ("127.0.0.1", "::1", "localhost")
+        return self.client_address[0] in ("127.0.0.1", "::1")
+
+    def validate_request(self, require_token=False):
+        parsed = urlparse(self.path)
+        if not self.is_local_request() or parsed.scheme or parsed.netloc or not self.path.startswith("/") or "\\" in self.path:
+            raise HttpRequestError("Forbidden request.", 403)
+        port = self.server.server_port
+        suffix = "" if port == 80 else f":{port}"
+        allowed_hosts = {host + suffix for host in ("127.0.0.1", "localhost", "[::1]")}
+        hosts = self.headers.get_all("Host", [])
+        if len(hosts) != 1 or hosts[0].lower() not in allowed_hosts:
+            raise HttpRequestError("Forbidden Host.", 403)
+        origins = self.headers.get_all("Origin", [])
+        if origins and (len(origins) != 1 or origins[0].lower() != "http://" + hosts[0].lower()):
+            raise HttpRequestError("Forbidden Origin.", 403)
+        sites = self.headers.get_all("Sec-Fetch-Site", [])
+        if sites and (len(sites) != 1 or sites[0] not in ("same-origin", "none")):
+            raise HttpRequestError("Cross-site requests are not allowed.", 403)
+        if require_token:
+            tokens = self.headers.get_all("X-CSRF-Token", [])
+            if len(tokens) != 1 or not tokens[0].isascii() or not secrets.compare_digest(tokens[0], APP_STATE.csrf_token):
+                raise HttpRequestError("Session token missing or invalid. Refresh the dashboard.", 403)
+        return parsed.path
+
+    def do_OPTIONS(self):
+        try:
+            self.validate_request()
+            self._begin_dispatch()
+            json_response(self, {"error": "Method not allowed."}, status=405)
+        except HttpRequestError as ex:
+            json_response(self, {"error": str(ex)}, status=ex.status)
 
     def do_GET(self):
-        parsed = urlparse(self.path)
-        path = parsed.path
-
         try:
+            path = self.validate_request()
+            if path.startswith("/api/") and path != "/api/session":
+                self.validate_request(require_token=True)
+            self._begin_dispatch()
             if path == "/":
                 html_response(self, build_dashboard_html())
+            elif path == "/api/session":
+                json_response(self, {"csrf_token": APP_STATE.csrf_token})
             elif path == "/api/state":
                 records = load_scan_records()
                 security_records = load_security_check_records()
@@ -9000,15 +10099,22 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                 json_response(self, {"process": get_process_detail(pid)})
             else:
                 json_response(self, {"error": "Not found"}, status=404)
-        except Exception as ex:
-            json_response(self, {"error": str(ex)}, status=500)
+        except HttpRequestError as ex:
+            json_response(self, {"error": str(ex)}, status=ex.status)
+        except ValueError as ex:
+            json_response(self, {"error": str(ex)}, status=400)
+        except FileNotFoundError:
+            json_response(self, {"error": "Record not found."}, status=404)
+        except RuntimeError as ex:
+            json_response(self, {"error": str(ex)}, status=409)
+        except Exception:
+            json_response(self, {"error": "Local request failed. Review the application state and try again."}, status=500)
 
     def do_POST(self):
-        parsed = urlparse(self.path)
-        path = parsed.path
-
         try:
+            path = self.validate_request(require_token=True)
             data = read_request_json(self)
+            self._begin_dispatch()
             if path == "/api/scans":
                 json_response(self, APP_STATE.start_scan(data), status=201)
             elif path == "/api/scans/cancel":
@@ -9035,27 +10141,45 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
                     json_response(self, {"error": "Shutdown is only allowed from localhost."}, status=403)
                     return
 
-                payload = APP_STATE.request_shutdown()
-                json_response(self, payload)
-                threading.Thread(target=self.server.shutdown, daemon=True).start()
+                self.server.begin_shutdown(self.request)
+                try:
+                    payload = APP_STATE.request_shutdown()
+                except BaseException:
+                    self.server.rollback_shutdown(self.request)
+                    raise
+                try:
+                    json_response(self, payload)
+                finally:
+                    # This is a request worker, never the serve_forever thread.
+                    self.server.shutdown()
             else:
                 json_response(self, {"error": "Not found"}, status=404)
+        except HttpRequestError as ex:
+            self.close_connection = True
+            json_response(self, {"error": str(ex)}, status=ex.status)
         except ValueError as ex:
             json_response(self, {"error": str(ex)}, status=400)
         except RuntimeError as ex:
             json_response(self, {"error": str(ex)}, status=409)
-        except Exception as ex:
-            json_response(self, {"error": str(ex)}, status=500)
+        except Exception:
+            json_response(self, {"error": "Local request failed. Review the application state and try again."}, status=500)
 
 
 def run_dashboard_server(host: str, port: int, open_browser: bool = True):
+    if host not in ("127.0.0.1", "localhost"):
+        raise ValueError("Refusing to bind outside localhost.")
     ensure_app_dirs()
-    server = ThreadingHTTPServer((host, port), DashboardRequestHandler)
+    server = DashboardHTTPServer((host, port), DashboardRequestHandler)
+    try:
+        APP_STATE.version_metadata = ensure_version_metadata()
+    except Exception:
+        server.server_close()
+        raise
     url = f"http://{host}:{server.server_port}/"
 
     print()
     print("Windows Disk Usage Dashboard is running.")
-    print(f"Open: {url}")
+    print(f"Open: {url}", flush=True)
     print("The server is bound to localhost by default and keeps scan data on this computer.")
     print("Press Ctrl+C to stop.")
     print()
