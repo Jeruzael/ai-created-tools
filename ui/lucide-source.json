@@ -1,0 +1,30 @@
+{
+  "repository": "https://github.com/lucide-icons/lucide",
+  "revision": "a630cec77eac6568b989e87e4947a8bfe45caacd",
+  "icons": [
+    "layout-dashboard",
+    "scan-line",
+    "folder",
+    "activity",
+    "package",
+    "shield-check",
+    "history",
+    "book-open",
+    "info",
+    "panel-left",
+    "menu",
+    "x",
+    "copy",
+    "chevron-left",
+    "chevron-right",
+    "arrow-up-down",
+    "bell",
+    "hard-drive",
+    "arrow-right",
+    "play",
+    "log-out"
+  ],
+  "aliases": {
+    "history": "clock"
+  }
+}

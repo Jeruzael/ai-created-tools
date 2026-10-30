@@ -6317,6 +6317,12 @@ APP_STATE = DashboardApp(initialize_storage=False)
 
 
 def build_dashboard_html():
+    ui_root = Path(__file__).resolve().parent / "ui"
+    studio_style = (ui_root / "sidebar_studio.css").read_text(encoding="utf-8")
+    studio_script = (ui_root / "sidebar_studio.js").read_text(encoding="utf-8")
+    studio_layout = (ui_root / "sidebar_studio.html").read_text(encoding="utf-8").replace(
+        "__APP_VERSION__", APP_VERSION).replace(
+        "__STUDIO_ICONS__", (ui_root / "lucide-sprite.svg").read_text(encoding="utf-8"))
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -6793,108 +6799,11 @@ summary {{ cursor: pointer; padding: 6px; }}
     header {{ display: block; }}
     main {{ padding: 14px; }}
 }}
+{studio_style}
 </style>
 </head>
 <body>
-<header>
-    <div>
-        <h1>Windows Disk Usage Dashboard</h1>
-        <p>Local read-only scan and process review tool. App v{APP_VERSION}, docs v{DOC_VERSION}.</p>
-    </div>
-    <div class="header-actions">
-        <button id="exitApp" class="danger">Exit App</button>
-        <div id="exitHelp" class="muted">Server: 127.0.0.1 only<br>Reports stay on this computer.</div>
-    </div>
-</header>
-<main>
-    <section id="actionAlert" class="action-alert info">
-        <h2>Dashboard Ready</h2>
-        <p>Choose a scan or review running processes. This tool reports only and does not delete files or stop programs.</p>
-        <p class="muted">Important action details will appear here.</p>
-    </section>
-
-    <nav class="tabs">
-        <button class="tab active" data-tab="scan">Scan</button>
-        <button class="tab" data-tab="results">Results</button>
-        <button class="tab" data-tab="processes">Processes</button>
-        <button class="tab" data-tab="installer">Installer Cache</button>
-        <button class="tab" data-tab="security">Security Check</button>
-        <button class="tab" data-tab="history">History</button>
-        <button class="tab" data-tab="manual">Manual</button>
-        <button class="tab" data-tab="about">About</button>
-    </nav>
-
-    <section id="tab-scan" class="tab-panel">
-        <div class="layout">
-            <div>
-                <section class="section">
-                    <h2>Start A Scan</h2>
-                    <label for="driveSelect">Drive</label>
-                    <select id="driveSelect"></select>
-                    <div class="actions">
-                        <button id="useDrive">Use selected drive</button>
-                        <button id="useUsers">Use C:\\Users</button>
-                    </div>
-                    <h3>Folder Path</h3>
-                    <input id="rootPath" value="C:\\Users" placeholder="C:\\Users\\HomePC">
-                    <div class="form-grid" style="margin-top:12px">
-                        <div><label for="topItems">Top items</label><input id="topItems" type="number" min="1" max="1000" value="200"></div>
-                        <div><label for="treeDepth">Tree depth</label><input id="treeDepth" type="number" min="0" max="20" value="5"></div>
-                        <div><label for="treeChildren">Children per folder</label><input id="treeChildren" type="number" min="1" max="500" value="60"></div>
-                        <div><label for="minTreeSize">Min tree size MB</label><input id="minTreeSize" type="number" min="0" value="100"></div>
-                    </div>
-                    <label style="margin-top:12px"><input id="includeReparse" type="checkbox" style="width:auto"> Include reparse points, junctions, and symlinks</label>
-                    <label style="margin-top:8px"><input id="ackSafety" type="checkbox" style="width:auto"> I understand the scan safety notice.</label>
-                    <div class="actions">
-                        <button id="startScan" class="primary">Start scan</button>
-                        <button id="cancelScan" class="danger" disabled>Cancel scan</button>
-                    </div>
-                </section>
-                <section class="section">
-                    <h2>Scan Status</h2>
-                    <div id="scanStatus" class="status-line">No scan running.</div>
-                </section>
-            </div>
-            <section class="notice">
-                <h2>Before You Scan</h2>
-                <p>This tool reports disk usage only. It does not delete or modify files.</p>
-                <h3>Do</h3>
-                <ul>
-                    <li>Scan C:\\Users first for a faster cleanup review.</li>
-                    <li>Review large folders manually before deleting anything.</li>
-                    <li>Use official uninstallers, Storage Sense, Disk Cleanup, or app cleanup tools when possible.</li>
-                    <li>Run as Administrator for a more complete full-drive scan.</li>
-                    <li>Keep reports private because they contain local paths and filenames.</li>
-                    <li>Close heavy apps or active project tools when practical.</li>
-                </ul>
-                <h3>Don't</h3>
-                <ul>
-                    <li>Don't delete system files only because they are large.</li>
-                    <li>Don't delete files inside Windows, Program Files, ProgramData, or AppData unless you know what they are.</li>
-                    <li>Don't randomly delete Unity Assets, ProjectSettings, or Packages folders.</li>
-                    <li>Don't assume a running process is harmful only because it looks unfamiliar.</li>
-                    <li>Don't share reports publicly without redacting private paths.</li>
-                </ul>
-            </section>
-        </div>
-    </section>
-
-    <section id="tab-results" class="tab-panel hidden">
-        <section class="section">
-            <h2>Scan Results</h2>
-            <div id="resultRecordInfo" class="status-line">No scan record loaded yet.</div>
-            <div id="resultSummary" class="grid"></div>
-        </section>
-        <section class="section">
-            <h2>Scan Health</h2>
-            <div id="scanHealth" class="health-panel info">No scan health details yet.</div>
-        </section>
-        <section class="section"><h2>Top Biggest Folders</h2><input id="folderFilter" placeholder="Search folders..."><div class="table-wrap"><table><thead><tr><th>#</th><th>Size</th><th>Files</th><th>Path</th><th>Copy</th></tr></thead><tbody id="topFolders"></tbody></table></div></section>
-        <section class="section"><h2>File Types By Total Size</h2><input id="typeFilter" placeholder="Search file types..."><div class="table-wrap"><table><thead><tr><th>Extension</th><th>Total Size</th><th>Files</th></tr></thead><tbody id="fileTypes"></tbody></table></div></section>
-        <section class="section"><h2>Biggest Files</h2><input id="fileFilter" placeholder="Search files..."><div class="table-wrap"><table><thead><tr><th>#</th><th>Size</th><th>Modified</th><th>Path</th><th>Copy</th></tr></thead><tbody id="biggestFiles"></tbody></table></div></section>
-        <section class="section"><h2>Large Folder Tree</h2><div id="treeView" class="tree"></div></section>
-        <section class="section"><h2>Skipped / Access Denied Paths</h2><div id="skippedPaths"></div></section>
-    </section>
+{studio_layout}
 
     <section id="tab-processes" class="tab-panel hidden">
         <div id="processTop"></div>
@@ -7476,6 +7385,7 @@ summary {{ cursor: pointer; padding: 6px; }}
         </section>
     </section>
 </main>
+</div>
 <script>
 const state = {{ currentRecord: null, currentSecurityStatus: null, selectedSecurityFindingId: null, securityBaselines: [], securityAllowlist: null, installerCache: null, processes: [], lastScanStatusKey: null, lastSecurityStatusKey: null, scanActive: false, securityCheckActive: false, isShuttingDown: false }};
 const $ = id => document.getElementById(id);
@@ -7521,9 +7431,15 @@ async function copyDirectoryFromButton(button) {{
 
     try {{
         await writeClipboardText(path);
-        const originalText = button.textContent;
-        button.textContent = 'Copied';
-        window.setTimeout(() => {{ button.textContent = originalText; }}, 1400);
+        const originalHtml = button.innerHTML;
+        const originalLabel = button.getAttribute('aria-label');
+        button.textContent = 'OK';
+        button.setAttribute('aria-label', 'Directory copied');
+        window.setTimeout(() => {{
+            button.innerHTML = originalHtml;
+            if (originalLabel) button.setAttribute('aria-label', originalLabel);
+            else button.removeAttribute('aria-label');
+        }}, 1400);
         showActionAlert('success', 'Directory Copied', 'The directory path was copied to the clipboard.', [
             `Source: ${{label}}`,
             `Path: ${{path}}`
@@ -7561,12 +7477,7 @@ async function api(path, options = {{}}) {{
 }}
 
 function showActionAlert(type, title, message, details = []) {{
-    const safeType = ['info', 'success', 'warning', 'error'].includes(type) ? type : 'info';
-    const detailHtml = details.length
-        ? `<p class="muted">${{details.map(esc).join('<br>')}}</p>`
-        : '';
-    $('actionAlert').className = 'action-alert ' + safeType;
-    $('actionAlert').innerHTML = `<h2>${{esc(title)}}</h2><p>${{esc(message)}}</p>${{detailHtml}}`;
+    Studio.notify(type, title, message, details);
 }}
 
 function setExitState(workActive, reason = '', workType = 'scan') {{
@@ -7592,12 +7503,11 @@ function setExitState(workActive, reason = '', workType = 'scan') {{
     if (reason) {{
         $('exitApp').title = reason;
     }}
+    Studio.updateOperation(state);
 }}
 
 function showTab(name) {{
-    document.querySelectorAll('.tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === name));
-    document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.add('hidden'));
-    $('tab-' + name).classList.remove('hidden');
+    name = Studio.navigate(name, true);
 
     if (name === 'manual') {{
         showActionAlert('info', 'Manual Opened', 'The user manual explains safe scan usage, cleanup workflow, use cases, and expanded do\\'s and don\\'ts.', [
@@ -7609,7 +7519,7 @@ function showTab(name) {{
         showActionAlert('info', 'Security Check Opened', 'This tab runs a local read-only Standard Review of selected Windows security indicators.', [
             'It reviews startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, services summary, and referenced file verification.',
             'Findings are review items, not malware verdicts.',
-            'Registry backups require explicit opt-in.'
+            'Registry backups are unavailable in this version.'
         ]);
         refreshSecurityBaselines(false);
         refreshSecurityAllowlist(false);
@@ -9041,81 +8951,16 @@ function valueOrUnavailable(value) {{
 
 function renderResultError(record, error) {{
     state.currentRecord = record || null;
-    $('resultRecordInfo').innerHTML = `
-        <strong>History record could not be displayed.</strong>
-        <p>${{esc(error.message || error)}}</p>
-        <p class="muted">Scan ID: ${{esc(record?.scan_id || 'Unavailable')}}</p>
-    `;
-    $('resultSummary').innerHTML = '';
-    $('scanHealth').className = 'health-panel error';
-    $('scanHealth').innerHTML = '<h3>Result Display Failed</h3><p>The saved record was loaded, but the dashboard could not render it.</p>';
-    $('topFolders').innerHTML = '<tr><td colspan="5">No folder data shown because the record could not be rendered.</td></tr>';
-    $('fileTypes').innerHTML = '<tr><td colspan="3">No file type data shown because the record could not be rendered.</td></tr>';
-    $('biggestFiles').innerHTML = '<tr><td colspan="5">No file data shown because the record could not be rendered.</td></tr>';
-    $('treeView').innerHTML = '<p class="muted">No tree data shown.</p>';
-    $('skippedPaths').innerHTML = '<p class="muted">No skipped paths shown.</p>';
+    Studio.recordError(record, error);
 }}
 
 function renderScanHealth(result) {{
-    const health = result.scan_health || {{
-        level: 'info',
-        title: 'Scan health unavailable',
-        message: 'This record was created before scan health summaries were added.',
-        next_steps: 'Run a new scan to see detailed health information.'
-    }};
-    const categories = result.skip_categories || {{}};
-    const categoryRows = Object.values(categories).map(item =>
-        `<div class="category-item"><strong>${{esc(item.label)}}: ${{esc(item.count)}}</strong><p>${{esc(item.explanation)}}</p></div>`
-    ).join('');
-    const categoryHtml = categoryRows ? `<div class="category-list">${{categoryRows}}</div>` : '<p class="muted">No skipped-path categories recorded.</p>';
-
-    $('scanHealth').className = 'health-panel ' + (health.level || 'info');
-    $('scanHealth').innerHTML = `
-        <h3>${{esc(health.title)}}</h3>
-        <p>${{esc(health.message)}}</p>
-        <p><strong>What to do next:</strong> ${{esc(health.next_steps)}}</p>
-        ${{categoryHtml}}
-    `;
+    Studio.renderHealth(result);
 }}
 
 function renderResult(record) {{
     state.currentRecord = record;
-    if (!record || !record.result) throw new Error('The selected history record has no result data.');
-    const result = record.result || {{}};
-    const summary = result.summary || {{}};
-    $('resultRecordInfo').innerHTML = `
-        <strong>Loaded Scan Record</strong>
-        <p><strong>Path:</strong> <code>${{esc(valueOrUnavailable(record.root))}}</code></p>
-        <p class="muted">Started: ${{esc(valueOrUnavailable(record.started_at))}} | Completed: ${{esc(valueOrUnavailable(record.completed_at))}} | Scan ID: ${{esc(valueOrUnavailable(record.scan_id))}}</p>
-    `;
-    $('resultSummary').innerHTML = [
-        metric('Total Size', valueOrUnavailable(summary.total_size)),
-        metric('Folders', valueOrUnavailable(summary.folders_scanned)),
-        metric('Files', valueOrUnavailable(summary.files_scanned)),
-        metric('Skipped', valueOrUnavailable(summary.skipped_count)),
-        metric('Status', valueOrUnavailable(record.status))
-    ].join('');
-    renderScanHealth(result);
-    const topFolders = asArray(result.top_folders);
-    const fileTypes = asArray(result.file_types);
-    const biggestFiles = asArray(result.biggest_files);
-    $('topFolders').innerHTML = topFolders.map((row, index) =>
-        `<tr><td>${{index + 1}}</td><td>${{esc(row.size)}}</td><td>${{esc(row.file_count)}}</td><td><code>${{esc(row.path)}}</code></td><td><button class="copy-button" data-copy-path="${{esc(row.path)}}" data-copy-label="largest folder">Copy directory</button></td></tr>`
-    ).join('') || '<tr><td colspan="5">No folder data.</td></tr>';
-    $('fileTypes').innerHTML = fileTypes.map(row =>
-        `<tr><td><code>${{esc(row.extension)}}</code></td><td>${{esc(row.size)}}</td><td>${{esc(row.count)}}</td></tr>`
-    ).join('') || '<tr><td colspan="3">No file type data.</td></tr>';
-    $('biggestFiles').innerHTML = biggestFiles.map((row, index) =>
-        `<tr><td>${{index + 1}}</td><td>${{esc(row.size)}}</td><td>${{esc(row.modified)}}</td><td><code>${{esc(row.path)}}</code></td><td><button class="copy-button" data-copy-path="${{esc(directoryFromPath(row.path))}}" data-copy-label="file folder">Copy directory</button></td></tr>`
-    ).join('') || '<tr><td colspan="5">No file data.</td></tr>';
-    $('treeView').innerHTML = result.tree_html || '<p class="muted">No tree data.</p>';
-    const skippedDetails = asArray(result.skipped_details);
-    const skippedFallback = asArray(result.skipped);
-    $('skippedPaths').innerHTML = skippedDetails.length
-        ? `<ul>${{skippedDetails.map(item => `<li><strong>${{esc(item.category_label || 'Skipped')}}</strong><br><code>${{esc(item.path)}}</code><br><span class="muted">${{esc(item.explanation || item.error)}}</span></li>`).join('')}}</ul>`
-        : skippedFallback.length
-            ? `<ul>${{skippedFallback.map(item => `<li><code>${{esc(item)}}</code></li>`).join('')}}</ul>`
-        : '<p class="muted">No skipped paths recorded.</p>';
+    Studio.renderRecord(record);
 }}
 
 async function loadInitial() {{
@@ -9127,7 +8972,6 @@ async function loadInitial() {{
         state.securityAllowlist = info.security_allowlist || null;
         renderSecurityBaselineControls();
         renderSecurityAllowlist(state.securityAllowlist, null);
-        if (info.drives.length) $('rootPath').value = info.drives.find(d => d.path === 'C:\\\\')?.path || info.drives[0].path;
         if (info.latest_record) renderResult(info.latest_record);
         const latestSecurityStatus = info.active_security_check?.check_id ? info.active_security_check : info.latest_security_check;
         if (latestSecurityStatus && latestSecurityStatus.check_id) {{
@@ -9137,7 +8981,6 @@ async function loadInitial() {{
             $('cancelSecurityCheck').disabled = !state.securityCheckActive;
             updateSecurityCheckStartState();
         }}
-        showActionAlert('info', 'Dashboard Ready', 'Choose a scan or review running processes. Important action details will appear here.', ['The tool is read-only.', 'Local server is bound to 127.0.0.1.']);
         await refreshHistory(false);
         await pollStatus();
     }} catch (error) {{
@@ -9211,9 +9054,8 @@ async function pollStatus() {{
                 }}
                 if (state.lastScanStatusKey !== statusKey) {{
                     state.lastScanStatusKey = statusKey;
-                    const alertType = status.status === 'completed' ? 'success' : (status.status === 'cancelled' ? 'warning' : 'error');
-                    const title = status.status === 'completed' ? 'Scan Completed' : (status.status === 'cancelled' ? 'Scan Cancelled' : 'Scan Failed');
-                    showActionAlert(alertType, title, `Scan status: ${{status.status}}.`, [
+                    const notice = Studio.completionNotice(status);
+                    showActionAlert(notice.type, notice.title, `Scan status: ${{status.status}}.`, [
                         `Path: ${{status.root}}`,
                         `Files: ${{status.result.summary.files_scanned}}`,
                         `Skipped paths: ${{status.result.summary.skipped_count}}`,
@@ -9224,6 +9066,7 @@ async function pollStatus() {{
                 }}
             }}
         }}
+        Studio.updateOperation(state, status.progress || null);
     }} catch (error) {{
         $('scanStatus').textContent = error.message;
         if (!state.isShuttingDown) {{
@@ -9260,6 +9103,7 @@ async function refreshHistory(showNotice = true) {{
         $('historyRows').innerHTML = data.records.map(row =>
             `<tr><td>${{esc(row.started_at)}}</td><td>${{esc(row.status)}}</td><td><code>${{esc(row.root)}}</code></td><td>${{esc(row.total_size)}}</td><td>${{esc(row.files_scanned)}}</td><td>${{esc(row.skipped_count)}}</td><td><button data-scan="${{esc(row.scan_id)}}">Open</button></td></tr>`
         ).join('') || '<tr><td colspan="7">No scan history yet.</td></tr>';
+        Studio.updateHistory(data.records);
         if (showNotice) {{
             showActionAlert('success', 'Scan History Refreshed', 'The scan history table has been updated.', [
                 `Records shown: ${{data.records.length}}`,
@@ -9762,6 +9606,8 @@ async function exitApp() {{
     }}
 }}
 
+{studio_script}
+Studio.init();
 document.querySelectorAll('.tab').forEach(btn => btn.addEventListener('click', () => showTab(btn.dataset.tab)));
 $('useDrive').addEventListener('click', () => {{
     $('rootPath').value = $('driveSelect').value;
@@ -9848,9 +9694,6 @@ $('processPublisherFilter').addEventListener('change', renderProcesses);
 $('processGroupBy').addEventListener('change', renderProcesses);
 $('processReviewFilter').addEventListener('change', renderProcesses);
 $('needsReviewOnly').addEventListener('change', renderProcesses);
-$('folderFilter').addEventListener('input', () => filterTable('folderFilter', 'topFolders'));
-$('typeFilter').addEventListener('input', () => filterTable('typeFilter', 'fileTypes'));
-$('fileFilter').addEventListener('input', () => filterTable('fileFilter', 'biggestFiles'));
 $('topFolders').addEventListener('click', event => {{
     const button = event.target.closest('button[data-copy-path]');
     if (button) copyDirectoryFromButton(button);
