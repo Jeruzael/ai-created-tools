@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import secrets
 import shutil
+import socket
 import stat
 import subprocess
 import sys
@@ -50,6 +51,8 @@ INSTALLER_USERDATA_SUBKEY = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Installe
 MAX_JSON_REQUEST_BYTES = 4 * 1024 * 1024
 HTTP_REQUEST_TIMEOUT_SECONDS = 10
 MAX_HTTP_WORKERS = 16
+HTTP_REJECTION_DRAIN_SECONDS = 0.25
+MAX_REJECTION_DRAIN_BYTES = 64 * 1024
 
 
 class ScanCancelled(Exception):
@@ -9911,6 +9914,19 @@ class DashboardHTTPServer(ThreadingHTTPServer):
                 + b"Cache-Control: no-store\r\nConnection: close\r\nContent-Length: "
                 + str(len(body)).encode("ascii") + b"\r\n\r\n" + body
             )
+            # Closing with unread input can reset TCP and discard the error on Windows.
+            request.shutdown(socket.SHUT_WR)
+            deadline = time.monotonic() + HTTP_REJECTION_DRAIN_SECONDS
+            remaining_bytes = MAX_REJECTION_DRAIN_BYTES
+            while remaining_bytes:
+                remaining_time = deadline - time.monotonic()
+                if remaining_time <= 0:
+                    break
+                request.settimeout(remaining_time)
+                chunk = request.recv(min(4096, remaining_bytes))
+                if not chunk:
+                    break
+                remaining_bytes -= len(chunk)
         except OSError:
             pass
         finally:

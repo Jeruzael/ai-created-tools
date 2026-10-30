@@ -221,6 +221,7 @@ class HttpServerResourceTests(unittest.TestCase):
     def test_admission_limit_rejects_without_starting_another_thread(self):
         self.assertTrue(self.server._request_slots.acquire(blocking=False))
         request = mock.Mock()
+        request.recv.return_value = b""
         with mock.patch.object(ThreadingHTTPServer, "process_request") as start, \
                 mock.patch.object(self.server, "shutdown_request") as close:
             self.server.process_request(request, ("127.0.0.1", 1))
@@ -245,6 +246,49 @@ class HttpServerResourceTests(unittest.TestCase):
                 self.server.process_request_thread(mock.Mock(), ("127.0.0.1", 1))
         self.assertTrue(self.server._request_slots.acquire(blocking=False))
         self.server._request_slots.release()
+
+    def test_rejection_drains_unread_input_after_fin_before_socket_close(self):
+        events = []
+        request = mock.Mock()
+        request.shutdown.side_effect = lambda _how: events.append("fin")
+        request.recv.side_effect = lambda _size: events.append("drain") or b""
+        with mock.patch.object(self.server, "shutdown_request", side_effect=lambda _request: events.append("close")):
+            self.server._reject_request(request, 409, "Conflict", "Server closing.")
+        self.assertEqual(events, ["fin", "drain", "close"])
+        self.assertIn(b"409 Conflict", request.sendall.call_args.args[0])
+
+    def test_rejection_drain_has_a_fixed_byte_budget(self):
+        request = mock.Mock()
+        request.recv.return_value = b"x" * 4096
+        with mock.patch.object(dashboard.time, "monotonic", return_value=100.0), \
+                mock.patch.object(self.server, "shutdown_request") as close:
+            self.server._reject_request(request, 503, "Service Unavailable", "Busy.")
+        self.assertEqual(request.recv.call_count, 16)
+        self.assertTrue(all(call.args[0] <= 4096 for call in request.recv.call_args_list))
+        close.assert_called_once_with(request)
+
+    def test_rejection_drain_uses_an_absolute_deadline(self):
+        clock = [100.0]
+        request = mock.Mock()
+
+        def receive(_size):
+            clock[0] += 1.0
+            return b"dripping input"
+
+        request.recv.side_effect = receive
+        with mock.patch.object(dashboard.time, "monotonic", side_effect=lambda: clock[0]), \
+                mock.patch.object(self.server, "shutdown_request") as close:
+            self.server._reject_request(request, 409, "Conflict", "Server closing.")
+        request.recv.assert_called_once()
+        close.assert_called_once_with(request)
+
+    def test_rejection_drain_error_still_closes_the_socket(self):
+        request = mock.Mock()
+        request.recv.side_effect = TimeoutError("fixture receive timeout")
+        with mock.patch.object(self.server, "shutdown_request") as close:
+            self.server._reject_request(request, 409, "Conflict", "Server closing.")
+        request.recv.assert_called_once()
+        close.assert_called_once_with(request)
 
 
 class ManualDeadlineTimer:
