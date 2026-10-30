@@ -288,6 +288,7 @@ class DashboardHttpTests(unittest.TestCase):
     def setUpClass(cls):
         cls.temp = tempfile.TemporaryDirectory()
         cls.patches = [mock.patch.object(dashboard, "APP_DIR", Path(cls.temp.name)),
+                       mock.patch.object(dashboard, "ALLOWLIST_FILE", Path(cls.temp.name) / "allowlist.local.json"),
                        mock.patch.object(dashboard, "VERSION_FILE", Path(cls.temp.name) / "version.json")]
         for name in ("RECORDS_DIR", "REPORTS_DIR", "SECURITY_RECORDS_DIR", "BASELINES_DIR"):
             cls.patches.append(mock.patch.object(dashboard, name, Path(cls.temp.name) / name))
@@ -296,7 +297,7 @@ class DashboardHttpTests(unittest.TestCase):
         cls.app = dashboard.DashboardApp()
         cls.state_patch = mock.patch.object(dashboard, "APP_STATE", cls.app)
         cls.state_patch.start()
-        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), dashboard.DashboardRequestHandler)
+        cls.server = dashboard.DashboardHTTPServer(("127.0.0.1", 0), dashboard.DashboardRequestHandler)
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
         cls.base = "http://127.0.0.1:" + str(cls.server.server_port)
@@ -317,7 +318,8 @@ class DashboardHttpTests(unittest.TestCase):
 
     def post(self, route, data):
         request = urllib.request.Request(self.base + route, data=json.dumps(data).encode(),
-                                         headers={"Content-Type": "application/json"}, method="POST")
+                                         headers={"Content-Type": "application/json", "Origin": self.base,
+                                                  "X-CSRF-Token": self.app.csrf_token}, method="POST")
         try:
             with urllib.request.urlopen(request, timeout=10) as response:
                 return response.status, json.load(response)
@@ -342,7 +344,9 @@ class DashboardHttpTests(unittest.TestCase):
                              "classification": "Probable orphan MSI", "confidence": "High", "incomplete_checks": [],
                              "backup_review": {"status": "Backup review candidate", "eligible_for_manifest": True}}]}
         with mock.patch.object(dashboard, "INSTALLER_CACHE_DIR", root), mock.patch.object(dashboard, "analyze_installer_cache", return_value=review):
-            with urllib.request.urlopen(self.base + "/api/installer-cache", timeout=10) as response:
+            request = urllib.request.Request(self.base + "/api/installer-cache",
+                                             headers={"Origin": self.base, "X-CSRF-Token": self.app.csrf_token})
+            with urllib.request.urlopen(request, timeout=10) as response:
                 displayed = json.load(response)
             status, result = self.post("/api/installer-cache/backup-review-manifest", {"acknowledgeManifest": True, "reviewId": displayed["review_id"]})
         self.assertEqual(status, 200)

@@ -1,9 +1,14 @@
 {
-  "app_version": "1.28.0",
-  "documentation_version": "1.28",
-  "last_updated": "2026-10-30",
-  "revision_notes": "Fixed installer coverage error reporting and stale manifest eligibility, added scan-bound export revalidation and regression tests, and disabled unavailable registry backups.",
+  "app_version": "1.29.0",
+  "documentation_version": "1.29",
+  "last_updated": "2026-10-31",
+  "revision_notes": "Hardened local HTTP requests, serialized job lifecycles and atomic local persistence, added explicit collector coverage and Windows CI, while preserving read-only installer safeguards.",
   "affected_areas": [
+    "local_api_security",
+    "job_lifecycle",
+    "atomic_persistence",
+    "security_collector_coverage",
+    "windows_ci",
     "browser_dashboard",
     "installer_cache_review",
     "installer_cache_api",
@@ -29,5 +34,5 @@
     "safety_messaging",
     "documentation_versioning"
   ],
-  "compatibility_notes": "Default run starts the browser app. Use --scan-once for legacy one-shot HTML report generation."
+  "compatibility_notes": "Private API requests require the session token; POST bodies require bounded JSON. Historical missing collector coverage is not recorded. Use --scan-once for legacy HTML reports."
 }

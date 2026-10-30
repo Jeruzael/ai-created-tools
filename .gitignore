@@ -20,7 +20,8 @@ security_check_records/
 security_reports/
 registry_backups/
 baselines/
-allowlist.local.json
+allowlist.local.json*
+.allowlist.local.json.lock
 DiskUsageDashboard.html
 *_Dashboard.html
 *scan-once.html
