@@ -1,0 +1,64 @@
+<!-- Embed inside #tab-processes. Legacy filter, row, refresh/export and help events stay parent-owned. -->
+<div id="processWorkspace" class="process-workspace">
+    <!-- Lucide refresh-cw and download (ISC), supplemental local symbols absent from the shell sprite. -->
+    <svg class="icon-sprite" aria-hidden="true"><symbol id="process-icon-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 15.36-6.36L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-15.36 6.36L3 16"></path><path d="M8 16H3v5"></path></symbol><symbol id="process-icon-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></symbol></svg>
+    <header class="process-heading">
+        <h2>Running programs</h2>
+        <div class="process-actions">
+            <button id="refreshProcesses" type="button" class="primary"><svg class="icon" aria-hidden="true"><use href="#process-icon-refresh"></use></svg>Refresh</button>
+            <button id="downloadProcessReport" type="button"><svg class="icon" aria-hidden="true"><use href="#process-icon-download"></use></svg>Grouped report</button>
+            <button id="downloadVerificationReport" type="button"><svg class="icon" aria-hidden="true"><use href="#process-icon-download"></use></svg>Verification report</button>
+            <button type="button" class="quiet-button" data-open-process-help>How to verify a process</button>
+        </div>
+    </header>
+    <div id="processSummary" class="process-summary" aria-label="Process snapshot summary"></div>
+    <div class="process-filters">
+        <label class="process-search" for="processFilter">Search<input id="processFilter" type="search" placeholder="Program, executable, publisher, PID" autocomplete="off" spellcheck="false"></label>
+        <label for="processPublisherFilter">Publisher<select id="processPublisherFilter"><option value="">All publishers</option></select></label>
+        <label for="processGroupBy">Group by<select id="processGroupBy"><option value="none">None</option><option value="publisher">Publisher</option><option value="memory">Memory</option><option value="uncategorized">Uncategorized only</option><option value="needsReview">Needs review</option></select></label>
+        <label for="processReviewFilter">Review reason<select id="processReviewFilter"><option value="">All reasons</option></select></label>
+        <label class="process-review-only" for="needsReviewOnly"><input id="needsReviewOnly" type="checkbox">Needs review only</label>
+        <label class="process-mobile-sort" for="processSort">Sort<select id="processSort"><option value="program-asc">Program: A to Z</option><option value="program-desc">Program: Z to A</option><option value="publisher-asc">Publisher: A to Z</option><option value="publisher-desc">Publisher: Z to A</option><option value="pid-asc">PID: lowest first</option><option value="pid-desc">PID: highest first</option><option value="memory-desc">Memory: largest first</option><option value="memory-asc">Memory: smallest first</option><option value="review-desc">Review: most flags first</option><option value="review-asc">Review: fewest flags first</option><option value="signature-asc">Signature: A to Z</option><option value="signature-desc">Signature: Z to A</option></select></label>
+    </div>
+    <p id="processStatus" class="process-status" role="status" aria-live="polite">No process snapshot loaded. Refresh to collect running programs.</p>
+    <div id="processTableScroll" class="process-table-scroll" tabindex="0" role="region" aria-label="Running processes" aria-busy="false">
+        <table id="processTable" class="process-explorer-table">
+            <caption class="sr-only">Running programs in the current snapshot</caption>
+            <colgroup><col class="process-col-program"><col class="process-col-publisher"><col class="process-col-pid"><col class="process-col-memory"><col class="process-col-review"><col class="process-col-signature"><col class="process-col-action"></colgroup>
+            <thead><tr>
+                <th scope="col" aria-label="Program / executable" aria-sort="ascending"><button type="button" data-process-sort="program" title="Sort by program">Program / executable<svg class="icon process-sort-arrow" aria-hidden="true"><use href="#icon-chevron-right"></use></svg></button></th>
+                <th scope="col" aria-label="Publisher" aria-sort="none"><button type="button" data-process-sort="publisher" title="Sort by publisher">Publisher<svg class="icon process-sort-arrow" aria-hidden="true"><use href="#icon-chevron-right"></use></svg></button></th>
+                <th scope="col" aria-label="PID" aria-sort="none"><button type="button" data-process-sort="pid" title="Sort by PID">PID<svg class="icon process-sort-arrow" aria-hidden="true"><use href="#icon-chevron-right"></use></svg></button></th>
+                <th scope="col" aria-label="Memory" aria-sort="none"><button type="button" data-process-sort="memory" title="Sort by measured memory">Memory<svg class="icon process-sort-arrow" aria-hidden="true"><use href="#icon-chevron-right"></use></svg></button></th>
+                <th scope="col" aria-label="Review" aria-sort="none"><button type="button" data-process-sort="review" title="Sort by review indicators">Review<svg class="icon process-sort-arrow" aria-hidden="true"><use href="#icon-chevron-right"></use></svg></button></th>
+                <th scope="col" aria-label="Signature" aria-sort="none"><button type="button" data-process-sort="signature" title="Sort by available signature status">Signature<svg class="icon process-sort-arrow" aria-hidden="true"><use href="#icon-chevron-right"></use></svg></button></th>
+                <th scope="col">Details</th>
+            </tr></thead>
+            <tbody id="processRows"><tr><td colspan="7">No process snapshot loaded.</td></tr></tbody>
+        </table>
+    </div>
+    <div class="process-pagination">
+        <label for="processPageSize">Rows<select id="processPageSize"><option value="25">25</option><option value="50">50</option><option value="100">100</option></select></label>
+        <span id="processPageInfo" role="status" aria-live="polite">No rows</span>
+        <button id="processPrevious" type="button" class="icon-button" aria-label="Previous process page" title="Previous process page" disabled><svg class="icon" aria-hidden="true"><use href="#icon-chevron-left"></use></svg></button>
+        <button id="processNext" type="button" class="icon-button" aria-label="Next process page" title="Next process page" disabled><svg class="icon" aria-hidden="true"><use href="#icon-chevron-right"></use></svg></button>
+    </div>
+    <div id="processDrawerBackdrop" class="process-drawer-backdrop" hidden></div>
+    <aside id="processDrawer" class="process-inspector" role="dialog" aria-modal="true" aria-labelledby="processDrawerTitle" aria-describedby="processDrawerMeta" tabindex="-1" hidden>
+        <header class="process-inspector-heading">
+            <div><h3 id="processDrawerTitle">Process details</h3><p id="processDrawerMeta">Local snapshot evidence</p></div>
+            <button id="processDrawerClose" type="button" class="icon-button" aria-label="Close process details" title="Close process details"><svg class="icon" aria-hidden="true"><use href="#icon-x"></use></svg></button>
+        </header>
+        <div class="process-detail-tabs" role="tablist" aria-label="Process detail views">
+            <button id="processTabOverview" type="button" role="tab" data-process-tab="overview" aria-controls="processDetailOverview" aria-selected="true" tabindex="0">Overview</button>
+            <button id="processTabSignature" type="button" role="tab" data-process-tab="signature" aria-controls="processDetailSignature" aria-selected="false" tabindex="-1">Signature &amp; Hash</button>
+            <button id="processTabTechnical" type="button" role="tab" data-process-tab="technical" aria-controls="processDetailTechnical" aria-selected="false" tabindex="-1">Technical</button>
+        </div>
+        <div id="processDetail" class="process-inspector-body" aria-busy="false">
+            <p id="processDetailStatus" class="process-detail-status" role="status" aria-live="polite" aria-atomic="true"></p>
+            <section id="processDetailOverview" role="tabpanel" aria-labelledby="processTabOverview" tabindex="0"></section>
+            <section id="processDetailSignature" role="tabpanel" aria-labelledby="processTabSignature" tabindex="0" hidden></section>
+            <section id="processDetailTechnical" role="tabpanel" aria-labelledby="processTabTechnical" tabindex="0" hidden></section>
+        </div>
+    </aside>
+</div>

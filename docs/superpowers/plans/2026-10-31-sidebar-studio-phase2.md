@@ -32,7 +32,7 @@ No merge, deployment, cleanup, deletion, process termination or Windows changes.
 - [x] Preparation: remote/base/worktree audit and reproducible baseline.
 - [x] A: failing unread-lifecycle tests; stable identity/read state; badge,
   mark-read/clear/dismiss, dedup, visible/read handling; verify and commit.
-- [ ] B: full-width paged/sorted/grouped process table and accessible inspector;
+- [x] B: full-width paged/sorted/grouped process table and accessible inspector;
   async selection guards, unavailable evidence, exports/help relocation; commit.
 - [ ] C: Run/Findings/Coverage/Baselines/Allowlist/Timeline/Reports navigation,
   compact honest summary, paged evidence and finding drawer; commit.
@@ -61,3 +61,10 @@ changes were attempted. Connected GitHub independently confirmed the base SHA.
   Strict gate: 264 passed, zero failures/errors/skips. Event identity includes
   operation ID; read/visible state and dismissal are memory-only. No private
   notification data is saved in browser storage or diagnostics.
+- Access recovery: user started Windows ssh-agent and loaded both private keys
+  locally. SSH fetch and configured SSH signing now succeed; the commit contains
+  an SSH signature. Local signature trust verification needs an allowed-signers
+  file; no trust/signing configuration was changed by the agent.
+- B: 37 new sidecar tests passed. Parent integrated existing API/filter/export
+  bridges and moved the complete verification guide to Help. Full working suite
+  passed 307 (including six uncommitted C model tests); B's scoped gate is 301.

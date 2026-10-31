@@ -6320,6 +6320,10 @@ def build_dashboard_html():
     ui_root = Path(__file__).resolve().parent / "ui"
     studio_style = (ui_root / "sidebar_studio.css").read_text(encoding="utf-8")
     studio_script = (ui_root / "sidebar_studio.js").read_text(encoding="utf-8")
+    process_style = (ui_root / "process_workspace.css").read_text(encoding="utf-8")
+    process_script = (ui_root / "process_workspace.js").read_text(encoding="utf-8")
+    process_layout = (ui_root / "process_workspace.html").read_text(encoding="utf-8")
+    process_guide = (ui_root / "process_verification_help.html").read_text(encoding="utf-8")
     studio_layout = (ui_root / "sidebar_studio.html").read_text(encoding="utf-8").replace(
         "__APP_VERSION__", APP_VERSION).replace(
         "__STUDIO_ICONS__", (ui_root / "lucide-sprite.svg").read_text(encoding="utf-8"))
@@ -6800,104 +6804,15 @@ summary {{ cursor: pointer; padding: 6px; }}
     main {{ padding: 14px; }}
 }}
 {studio_style}
+{process_style}
 </style>
 </head>
 <body>
 {studio_layout}
 
-    <section id="tab-processes" class="tab-panel hidden">
+    <section id="tab-processes" class="tab-panel hidden" aria-label="Processes">
         <div id="processTop"></div>
-        <div id="processLayout" class="process-layout">
-            <section class="section process-panel">
-                <h2>Running Programs</h2>
-                <p>These are risk indicators, not final malware decisions.</p>
-                <div class="actions">
-                    <button id="refreshProcesses" class="primary">Refresh processes</button>
-                    <button id="downloadProcessReport">Download grouped report</button>
-                    <button id="downloadVerificationReport">Download verification report</button>
-                    <a class="button-link" href="#verification-panel">Verify</a>
-                </div>
-                <div class="process-controls">
-                    <label>Search
-                        <input id="processFilter" placeholder="Program, publisher, path, PID...">
-                    </label>
-                    <label>Publisher
-                        <span class="tooltip-wrap">
-                            <span class="info-icon" tabindex="0" role="button" aria-label="Publisher grouping note" aria-describedby="publisherTooltip">i</span>
-                            <span id="publisherTooltip" class="tooltip-text" role="tooltip">Grouped locally from current process data. Review flags are not malware verdicts.</span>
-                        </span>
-                        <select id="processPublisherFilter"><option value="">All publishers</option></select>
-                    </label>
-                    <label>Group by
-                        <select id="processGroupBy">
-                            <option value="publisher">Publisher</option>
-                            <option value="memory">Largest memory consumed</option>
-                            <option value="uncategorized">Uncategorized only</option>
-                            <option value="needsReview">Needs review</option>
-                        </select>
-                    </label>
-                    <label>Review reason
-                        <select id="processReviewFilter"><option value="">All reasons</option></select>
-                    </label>
-                    <label><input id="needsReviewOnly" type="checkbox"> Needs review only</label>
-                </div>
-                <div class="process-panel-body">
-                    <div id="processSummary" class="process-summary-grid"></div>
-                    <div id="processGroupTree" class="process-group-tree"><p class="muted">Refresh processes to see grouped results.</p></div>
-                    <div class="table-wrap"><table class="process-table"><thead><tr><th>Program</th><th>Memory</th><th>Indicators</th><th>Action</th></tr></thead><tbody id="processRows"></tbody></table></div>
-                </div>
-            </section>
-            <button id="processSplitter" class="process-splitter" type="button" aria-label="Drag to resize process list and process details panels" title="Drag to resize panels"></button>
-            <section class="section detail-panel process-panel">
-                <h2>Process Details</h2>
-                <div id="processDetail" class="muted process-detail-scroll">Select any process row or use the Details button to see technical details.</div>
-            </section>
-        </div>
-        <section id="verification-panel" class="section verification-guide">
-            <h2>Verification Guide</h2>
-            <p>This report can help you decide what to review, but it does not prove that a program is safe or malicious. Use the steps below to verify a file locally on your PC before making any decision.</p>
-
-            <h3>Check the digital signature</h3>
-            <p>A digital signature helps confirm who published a file. A valid signature from a known publisher is a good sign, but it does not guarantee the file is safe. An unsigned file is not automatically dangerous, but it deserves more caution.</p>
-            <ol>
-                <li>Find the file path shown in the report.</li>
-                <li>Right-click the file.</li>
-                <li>Choose Properties.</li>
-                <li>Open the Digital Signatures tab if it exists.</li>
-                <li>Select the signature and click Details.</li>
-                <li>Check whether Windows says the signature is valid.</li>
-                <li>Compare the signer or publisher name with what you expected.</li>
-            </ol>
-            <p>Advanced PowerShell option:</p>
-            <pre><code>Get-AuthenticodeSignature "C:\Path\To\File.exe"</code></pre>
-            <ul>
-                <li><strong>Status: Valid</strong> means Windows recognizes the signature as valid.</li>
-                <li><strong>Status: NotSigned</strong> means the file has no digital signature.</li>
-                <li><strong>Status: UnknownError, HashMismatch, or NotTrusted</strong> means the file needs extra review.</li>
-            </ul>
-
-            <h3>Check the SHA-256 hash</h3>
-            <p>SHA-256 is a unique fingerprint of a file. If the file changes, the hash changes. This helps confirm whether a file matches a known official copy.</p>
-            <ol>
-                <li>Copy the file path from the report.</li>
-                <li>Open PowerShell.</li>
-                <li>Run the command below.</li>
-                <li>Copy the SHA256 result.</li>
-                <li>Compare it with the hash from the official vendor, trusted download page, or internal records.</li>
-                <li>If the hash does not match, do not assume immediately, but treat the file as suspicious and investigate further.</li>
-            </ol>
-            <pre><code>Get-FileHash "C:\Path\To\File.exe" -Algorithm SHA256</code></pre>
-            <p class="notice">Do not upload private company files, personal files, or unknown executables to public websites unless you understand the privacy risk. Prefer official vendor pages, internal security tools, or local verification first.</p>
-
-            <h3>What to do next</h3>
-            <ul>
-                <li>If the signature is valid and the publisher is expected, mark it as reviewed.</li>
-                <li>If the file is unsigned but located in a trusted app folder, inspect it carefully before deciding.</li>
-                <li>If the publisher is unknown, the path looks strange, or the hash does not match the official source, do not delete it immediately. Research it first or ask someone technical.</li>
-                <li>Use official uninstallers, Windows Settings, or vendor tools instead of deleting program files manually.</li>
-            </ul>
-            <p><a class="button-link" href="#processTop">Back to top</a></p>
-        </section>
+        {process_layout}
     </section>
 
     <section id="tab-installer" class="tab-panel hidden">
@@ -7204,6 +7119,7 @@ summary {{ cursor: pointer; padding: 6px; }}
     </section>
 
     <section id="tab-manual" class="tab-panel hidden">
+        {process_guide}
         <section class="section">
             <h2>User Manual</h2>
             <p>This guide explains how to use the dashboard safely. It is local to this app and does not fetch external content.</p>
@@ -7508,6 +7424,7 @@ function setExitState(workActive, reason = '', workType = 'scan') {{
 
 function showTab(name) {{
     name = Studio.navigate(name, true);
+    if (name !== 'processes') ProcessWorkspace.hide();
 
     if (name === 'manual') {{
         showActionAlert('info', 'Manual Opened', 'The user manual explains safe scan usage, cleanup workflow, use cases, and expanded do\\'s and don\\'ts.', [
@@ -9489,87 +9406,28 @@ function downloadVerificationReport() {{
 }}
 
 async function refreshProcesses() {{
-    $('processRows').innerHTML = '<tr><td colspan="4">Loading processes...</td></tr>';
-    $('processSummary').innerHTML = '';
-    $('processGroupTree').innerHTML = '<p class="muted">Loading grouped process view...</p>';
-    showActionAlert('info', 'Refreshing Process List', 'The app is reading local Windows process metadata.', [
-        'This does not stop or modify programs.',
-        'Risk indicators are not final malware verdicts.'
-    ]);
+    ProcessWorkspace.setLoading(true);
     try {{
         const data = await api('/api/processes');
-        state.processes = data.processes || [];
+        state.processes = asArray(data.processes);
         updatePublisherFilterOptions();
         updateReviewFilterOptions();
-        renderProcesses();
-        showActionAlert('success', 'Process List Refreshed', 'Running programs were loaded from this computer.', [
-            `Processes shown: ${{state.processes.length}}`,
-            `Collected at: ${{data.collected_at}}`
-        ]);
+        ProcessWorkspace.setError(null);
+        ProcessWorkspace.onSnapshot();
     }} catch (error) {{
-        $('processRows').innerHTML = `<tr><td colspan="4">${{esc(error.message)}}</td></tr>`;
-        showActionAlert('error', 'Process List Failed', error.message, ['Some process details may require Administrator permission.']);
+        ProcessWorkspace.setError(error.message);
+        showActionAlert('error', 'Process List Failed', error.message, ['Some process evidence may be unavailable. The last snapshot is retained.']);
+    }} finally {{
+        ProcessWorkspace.setLoading(false);
     }}
 }}
 
 function renderProcesses() {{
-    const rows = getVisibleProcesses();
-    renderProcessSummary(rows);
-    renderProcessGroupTree(rows);
-    $('processRows').innerHTML = rows.map(p => {{
-        const indicators = asArray(p.risk_indicators).map(i => `<span class="pill ${{esc(i.level)}}">${{esc(i.label)}}</span>`).join('');
-        return `<tr class="process-row" tabindex="0" data-pid="${{esc(p.pid)}}" title="Open technical details for this process"><td class="process-name-cell"><strong>${{esc(p.friendly_name)}}</strong><br><span class="muted">PID ${{esc(p.pid)}} | Parent: ${{esc(p.parent_name || p.parent_pid || 'Unavailable')}} | Publisher: ${{esc(publisherLabel(p))}}</span><br><code class="path-text">${{esc(p.executable_path || 'Path unavailable')}}</code></td><td>${{esc(p.memory)}}</td><td>${{indicators}}</td><td><button class="small-action" data-pid="${{esc(p.pid)}}">Details</button></td></tr>`;
-    }}).join('') || '<tr><td colspan="4">No matching processes.</td></tr>';
+    ProcessWorkspace.render();
 }}
 
 async function showProcessDetail(pid) {{
-    document.querySelectorAll('#processRows tr[data-pid]').forEach(row => {{
-        row.classList.toggle('selected', row.dataset.pid === String(pid));
-    }});
-    $('processDetail').textContent = 'Loading details...';
-    showActionAlert('info', 'Opening Process Details', 'The app is loading local technical details for one process.', [
-        `PID: ${{pid}}`,
-        'Indicators are for review only and are not final malware verdicts.'
-    ]);
-    try {{
-        const data = await api('/api/processes/' + encodeURIComponent(pid));
-        const p = data.process;
-        const indicators = asArray(p.risk_indicators).map(i => `<span class="pill ${{esc(i.level)}}">${{esc(i.label)}}</span>`).join('');
-        const reasons = reviewReasonsForProcess(p);
-        const verificationHtml = `
-            <div class="verification-list">
-                <strong>${{reasons.length ? 'Needs Review' : 'No review flags from local rules'}}</strong>
-                <ul>
-                    ${{reasons.length ? reasons.map(reason => `<li>${{esc(reason)}}</li>`).join('') : '<li>No local review reason was found in this snapshot.</li>'}}
-                </ul>
-                <p class="muted">This is a local review checklist, not a malware verdict.</p>
-            </div>
-        `;
-        $('processDetail').innerHTML = `
-            <h3>${{esc(p.friendly_name)}} <span class="muted">PID ${{esc(p.pid)}}</span></h3>
-            <p>${{indicators}}</p>
-            ${{verificationHtml}}
-            <p><strong>Path</strong><br><code>${{esc(p.executable_path || 'Unavailable')}}</code></p>
-            <p><strong>Command line</strong><br><code>${{esc(p.command_line || 'Unavailable')}}</code></p>
-            <p><strong>Parent PID</strong><br>${{esc(p.parent_pid || 'Unavailable')}}</p>
-            <p><strong>Memory</strong><br>${{esc(p.memory)}}</p>
-            <p><strong>Publisher metadata</strong><br>Publisher: ${{esc(p.publisher || 'Unavailable')}}<br>Product: ${{esc(p.product_name || 'Unavailable')}}</p>
-            <p><strong>Signature</strong><br>Status: ${{esc(p.signature.status)}}<br>Publisher: ${{esc(p.signature.publisher || 'Unavailable')}}<br>Error: ${{esc(p.signature.error || 'None')}}</p>
-            <p><strong>SHA-256</strong><br><code>${{esc(p.sha256 || p.hash_error || 'Unavailable')}}</code></p>
-            <p class="muted">Collected at ${{esc(p.collected_at)}}. This is a local indicator review, not a final safety verdict.</p>
-        `;
-        showActionAlert('info', 'Process Details Loaded', 'Technical details are shown in the process detail panel.', [
-            `PID: ${{p.pid}}`,
-            `Name: ${{p.name || p.friendly_name}}`,
-            'Risk indicators do not prove whether a program is safe or harmful.'
-        ]);
-    }} catch (error) {{
-        $('processDetail').textContent = error.message;
-        showActionAlert('error', 'Process Details Unavailable', error.message, [
-            `PID: ${{pid}}`,
-            'The process may have exited or may require higher permissions.'
-        ]);
-    }}
+    await ProcessWorkspace.open(pid, document.activeElement);
 }}
 
 async function exitApp() {{
@@ -9607,7 +9465,16 @@ async function exitApp() {{
 }}
 
 {studio_script}
+{process_script}
 Studio.init();
+ProcessWorkspace.init({{doc:document,win:window,readState:()=>state,api,visibleProcesses:getVisibleProcesses,
+    groupProcesses,publisherLabel,needsReview,reviewReasons:reviewReasonsForProcess,formatBytes,
+    notify:showActionAlert,copyText:writeClipboardText}});
+ProcessWorkspace.render();
+document.addEventListener('click',event=>{{
+    if(event.target.closest('[data-open-process-help]')){{showTab('manual');$('processVerificationHelp').open=true;$('processVerificationHelp').querySelector('summary').focus();}}
+    if(event.target.closest('[data-open-processes]')){{showTab('processes');$('processFilter').focus();}}
+}});
 document.querySelectorAll('.tab').forEach(btn => btn.addEventListener('click', () => showTab(btn.dataset.tab)));
 $('useDrive').addEventListener('click', () => {{
     $('rootPath').value = $('driveSelect').value;
@@ -9718,7 +9585,6 @@ $('processRows').addEventListener('keydown', event => {{
     event.preventDefault();
     showProcessDetail(row.dataset.pid);
 }});
-initProcessPaneResizer();
 updateSecurityCheckStartState();
 updateAdvancedReviewOptions();
 loadInitial();
