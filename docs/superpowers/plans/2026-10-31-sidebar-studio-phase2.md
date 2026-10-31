@@ -40,8 +40,10 @@ No merge, deployment, cleanup, deletion, process termination or Windows changes.
   expandable About metadata, preserving Phase 1; commit.
 - [x] E: integrated regression and synthetic HTTP/control checks, backend AST
   comparison, fresh-context review/fixes, manual viewport acceptance record.
-- [ ] Publish all milestone commits on one branch and one unmerged PR to master;
-  verify exact-head Windows CI and publish evidence. No deployment.
+- [x] Publish milestone commits on one branch and one unmerged draft PR to master.
+  [PR #3](https://github.com/Jeruzael/ai-created-tools/pull/3) holds the latest
+  exact-head Windows CI result, publication SHA and final review evidence.
+  No merge or deployment is authorized.
 
 ## Review Focus
 

@@ -74,8 +74,9 @@ Cancelled terminal events are not labeled completed. Technical JSON remains raw.
 | Synthetic HTTP | Nine grouped checks passed in both ordinary and workspace-fixture preview configurations; no native collection |
 | Runtime source audit | AST comparison of 166 top-level Python functions/classes against the base changed only `build_dashboard_html()` |
 
-Exact final head, review findings/fixes and Windows Python 3.11/3.13 CI URLs belong
-in the PR evidence. Do not infer hosted success from a local test run.
+The [draft review PR #3](https://github.com/Jeruzael/ai-created-tools/pull/3)
+contains the latest publication head, review evidence and exact-head Windows
+Python 3.11/3.13 CI status and URLs. Do not infer hosted success from a local run.
 
 Fresh-context review reproduced process-instance cache misattribution, disclosure
 replacement during polling, finding/event focus return, suppressed later manual
