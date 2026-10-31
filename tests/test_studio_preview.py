@@ -54,6 +54,26 @@ class StudioPreviewTests(unittest.TestCase):
             self.assertEqual(len(app.history()), 1)
             self.assertIsNone(app._operation)
 
+    def test_workspace_fixtures_are_synthetic_detached_and_never_run_collectors(self):
+        with preview_environment(workspace_fixtures=True) as app:
+            snapshot=dashboard.get_process_snapshot()
+            self.assertEqual(len(snapshot), 501)
+            self.assertTrue(all(row['executable_path'].startswith(FIXTURE_ROOT) for row in snapshot))
+            snapshot[0]['name']='Changed'
+            self.assertNotEqual(dashboard.get_process_snapshot()[0]['name'], 'Changed')
+            self.assertEqual(dashboard.get_process_detail(1000)['signature']['status'], 'Unavailable')
+            record=dashboard.load_security_check_records()[0]
+            self.assertEqual(record['status'], 'cancelled')
+            self.assertEqual(len(record['findings']), 63)
+            self.assertNotEqual(record['summary']['coverage_status'], 'complete')
+            review=app.installer_cache_review()
+            self.assertEqual(len(review['files']),63)
+            self.assertTrue(all(not row['backup_review']['eligible_for_manifest'] for row in review['files']))
+            with self.assertRaisesRegex(ValueError, 'disabled'):
+                app.installer_backup_review_manifest({})
+            with self.assertRaisesRegex(ValueError, 'disabled'):
+                app.start_security_check({'acknowledgeSafety':True})
+
 
 if __name__ == '__main__':
     unittest.main()

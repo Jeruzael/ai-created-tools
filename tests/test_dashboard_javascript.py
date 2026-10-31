@@ -17,6 +17,7 @@ class ManifestJavascriptTests(unittest.TestCase):
             self.assertIsNotNone(match, name)
             functions.append(match.group())
         code = "const assert = require('node:assert/strict');\nconst asArray = value => Array.isArray(value) ? value : [];\n"
+        code += "const Studio={actionNotifier:()=> (...args)=>showActionAlert(...args)};\n"
         code += "\n".join(functions) + "\n(async () => {\n" + assertions + "\n})().catch(error => { console.error(error); process.exitCode = 1; });"
         result = subprocess.run(["node", "-"], input=code, text=True, capture_output=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -63,12 +64,15 @@ class ManifestJavascriptTests(unittest.TestCase):
                 'installerCacheStatus', 'installerCacheRows', 'installerMissingRows'].map(id => [id, {disabled: false, textContent: '', innerHTML: ''}]));
             global.$ = id => elements[id];
             global.showActionAlert = () => {};
+            let cleared = 0;
+            global.renderInstallerCache = data => { assert.equal(data,null); cleared++; };
             global.api = async () => { throw new Error('Scan failed'); };
             await refreshInstallerCache();
             assert.equal(state.installerCache, null);
             assert.equal(elements.exportInstallerCandidates.disabled, true);
             assert.equal(elements.exportInstallerBackupManifest.disabled, true);
             assert.equal(elements.refreshInstallerCache.disabled, false);
+            assert.equal(cleared,1);
         """)
 
 

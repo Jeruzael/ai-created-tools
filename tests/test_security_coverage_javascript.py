@@ -3,6 +3,7 @@ import re
 import shutil
 import subprocess
 import unittest
+from pathlib import Path
 
 from test_security_coverage import dashboard
 
@@ -25,8 +26,8 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp
 const asArray = value => Array.isArray(value) ? value : [];
 const metric = (label, value) => `${label}: ${value}; `;
 const uniqueCount = items => new Set(items.filter(Boolean)).size;
-const buildSecurityTimelineRows = () => [];
-""" + "\n".join(functions) + "\n" + assertions
+const state = {securityBaselines: []};
+""" + ("const buildSecurityTimelineRows = () => [];\n" if "buildSecurityTimelineRows" not in names else "") + "const Workspace=require(" + json.dumps(str(Path(__file__).resolve().parents[1] / 'ui/workspace_studio.js')) + ");\n" + "\n".join(functions) + "\n" + assertions
         result = subprocess.run(["node", "-"], input=code, text=True, capture_output=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -35,6 +36,53 @@ const buildSecurityTimelineRows = () => [];
 renderSecurityCategoryBlocks({check_id:'legacy', status:'completed', summary:{collectors_connected:true}, findings:[]});
 assert(elements.securityCategoryBlocks.innerHTML.includes('Not recorded'));
 assert(!elements.securityCategoryBlocks.innerHTML.includes('No findings in this category for the current run.'));
+""")
+
+    def test_terminal_steps_in_reports_preserve_saved_evidence_without_waiting(self):
+        self.run_js(['securityStepsHtml'], """
+const record={check_id:'cancelled',status:'cancelled',steps:[{label:'First',status:'Complete'},{label:'Second',status:'Running'},{label:'Third',status:'Waiting'}]};
+const before=JSON.stringify(record),html=securityStepsHtml(record);
+assert(html.includes('<td>Cancelled</td>'));assert(html.includes('<td>Not run</td>'));
+assert(!html.includes('<td>Waiting</td>'));assert(html.includes('Saved step status: Waiting'));
+assert.equal(JSON.stringify(record),before);
+""")
+
+    def test_cancelled_timeline_never_claims_a_completed_inspection(self):
+        self.run_js(['parseTimelineTime','addTimelineRow','timelineSummaryForFinding','buildSecurityTimelineRows'], """
+const cancelled=buildSecurityTimelineRows({check_id:'cancelled',status:'cancelled',started_at:'2026-10-31T01:00:00Z',completed_at:'2026-10-31T01:01:00Z'});
+assert(cancelled.some(row=>row.type==='Security Check Cancelled'));
+assert(!cancelled.some(row=>row.type==='Security Check Completed'));
+const active=buildSecurityTimelineRows({check_id:'running',status:'running',started_at:'2026-10-31T01:00:00Z'});
+assert(!active.some(row=>/Completed|Finalized/.test(row.type)));
+""")
+
+    def test_summary_distinguishes_unknown_from_zero_and_compared_from_uncompared(self):
+        self.run_js(['securityCoverageView','renderSecuritySummary'], """
+renderSecuritySummary({}, {check_id:'legacy',status:'cancelled'});
+assert(elements.securitySummary.innerHTML.includes('Findings: Not recorded'));
+assert(elements.securitySummary.innerHTML.includes('Skipped Sources: Not recorded'));
+renderSecuritySummary({findings_total:0,skipped_count:0}, {check_id:'fixture',status:'completed',findings:[],baseline_comparison:{new:0,changed:1,removed:2}});
+assert(elements.securitySummary.innerHTML.includes('Findings: 0'));
+assert(elements.securitySummary.innerHTML.includes('Baseline Changes: 3'));
+""")
+
+    def test_unchanged_polling_does_not_recreate_filter_options(self):
+        self.run_js(['updateSelectOptions'], """
+let writes=0;
+elements.filter={value:'Fixture category',dataset:{},set innerHTML(value){writes++;}};
+updateSelectOptions('filter',['Fixture category','Other'],'All categories');
+updateSelectOptions('filter',['Other','Fixture category'],'All categories');
+assert.equal(writes,1);assert.equal(elements.filter.value,'Fixture category');
+updateSelectOptions('filter',['New category'],'All categories');
+assert.equal(writes,2);assert.equal(elements.filter.value,'All categories');
+""")
+
+    def test_findings_search_matches_literal_evidence_path_and_preserves_signal_filter(self):
+        self.run_js(['findingSearchText','findingHasUserWritablePath','signalMatchesSecurityFinding','filteredSecurityFindings'], r"""
+const path=String.raw`C:\Users\Fixture\AppData\Local\Example.exe`;
+elements.securityFindingFilter={value:path};elements.securitySignalFilter={value:'userWritable'};
+const record={findings:[{finding_id:'fixture',title:'Fixture item',evidence:{path}}]};
+assert.equal(filteredSecurityFindings(record).length,1);
 """)
 
     def complete_ledger(self):

@@ -1,0 +1,47 @@
+<details id="processVerificationHelp" class="help-topic"><summary>How to verify a process</summary>
+        <div id="verification-panel" class="verification-guide">
+            <h2>Verification Guide</h2>
+            <p>This report can help you decide what to review, but it does not prove that a program is safe or malicious. Use the steps below to verify a file locally on your PC before making any decision.</p>
+
+            <h3>Check the digital signature</h3>
+            <p>A digital signature helps confirm who published a file. A valid signature from a known publisher is a good sign, but it does not guarantee the file is safe. An unsigned file is not automatically dangerous, but it deserves more caution.</p>
+            <ol>
+                <li>Find the file path shown in the report.</li>
+                <li>Right-click the file.</li>
+                <li>Choose Properties.</li>
+                <li>Open the Digital Signatures tab if it exists.</li>
+                <li>Select the signature and click Details.</li>
+                <li>Check whether Windows says the signature is valid.</li>
+                <li>Compare the signer or publisher name with what you expected.</li>
+            </ol>
+            <p>Advanced PowerShell option:</p>
+            <pre><code>Get-AuthenticodeSignature "C:\Path\To\File.exe"</code></pre>
+            <ul>
+                <li><strong>Status: Valid</strong> means Windows recognizes the signature as valid.</li>
+                <li><strong>Status: NotSigned</strong> means the file has no digital signature.</li>
+                <li><strong>Status: UnknownError, HashMismatch, or NotTrusted</strong> means the file needs extra review.</li>
+            </ul>
+
+            <h3>Check the SHA-256 hash</h3>
+            <p>SHA-256 is a unique fingerprint of a file. If the file changes, the hash changes. This helps confirm whether a file matches a known official copy.</p>
+            <ol>
+                <li>Copy the file path from the report.</li>
+                <li>Open PowerShell.</li>
+                <li>Run the command below.</li>
+                <li>Copy the SHA256 result.</li>
+                <li>Compare it with the hash from the official vendor, trusted download page, or internal records.</li>
+                <li>If the hash does not match, do not assume immediately, but treat the file as suspicious and investigate further.</li>
+            </ol>
+            <pre><code>Get-FileHash "C:\Path\To\File.exe" -Algorithm SHA256</code></pre>
+            <p class="notice">Do not upload private company files, personal files, or unknown executables to public websites unless you understand the privacy risk. Prefer official vendor pages, internal security tools, or local verification first.</p>
+
+            <h3>What to do next</h3>
+            <ul>
+                <li>If the signature is valid and the publisher is expected, mark it as reviewed.</li>
+                <li>If the file is unsigned but located in a trusted app folder, inspect it carefully before deciding.</li>
+                <li>If the publisher is unknown, the path looks strange, or the hash does not match the official source, do not delete it immediately. Research it first or ask someone technical.</li>
+                <li>Use official uninstallers, Windows Settings, or vendor tools instead of deleting program files manually.</li>
+            </ul>
+            <p><button type="button" data-open-processes>Back to Processes</button></p>
+        </div>
+</details>

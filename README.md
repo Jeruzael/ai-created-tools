@@ -8,7 +8,7 @@
 - Prepared by: Codex
 - Prepared for: users and maintainers working inside the `windows/` folder
 - Status: Revised
-- Revision notes: Hardened local API requests, job admission and shutdown, atomic local persistence, collector coverage reporting, and Windows CI while retaining read-only Installer Cache protections.
+- Revision notes: Sidebar Studio Phase 2 workspaces, unread notifications, focused evidence review and synthetic acceptance fixtures. Existing v1.29 hardening and read-only protections are retained.
 
 ## 1. Purpose
 
@@ -34,11 +34,12 @@ The app is local-only and designed for review. It does not clean, quarantine, di
 
 ## 2. Quick Start
 
-The Sidebar Studio Phase 1 branch opens on Overview, with persistent sidebar
-navigation and compact Scan/Results workspaces. Keep the local `ui/` directory
-alongside the Python file. Startup and diagnostic APIs are unchanged. This UI
-preview still requires visual approval; see the
-[Phase 1 guide, synthetic preview and verification limits](docs/sidebar-studio-phase1.md).
+Sidebar Studio opens on Overview with persistent navigation and focused diagnostic
+workspaces. Keep the entire local `ui/` directory alongside the Python file.
+Startup and diagnostic APIs are unchanged. Phase 2 is proposed for independent
+review, not visually approved or deployed. See the
+[Phase 2 guide and manual acceptance procedure](docs/sidebar-studio-phase2.md)
+and the historical [Phase 1 evidence](docs/sidebar-studio-phase1.md).
 
 Open PowerShell or Windows Terminal in this `windows` folder, then run:
 
@@ -123,13 +124,22 @@ Explains whether the scan was affected by locked files, running apps, permission
 
 ### Processes
 
-Review running programs and local technical indicators. The UI supports Needs Review filtering, publisher and memory grouping, grouped tree summaries, verification reports, selectable rows, and a resizable details panel.
+Review running programs in a full-width table with search, publisher/review filters,
+numeric memory sorting, grouping and 25/50/100-row pages. Select a row for the
+on-demand inspector: Overview, Signature & Hash, or Technical Details. Close it
+with X or Escape. Long commands are collapsed; signature and hash availability
+are explicit. Grouped and verification exports remain available. The full
+verification guide is in Manual/Help. A valid signature is not proof of safety.
 
 ### Installer Cache
 
 Review cached Windows Installer `.msi` and `.msp` files in `C:\Windows\Installer`. The tab searches exact registry-path references, reads package metadata, compares installed products and patches, extracts MSP targets, evaluates patch applicability through Windows Installer without applying the patch, reports missing registered cache files, and exports review evidence to CSV.
 
 This tab never launches, applies, moves, quarantines, or deletes files. Probable orphan and unknown results are review leads only, not safe-to-delete verdicts. Backup-review candidates can be exported to a hash manifest, but that status still does not authorize changing the cache.
+
+Overview, Package Review, Coverage, Missing Registered Files and Guidance separate
+the evidence. Search and page large package/missing-file lists. Filtering the table
+does not change export eligibility or replace native scan-bound revalidation.
 
 ### Security Check
 
@@ -141,17 +151,34 @@ Advanced Review adds WMI persistence, event-log correlation, optional Sysmon dat
 
 Security Check stores local records, shows scored findings, explains evidence in plain language, supports collapsible technical evidence, downloads local reports, compares against user-created baselines, applies a local known-safe allowlist, and shows a timeline of evidence timestamps.
 
+Use Run, Findings, Coverage, Baselines, Allowlist, Timeline and Reports to review
+one area at a time. Findings and timeline are searchable and paged. A finding opens
+in a details drawer. Cancelled runs remain cancelled; missing historical evidence
+is not reconstructed as successful inspection. Zero findings and complete coverage
+are separate facts. Registry backup remains unavailable and disabled.
+
 ### History
 
-Open previous disk scan records. Opened records switch to Results and show the loaded scan path, scan ID, and timestamps.
+Search, sort and page previous disk scans. Opened records switch to Results and
+show the loaded scan path, scan ID, and timestamps. Saved record formats are unchanged.
 
 ### Manual
 
-Read safe usage guidance, scan setting explanations, use cases, cleanup workflow, and do's/don'ts.
+Search categorized, collapsible guidance, including the full Process Verification
+Guide, scan settings, security/installer limitations and safety troubleshooting.
 
 ### About
 
-View version and local privacy notes.
+View application/documentation versions, local-only purpose and limitations.
+Expand Technical Details for the complete original version metadata.
+
+### Notifications
+
+The badge counts unread messages, not history. Opening the panel marks displayed
+messages read. Mark all as read, clear routine messages, or dismiss a message
+explicitly. Warnings remain in history until explicitly dismissed; reading them
+does not clear the underlying coverage or scan-health warning. Notification
+content and read state stay in memory and are not saved in browser storage.
 
 ## 6. Installer Cache Workflow
 

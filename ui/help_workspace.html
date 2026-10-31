@@ -1,0 +1,90 @@
+<!-- Parent inserts the complete local process verification fragment at the placeholder below. -->
+<section id="tab-manual" class="tab-panel remaining-workspace hidden" aria-label="Manual / Help">
+    <div class="remaining-heading"><h2>User Manual</h2></div>
+    <p class="remaining-note">This guide explains how to use the dashboard safely. It is local to this app and does not fetch external content.</p>
+    <div class="remaining-toolbar"><label class="remaining-search" for="helpSearch">Search help<input id="helpSearch" type="search" placeholder="Topic, setting or verification command" autocomplete="off" spellcheck="false"></label><label for="helpCategory">Category<select id="helpCategory"><option value="all">All categories</option><option value="getting-started">Getting Started</option><option value="disk-scanning">Disk Scanning</option><option value="results">Understanding Results</option><option value="process">Process Verification</option><option value="security">Security Check</option><option value="installer">Installer Cache</option><option value="safety">Safety</option></select></label></div>
+    <p id="helpResultsStatus" class="remaining-note" role="status" aria-live="polite">Local help topics</p>
+    <p id="helpNoResults" class="remaining-empty" hidden>No help topics match the current search.</p>
+    <div id="helpTopics" class="remaining-help-topics">
+        <section id="help-category-getting-started" class="remaining-help-category" data-help-category="getting-started">
+            <h3>Getting Started</h3>
+            <details class="help-topic" open><summary>Purpose Of This Tool</summary>
+                <p>The dashboard is a reporting tool only. It scans selected folders or drives and shows which folders, file types, and individual files are using the most storage.</p>
+                <p>It does not delete, move, rename, compress, kill, quarantine, upload, or modify files or processes. Cleanup decisions must be reviewed and performed manually by the user.</p>
+            </details>
+            <details class="help-topic"><summary>Recommended First Scan</summary>
+                <p>For most users, start with <code>C:\Users</code>. This is usually faster and safer than scanning the full drive.</p>
+                <ul><li><code>C:\Users\YourName\Downloads</code></li><li><code>C:\Users\YourName\Desktop</code></li><li><code>C:\Users\YourName\Documents</code></li><li><code>C:\Users\YourName\Videos</code></li><li><code>C:\Users\YourName\Pictures</code></li></ul>
+            </details>
+            <details class="help-topic"><summary>How To Use The Dashboard</summary>
+                <ol><li>Choose a drive or enter a folder path in the Scan tab.</li><li>Read the safety notice and acknowledge it for full-drive or sensitive-folder scans.</li><li>Start the scan and watch the Scan Status panel.</li><li>Review Results: biggest folders, file types, biggest files, tree view, and skipped paths.</li><li>Use Process Review for local process indicators, not final malware decisions.</li><li>Open History to compare previous scans.</li><li>Use Exit App when no scan is running to stop the local server.</li></ol>
+            </details>
+            <details class="help-topic"><summary>Common Use Cases</summary>
+                <ul><li>Find large files in Downloads, Desktop, Videos, Pictures, and Documents.</li><li>Review old installers, ZIP files, archives, exports, videos, and backups.</li><li>Check large Unity, Blender, Unreal, programming, AI, or creative project folders.</li><li>Understand skipped or access-denied paths before rerunning as Administrator.</li><li>Review unfamiliar processes with local indicators and technical details.</li><li>Run another scan after cleanup to confirm reclaimed space.</li></ul>
+            </details>
+        </section>
+        <section id="help-category-disk-scanning" class="remaining-help-category" data-help-category="disk-scanning">
+            <h3>Disk Scanning</h3>
+            <details class="help-topic"><summary>Scan Settings Explained</summary>
+                <p>These settings control how much detail the dashboard collects and displays. Higher values can show more detail, but they can also make scans and browser rendering slower.</p>
+                <ul><li><strong>Top items:</strong> the maximum number of biggest folders, file types, and files shown in the results tables. Example: use <code>100</code> for a quick cleanup review, or <code>300</code> when investigating a large project folder.</li><li><strong>Tree depth:</strong> how many folder levels the Large Folder Tree expands. Example: <code>3</code> shows a simple overview like Users, Downloads, and Videos; <code>8</code> is useful for deep project folders.</li><li><strong>Children per folder:</strong> the maximum number of subfolders shown under each folder in the tree. Example: <code>30</code> keeps the tree compact; <code>100</code> helps when a folder contains many important subfolders.</li><li><strong>Min tree size MB:</strong> hides folders smaller than this size from the tree. Example: <code>100</code> focuses on large storage users, <code>500</code> makes full-drive scans easier to read, and <code>0</code> shows very small folders too.</li></ul>
+            </details>
+            <details class="help-topic"><summary>Scan Setting Examples And Use Cases</summary>
+                <ul><li><strong>Quick personal cleanup:</strong> scan <code>C:\Users</code> with top items <code>100</code>, tree depth <code>3</code>, children per folder <code>30</code>, and min tree size <code>100 MB</code>.</li><li><strong>Full C drive review:</strong> keep the default settings or raise min tree size to <code>500 MB</code> so Windows, app, and user folders are easier to compare. Leave reparse points unchecked unless you have a technical reason.</li><li><strong>Deep project investigation:</strong> scan the specific project folder, then use top items <code>300</code>, tree depth <code>8</code>, children per folder <code>100</code>, and min tree size <code>0</code> or <code>25 MB</code>.</li><li><strong>After cleanup:</strong> rerun the same folder scan with the same settings so the new history record can be compared with the previous result.</li></ul>
+            </details>
+            <details class="help-topic"><summary>Reparse Points, Junctions, And Symlinks</summary>
+                <p>Windows can create folder entries that point somewhere else instead of storing files directly inside that folder. These are commonly called reparse points, junctions, or symlinks.</p>
+                <ul><li><strong>Reparse point:</strong> the general Windows feature for special filesystem links and redirects.</li><li><strong>Junction:</strong> a Windows directory link that redirects one folder path to another folder path. Example: a compatibility folder may point from one system location to another.</li><li><strong>Symlink:</strong> a symbolic link created by a user, app, developer tool, backup tool, or package manager. Example: a project folder may link to shared assets on <code>D:\SharedAssets</code>.</li></ul>
+                <p>The dashboard skips these by default to avoid scanning the same files twice, following loops, or showing misleading totals. Include them only when a technical user intentionally wants to follow linked folders and understands that totals may include redirected data.</p>
+            </details>
+        </section>
+        <section id="help-category-results" class="remaining-help-category" data-help-category="results">
+            <h3>Understanding Results</h3>
+            <details class="help-topic"><summary>What To Review First</summary>
+                <ul><li><strong>Downloads:</strong> old installers, duplicate ZIP files, downloaded videos, Unity packages, Blender files, and backup archives.</li><li><strong>Desktop:</strong> temporary screenshots, copied project folders, exported builds, and old archives.</li><li><strong>Videos:</strong> OBS recordings, gameplay captures, raw footage, and test exports.</li><li><strong>Pictures:</strong> duplicate screenshots, old references, PNG exports, PSD files, and AI-generated images.</li><li><strong>Project folders:</strong> generated build folders, caches, dependency folders, and old exports.</li></ul>
+            </details>
+            <details class="help-topic"><summary>Good Cleanup Candidates</summary>
+                <ul><li>Old installers in Downloads after the app is already installed.</li><li>Duplicate ZIP, RAR, and 7Z files.</li><li>Old exported videos, game recordings, and render tests.</li><li>Temporary screenshots and failed downloads.</li><li>Old build folders and old exported Unity builds.</li><li>Old compressed backups after confirming another backup exists.</li></ul>
+            </details>
+            <details class="help-topic"><summary>Recommended Cleanup Workflow</summary>
+                <ol><li>Scan <code>C:\Users</code> first.</li><li>Review the biggest folders manually and ask: Do I still need this? Is it active? Is it a backup? Can it be recreated? Is there an official cleanup method?</li><li>Review file types such as <code>.mp4</code>, <code>.zip</code>, <code>.unitypackage</code>, <code>.blend</code>, and <code>.log</code> to understand storage patterns.</li><li>Review biggest files one by one. Do not delete a large file unless you know what it is.</li><li>Use safe cleanup methods first: Storage Sense, Disk Cleanup, uninstall unused apps, clear browser cache, clear launcher/editor cache, or move personal files to another drive.</li><li>Run the scan again after cleanup to confirm the result.</li></ol>
+            </details>
+            <details class="help-topic"><summary>Unity Project Notes</summary>
+                <p>Common large folders include <code>Library</code>, <code>Temp</code>, <code>Obj</code>, <code>Logs</code>, <code>Build</code>, <code>Builds</code>, and <code>UserSettings</code>.</p><p>Do not casually delete <code>Assets</code>, <code>ProjectSettings</code>, or <code>Packages</code>. <code>Library</code> can often be regenerated, but close Unity first and understand that the next open may be slower.</p>
+            </details>
+            <details class="help-topic"><summary>Blender And 3D Notes</summary>
+                <p>Large files may include <code>.blend</code>, <code>.fbx</code>, <code>.obj</code>, <code>.glb</code>, <code>.gltf</code>, <code>.png</code>, <code>.tga</code>, <code>.exr</code>, <code>.psd</code>, <code>.wav</code>, and <code>.mp4</code>.</p><p>Remove duplicate exports, old render tests, and archived versions only after confirming models, textures, and references are no longer needed.</p>
+            </details>
+            <details class="help-topic"><summary>Developer Folder Notes</summary>
+                <p>Generated folders can be large: <code>node_modules</code>, <code>.venv</code>, <code>venv</code>, <code>__pycache__</code>, <code>dist</code>, <code>build</code>, <code>.cache</code>, <code>.gradle</code>, <code>.nuget</code>, <code>obj</code>, and <code>bin</code>.</p><p>Some can be regenerated, but do not delete source folders such as <code>src</code>, <code>Assets</code>, <code>Scripts</code>, <code>ProjectSettings</code>, <code>Packages</code>, or <code>.git</code> unless you know exactly what you are doing.</p>
+            </details>
+        </section>
+        <section id="help-category-process" class="remaining-help-category" data-help-category="process">
+            <h3>Process Verification</h3>
+            <details class="help-topic"><summary>Process Review Caution</summary><p>A process may look unfamiliar but still be legitimate. The dashboard shows local indicators such as path, publisher/signature data, memory use, and command line where available.</p><p>These indicators are not a final malware or safety verdict.</p></details>
+            __PROCESS_VERIFICATION_HELP__
+        </section>
+        <section id="help-category-security" class="remaining-help-category" data-help-category="security">
+            <h3>Security Check</h3>
+            <details class="help-topic"><summary>Evidence, coverage and review priorities</summary><p>Security Check is read-only. Standard and Advanced checks inspect their declared scopes only; unavailable or access-denied sources are not clean results. Review Coverage separately from the number of findings.</p><p>Review priorities are not malware verdicts. Baseline differences do not automatically prove compromise. Allowlisting reduces review priority but does not establish safety or remove evidence from reports.</p><p>Cancelled and failed checks can retain partial evidence. Not run, not recorded, unavailable and zero findings are different states. Keep reports and technical evidence private.</p></details>
+        </section>
+        <section id="help-category-installer" class="remaining-help-category" data-help-category="installer">
+            <h3>Installer Cache</h3>
+            <details class="help-topic"><summary>Package review and backup-review manifests</summary><p>The read-only Installer Cache review reports classifications, applicability, confidence and source coverage. A probable orphan or backup review candidate is not permission to delete a package.</p><p>Review incomplete checks and missing registered files. Manifest export revalidates scan-bound evidence, file snapshots and SHA-256 hashes. Keep exports private; no cache files are moved, repaired or deleted by this dashboard.</p></details>
+        </section>
+        <section id="help-category-safety" class="remaining-help-category" data-help-category="safety">
+            <h3>Safety and Troubleshooting</h3>
+            <details class="help-topic"><summary>Important Do Rules</summary>
+                <ul><li>Do scan <code>C:\Users</code> or your own user folder first for a practical cleanup review.</li><li>Do open large folders manually before deleting anything.</li><li>Do use official cleanup tools first: Storage Sense, Disk Cleanup, app uninstallers, launcher cleanup tools, browser settings, and package manager cleanup commands.</li><li>Do run as Administrator only when you need a more complete full-drive scan.</li><li>Do keep reports private because they may include usernames, project names, client names, source code paths, and personal filenames.</li><li>Do close heavy apps such as Unity, Blender, Unreal, Visual Studio, game launchers, video editors, AI scripts, and backup tools when practical.</li></ul>
+            </details>
+            <details class="help-topic"><summary>Important Don't Rules</summary>
+                <ul><li>Don't delete system files just because they are large.</li><li>Don't manually delete files inside <code>C:\Windows</code>, especially <code>System32</code>, <code>WinSxS</code>, <code>Installer</code>, or <code>SoftwareDistribution</code>.</li><li>Don't manually delete folders inside <code>Program Files</code> or <code>Program Files (x86)</code>; use uninstallers instead.</li><li>Don't randomly delete <code>AppData</code>; it can contain browser profiles, game saves, app settings, local databases, sessions, and caches.</li><li>Don't randomly delete Unity <code>Assets</code>, <code>ProjectSettings</code>, or <code>Packages</code>.</li><li>Don't assume unknown folders or processes are harmful. NVIDIA, Microsoft, Unity, Visual Studio, package manager, and launcher folders can look unfamiliar but be legitimate.</li><li>Don't share reports publicly without redacting private paths.</li></ul>
+            </details>
+            <details class="help-topic"><summary>Folders That Need Extra Care</summary>
+                <ul><li><code>C:\Windows</code></li><li><code>C:\Program Files</code> and <code>C:\Program Files (x86)</code></li><li><code>C:\ProgramData</code></li><li><code>C:\Users\YourName\AppData</code></li><li><code>C:\Recovery</code> and <code>C:\System Volume Information</code></li><li>Source code repositories, client project folders, database folders, AI datasets, and active game projects.</li></ul>
+            </details>
+            <details class="help-topic"><summary>Report Privacy Reminder</summary><p>Reports may reveal usernames, private projects, client names, file names, downloaded content, personal folder structure, business documents, and source code paths.</p><p>Before sharing, redact paths such as <code>C:\Users\YourName\Documents\ClientName_PrivateProject</code>.</p></details>
+            <details class="help-topic"><summary>Final Safety Rule</summary><p>A large file is not automatically a bad file. Before deleting anything, confirm what it is, which app or project uses it, whether it can be recreated, whether you have a backup, whether there is an official cleanup method, and whether deleting it could break Windows, an app, or a project.</p><p>When unsure, do not delete it immediately. Back it up or move it to a temporary review folder first.</p></details>
+        </section>
+    </div>
+</section>

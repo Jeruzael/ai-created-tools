@@ -322,29 +322,78 @@ const Studio = (() => {
     }
 
     function notificationHtml(item) {
-        return `<div class="notification-item ${item.type}"><strong>${escape(item.title)}</strong><p>${escape(item.message)}</p>${item.details.length ? `<details><summary>Details</summary><p>${item.details.map(escape).join('<br>')}</p></details>` : ''}</div>`;
+        return `<div class="notification-item ${item.type}"><div class="alert-heading"><strong>${escape(item.title)}</strong><button class="icon-button" data-notification-dismiss="${escape(item.id)}" title="Dismiss from notification history" aria-label="Dismiss ${escape(item.title)} from notification history">${icon('x')}</button></div><p>${escape(item.message)}</p>${item.details.length ? `<details><summary>Details</summary><p>${item.details.map(escape).join('<br>')}</p></details>` : ''}</div>`;
     }
 
-    function notify(type, title, message, details = []) {
+    function notificationKey(item) {
+        return item.eventId ? 'event:'+item.eventId : JSON.stringify([item.type,item.title,item.message,item.details]);
+    }
+
+    function updateNotificationCount() {
+        const unread = ui.notifications.filter(item=>!item.read).length;
+        const critical = ui.notifications.filter(row=>['error','warning'].includes(row.type)).length;
+        ui.el('notificationCount').textContent = String(unread);
+        ui.el('notificationCount').classList.toggle('hidden',unread===0);
+        ui.el('notificationToggle').setAttribute('aria-label',`Notifications: ${unread} unread, ${critical} warnings or errors`);
+        ui.notifications.forEach(item=>{
+            const node=ui.notificationNodes.get(notificationKey(item));
+            node?.classList.toggle('unread',!item.read);
+            node?.setAttribute('aria-label',`${item.title}; ${item.read?'read':'unread'}`);
+        });
+    }
+
+    function markNotificationsRead() {
+        ui.notifications.forEach(item=>{item.read=true;});updateNotificationCount();
+    }
+
+    function dismissNotification(id) {
+        const item=ui.notifications.find(row=>row.id===id);if(!item)return;
+        const key=notificationKey(item);
+        ui.notificationNodes.get(key)?.remove();ui.notificationNodes.delete(key);
+        ui.notifications=ui.notifications.filter(row=>row.id!==id);
+        ui.dismissedNotifications.add(key);updateNotificationCount();
+    }
+
+    function clearRoutineNotifications() {
+        ui.notifications.filter(item=>!['warning','error'].includes(item.type)).forEach(item=>dismissNotification(item.id));
+    }
+
+    function notificationState() {
+        return {unread:ui.notifications.filter(item=>!item.read).length,
+            entries:ui.notifications.map(({id,type,title,read})=>({id,type,title,read}))};
+    }
+
+    let actionSequence=0;
+    function actionNotifier() {
+        const attempt=++actionSequence;
+        return (type,title,message,details=[],options={})=>notify(type,title,message,details,
+            {...options,eventId:typeof options.eventId==='string'?options.eventId:`action:${attempt}:${title}`});
+    }
+
+    function notify(type, title, message, details = [], options = {}) {
         if (!ui) return;
         const item = addNotification([],{type,title,message,details})[0];
-        const key = JSON.stringify(item);
+        if(typeof options.eventId==='string')item.eventId=options.eventId;
+        const key = notificationKey(item);
+        if(ui.dismissedNotifications.has(key))return;
         if (key === ui.lastNotificationKey) return;
         ui.lastNotificationKey = key;
         const list = ui.el('notificationList');
         if (!ui.notificationNodes.has(key)) {
             if (!ui.notificationNodes.size) list.replaceChildren();
-            ui.notifications = addNotification(ui.notifications,item);
+            const lowValue = /^(Manual Opened|Security Check Opened|Drive Selected|User Folder Selected|Process Details (Loading|Loaded)|Processes Refreshed|Scan History Refreshed|Baselines Refreshed|Allowlist Refreshed)$/.test(title);
+            item.id='notice-'+(++ui.notificationSequence);item.read=ui.notificationsOpen||lowValue;
+            ui.notifications = [item,...ui.notifications];
+            const criticalCount=ui.notifications.filter(row=>['warning','error'].includes(row.type)).length;
+            let routine=Math.max(0,50-criticalCount);
+            ui.notifications=ui.notifications.filter(row=>['warning','error'].includes(row.type)||routine-->0);
             const entry = ui.doc.createElement('div');
             entry.innerHTML = notificationHtml(item);
             list.prepend(entry); ui.notificationNodes.set(key,entry);
-            const retained = new Set(ui.notifications.map(row=>JSON.stringify(row)));
+            const retained = new Set(ui.notifications.map(notificationKey));
             for (const [known,node] of ui.notificationNodes) if (!retained.has(known)) { node.remove();ui.notificationNodes.delete(known); }
         }
-        ui.el('notificationCount').textContent = String(ui.notifications.length);
-        ui.el('notificationCount').classList.remove('hidden');
-        const critical = ui.notifications.filter(row => ['error','warning'].includes(row.type)).length;
-        ui.el('notificationToggle').setAttribute('aria-label',`Notifications: ${ui.notifications.length}, ${critical} warnings or errors`);
+        updateNotificationCount();
         const node = ui.el('actionAlert');
         if (ui.toastCritical && (!['error','warning'].includes(item.type) || node.contains(ui.doc.activeElement))) return;
         if (ui.toastKey === key && !node.classList.contains('hidden')) return;
@@ -360,6 +409,8 @@ const Studio = (() => {
     }
 
     function showNotifications(open) {
+        ui.notificationsOpen=Boolean(open);
+        if(open)markNotificationsRead();
         ui.el('notificationPanel').classList.toggle('hidden',!open);
         ui.el('notificationToggle').setAttribute('aria-expanded',String(open));
         (open ? ui.el('closeNotifications') : ui.el('notificationToggle')).focus();
@@ -367,7 +418,7 @@ const Studio = (() => {
 
     function init(doc = document, win = window) {
         let storage; try { storage = win.localStorage; } catch { storage = null; }
-        ui = {doc,win,storage,el:id=>doc.getElementById(id),prefs:readPreferences(storage),record:null,history:[],notifications:[],notificationNodes:new Map(),
+        ui = {doc,win,storage,el:id=>doc.getElementById(id),prefs:readPreferences(storage),record:null,history:[],notifications:[],notificationNodes:new Map(),notificationsOpen:false,notificationSequence:0,dismissedNotifications:new Set(),
             media:win.matchMedia('(max-width: 900px)'),drawerOpen:false,treeStates:new Map(),treeIdentity:null,treeRecordKey:null,
             tables:Object.fromEntries(['folders','files','types','skipped'].map(kind=>[kind,{page:1,pageSize:25,query:'',sort:'bytes-desc'}]))};
         applyCollapse(); setDrawer(false,false); navigate(ui.prefs.view); selectResultView(ui.prefs.resultView); renderOverview();
@@ -405,6 +456,9 @@ const Studio = (() => {
         },true);
         ui.el('notificationToggle').addEventListener('click',()=>showNotifications(ui.el('notificationPanel').classList.contains('hidden')));
         ui.el('closeNotifications').addEventListener('click',()=>showNotifications(false));
+        ui.el('markNotificationsRead').addEventListener('click',markNotificationsRead);
+        ui.el('clearRoutineNotifications').addEventListener('click',clearRoutineNotifications);
+        ui.el('notificationList').addEventListener('click',event=>{const button=event.target.closest('[data-notification-dismiss]');if(button){dismissNotification(button.dataset.notificationDismiss);ui.el('closeNotifications').focus();}});
         ui.el('actionAlert').addEventListener('click',event=>{if(event.target.closest('[data-dismiss-alert]')){ui.el('actionAlert').classList.add('hidden');ui.toastCritical=false;ui.el('notificationToggle').focus();}});
         ui.doc.addEventListener('keydown',event=>{
             if(ui.drawerOpen){
@@ -421,6 +475,6 @@ const Studio = (() => {
 
     return {validatePreferences,readPreferences,savePreferences,pageRows,healthModel,overviewModel,completionNotice,addNotification,treeIdentity,
         init,navigate,toggleCollapse,setDrawer,selectResultView,renderOverview,renderRecord,recordError,renderHealth,renderTable,
-        renderTree,updateHistory,updateOperation,notify,pathHtml};
+        renderTree,updateHistory,updateOperation,notify,actionNotifier,pathHtml,notificationState,markNotificationsRead,clearRoutineNotifications,dismissNotification};
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = Studio;

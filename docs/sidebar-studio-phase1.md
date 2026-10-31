@@ -180,9 +180,15 @@ stop that step and record NOT VERIFIED. Do not change security/privacy settings,
 elevate, enable restricted developer tools or use an alternate automation route.
 Human fixture review is still required before visual approval and Phase 2.
 
-## Remaining Phase 2 Work
+## Historical Phase 2 Handoff
 
 After Phase 1 visual approval only: focused redesigns of Processes, Installer
 Cache, Security Check, History, Manual/Help and About; evaluate genuine settings
 needs rather than inventing them. Table virtualization, additional diagnostics,
 cleanup/quarantine actions and a frontend framework are not part of Phase 1.
+
+The later user-approved Phase 2 implementation and current acceptance procedure
+are recorded in [Sidebar Studio Phase 2](sidebar-studio-phase2.md). This paragraph
+preserves the original Phase 1 handoff, not a claim that Phase 1 visual approval
+occurred. Both phases' unexercised browser checks remain NOT VERIFIED; Phase 2
+must remain unmerged until independent review and human visual approval.

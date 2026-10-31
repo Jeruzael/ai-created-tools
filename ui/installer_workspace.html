@@ -1,0 +1,69 @@
+<section id="tab-installer" class="tab-panel remaining-workspace hidden" aria-label="Installer Cache">
+    <div class="remaining-heading"><h2>Installer Cache Review</h2><div class="remaining-actions">
+        <button id="refreshInstallerCache" type="button" class="primary"><svg class="icon" aria-hidden="true"><use href="#icon-scan-line"></use></svg>Scan installer cache</button>
+        <button id="exportInstallerCandidates" type="button" disabled>Export review candidates CSV</button>
+        <button id="exportInstallerBackupManifest" type="button" disabled>Export backup-review manifest</button>
+    </div></div>
+    <p class="remaining-note">Reports and manifests can contain private paths and product details. Keep exports private. Manifest export revalidates scan-bound evidence, file snapshots and SHA-256; it does not remove files.</p>
+    <div id="installerCacheStatus" class="status-line" role="status" aria-live="polite">Installer cache has not been scanned yet.</div>
+    <div id="installerCacheSummary" class="remaining-summary" aria-label="Installer review summary">
+        <div class="metric"><div class="label">Status</div><div class="value">Not run</div></div>
+        <div class="metric"><div class="label">MSI/MSP Files</div><div class="value">Not recorded</div></div>
+        <div class="metric"><div class="label">Backup Review Candidates</div><div class="value">Not recorded</div></div>
+        <div class="metric"><div class="label">Missing Registered</div><div class="value">Not recorded</div></div>
+        <div class="metric"><div class="label">Coverage</div><div class="value">Not run</div></div>
+    </div>
+    <p id="installerCoverageNotice" class="remaining-notice" role="status">No installer cache scan has been run. Missing evidence is not a clean result.</p>
+    <div class="remaining-tabs" role="tablist" aria-label="Installer Cache views">
+        <button id="installer-tab-overview" type="button" role="tab" aria-controls="installer-view-overview" aria-selected="true" tabindex="0">Overview</button>
+        <button id="installer-tab-packages" type="button" role="tab" aria-controls="installer-view-packages" aria-selected="false" tabindex="-1">Package Review</button>
+        <button id="installer-tab-coverage" type="button" role="tab" aria-controls="installer-view-coverage" aria-selected="false" tabindex="-1">Coverage</button>
+        <button id="installer-tab-missing" type="button" role="tab" aria-controls="installer-view-missing" aria-selected="false" tabindex="-1">Missing Registered Files</button>
+        <button id="installer-tab-guidance" type="button" role="tab" aria-controls="installer-view-guidance" aria-selected="false" tabindex="-1">Guidance</button>
+    </div>
+    <section id="installer-view-overview" class="remaining-view" role="tabpanel" aria-labelledby="installer-tab-overview" tabindex="0">
+        <h3>Before Reviewing Windows Installer Cache</h3>
+        <p><code>C:\Windows\Installer</code> is managed by Windows Installer. Cached <code>.msi</code> and <code>.msp</code> files may be required later for repair, update, modify, or uninstall operations.</p>
+        <p>This dashboard only scans and labels evidence. It does not delete installer cache files, and a probable-orphan result is not a safe-to-delete verdict.</p>
+        <p class="remaining-note">This read-only check compares exact registry paths, reads MSI/MSP metadata, checks installed products and patches, and asks Windows Installer whether an MSP applies to an installed target without launching it. Use it to create a review list, not to clean automatically.</p>
+        <details id="installerSummaryDetails" class="remaining-disclosure"><summary>All summary metrics</summary><div id="installerAdditionalSummary" class="remaining-summary"><p>Run the review to see additional summary evidence.</p></div></details>
+    </section>
+    <section id="installer-view-packages" class="remaining-view" role="tabpanel" aria-labelledby="installer-tab-packages" tabindex="0" hidden>
+        <h3>Largest Installer Cache Files</h3>
+        <p class="remaining-note">Keep direct references and installed product or patch matches. Probable orphan and unknown rows still require manual review because registration visibility can be limited.</p>
+        <div class="remaining-toolbar"><label class="remaining-search" for="installerFilesSearch">Search packages<input id="installerFilesSearch" type="search" placeholder="Package, product, publisher, path or identifier" autocomplete="off" spellcheck="false"></label>
+            <label for="installerFilesSort">Sort<select id="installerFilesSort"><option value="size_bytes-desc">Size: largest first</option><option value="size_bytes-asc">Size: smallest first</option><option value="name-asc">File: A to Z</option><option value="name-desc">File: Z to A</option><option value="modified_at-desc">Modified: newest first</option><option value="modified_at-asc">Modified: oldest first</option><option value="classification-asc">Classification: A to Z</option></select></label>
+        </div>
+        <div class="remaining-filters">
+            <label for="installerStatusFilter">Decision<select id="installerStatusFilter"><option value="all">All decisions</option><option value="keep">Keep evidence</option><option value="review">Needs review</option></select></label>
+            <label for="installerConfidenceFilter">Confidence<select id="installerConfidenceFilter"><option value="all">All confidence levels</option><option>Definitive</option><option>Strong</option><option>High</option><option>Medium</option><option>Low</option><option>Unknown</option></select></label>
+            <label for="installerTypeFilter">Package type<select id="installerTypeFilter"><option value="all">MSI and MSP</option><option value=".msi">MSI products</option><option value=".msp">MSP patches</option></select></label>
+            <label for="installerEligibilityFilter">Backup review<select id="installerEligibilityFilter"><option value="all">All eligibility states</option><option>Backup review candidate</option><option>Manual investigation</option><option>Not eligible</option></select></label>
+            <label class="remaining-check" for="installerIncompleteOnly"><input id="installerIncompleteOnly" type="checkbox">Incomplete checks only</label>
+        </div>
+        <div id="installerVisibleCount" class="remaining-note" role="status">No package evidence recorded.</div>
+        <div id="installerFilesTableScroll" class="remaining-table remaining-installer-table" role="region" aria-label="Installer package evidence" tabindex="0">
+            <table><caption class="sr-only">Installer package classifications, confidence and technical evidence</caption><thead><tr><th scope="col">File</th><th scope="col">Size</th><th scope="col">Modified</th><th scope="col">Status</th><th scope="col">Confidence</th><th scope="col">Applicability</th><th scope="col">Product / Publisher</th><th scope="col">Recommendation / Evidence</th></tr></thead>
+                <tbody id="installerCacheRows"><tr><td colspan="8">Scan installer cache to populate this table.</td></tr></tbody></table>
+        </div>
+        <div class="remaining-pager"><label for="installerFilesPageSize">Rows<select id="installerFilesPageSize"><option>25</option><option>50</option><option>100</option></select></label><span id="installerFilesPageInfo" role="status" aria-live="polite">0 files; page 1/1</span><button id="installerFilesPrevious" type="button" class="icon-button" aria-label="Previous package page" title="Previous package page" disabled><svg class="icon" aria-hidden="true"><use href="#icon-chevron-left"></use></svg></button><button id="installerFilesNext" type="button" class="icon-button" aria-label="Next package page" title="Next package page" disabled><svg class="icon" aria-hidden="true"><use href="#icon-chevron-right"></use></svg></button></div>
+    </section>
+    <section id="installer-view-coverage" class="remaining-view" role="tabpanel" aria-labelledby="installer-tab-coverage" tabindex="0" hidden>
+        <h3>Installer context coverage</h3>
+        <p class="remaining-note">Permission and source limitations remain part of the review. Unavailable, incomplete and not-recorded checks are not successful inspections.</p>
+        <details class="remaining-disclosure" open><summary>View installer context coverage</summary><div id="installerCoverageDetails">Run the review to see which product, patch, and registry scopes were checked.</div></details>
+    </section>
+    <section id="installer-view-missing" class="remaining-view" role="tabpanel" aria-labelledby="installer-tab-missing" tabindex="0" hidden>
+        <h3>Missing Registered Cache Files</h3>
+        <p class="remaining-note">These are registry references that point to cache files that were not found. They can explain future repair, update, or uninstall failures.</p>
+        <div class="remaining-toolbar"><label class="remaining-search" for="installerMissingSearch">Search missing files<input id="installerMissingSearch" type="search" placeholder="Path, product or publisher" autocomplete="off"></label><label for="installerMissingSort">Sort<select id="installerMissingSort"><option value="path-asc">Path: A to Z</option><option value="path-desc">Path: Z to A</option><option value="products-asc">Product: A to Z</option></select></label></div>
+        <p id="installerMissingStatus" class="remaining-note" role="status" aria-live="polite">Source coverage not recorded.</p>
+        <div id="installerMissingTableScroll" class="remaining-table" role="region" aria-label="Missing registered installer cache files" tabindex="0"><table><caption class="sr-only">Missing registered cache references</caption><thead><tr><th scope="col">Missing File</th><th scope="col">Product / Publisher</th><th scope="col">Recommendation</th></tr></thead><tbody id="installerMissingRows"><tr><td colspan="3">No installer cache scan has been run.</td></tr></tbody></table></div>
+        <div class="remaining-pager"><label for="installerMissingPageSize">Rows<select id="installerMissingPageSize"><option>25</option><option>50</option><option>100</option></select></label><span id="installerMissingPageInfo" role="status" aria-live="polite">0 files; page 1/1</span><button id="installerMissingPrevious" type="button" class="icon-button" aria-label="Previous missing-file page" title="Previous missing-file page" disabled><svg class="icon" aria-hidden="true"><use href="#icon-chevron-left"></use></svg></button><button id="installerMissingNext" type="button" class="icon-button" aria-label="Next missing-file page" title="Next missing-file page" disabled><svg class="icon" aria-hidden="true"><use href="#icon-chevron-right"></use></svg></button></div>
+    </section>
+    <section id="installer-view-guidance" class="remaining-view" role="tabpanel" aria-labelledby="installer-tab-guidance" tabindex="0" hidden>
+        <h3>Safe Review Workflow</h3>
+        <ol><li>Use Windows Storage settings and Disk Cleanup first.</li><li>Run this read-only cache review.</li><li>Export review candidates if any are found.</li><li>Review the ProductCode, PatchCode, target ProductCodes, applicability, confidence, and incomplete checks.</li><li>Keep a backup outside <code>C:\Windows\Installer</code> before any manual removal.</li><li>Confirm Windows Update, app updates, repair, modify, and uninstall operations still work.</li></ol>
+        <p class="notice">Do not delete files from <code>C:\Windows\Installer</code> based only on size, date, or filename.</p>
+    </section>
+</section>

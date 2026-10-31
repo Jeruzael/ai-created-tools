@@ -6320,6 +6320,19 @@ def build_dashboard_html():
     ui_root = Path(__file__).resolve().parent / "ui"
     studio_style = (ui_root / "sidebar_studio.css").read_text(encoding="utf-8")
     studio_script = (ui_root / "sidebar_studio.js").read_text(encoding="utf-8")
+    process_style = (ui_root / "process_workspace.css").read_text(encoding="utf-8")
+    process_script = (ui_root / "process_workspace.js").read_text(encoding="utf-8")
+    process_layout = (ui_root / "process_workspace.html").read_text(encoding="utf-8")
+    process_guide = (ui_root / "process_verification_help.html").read_text(encoding="utf-8")
+    workspace_style = (ui_root / "workspace_studio.css").read_text(encoding="utf-8")
+    workspace_script = (ui_root / "workspace_studio.js").read_text(encoding="utf-8")
+    security_layout = (ui_root / "security_workspace.html").read_text(encoding="utf-8")
+    remaining_style = (ui_root / "remaining_workspaces.css").read_text(encoding="utf-8")
+    remaining_script = (ui_root / "remaining_workspaces.js").read_text(encoding="utf-8")
+    installer_layout = (ui_root / "installer_workspace.html").read_text(encoding="utf-8")
+    history_layout = (ui_root / "history_workspace.html").read_text(encoding="utf-8")
+    help_layout = (ui_root / "help_workspace.html").read_text(encoding="utf-8").replace("__PROCESS_VERIFICATION_HELP__", process_guide)
+    about_layout = (ui_root / "about_workspace.html").read_text(encoding="utf-8")
     studio_layout = (ui_root / "sidebar_studio.html").read_text(encoding="utf-8").replace(
         "__APP_VERSION__", APP_VERSION).replace(
         "__STUDIO_ICONS__", (ui_root / "lucide-sprite.svg").read_text(encoding="utf-8"))
@@ -6800,590 +6813,28 @@ summary {{ cursor: pointer; padding: 6px; }}
     main {{ padding: 14px; }}
 }}
 {studio_style}
+{process_style}
+{workspace_style}
+{remaining_style}
 </style>
 </head>
 <body>
 {studio_layout}
 
-    <section id="tab-processes" class="tab-panel hidden">
+    <section id="tab-processes" class="tab-panel hidden" aria-label="Processes">
         <div id="processTop"></div>
-        <div id="processLayout" class="process-layout">
-            <section class="section process-panel">
-                <h2>Running Programs</h2>
-                <p>These are risk indicators, not final malware decisions.</p>
-                <div class="actions">
-                    <button id="refreshProcesses" class="primary">Refresh processes</button>
-                    <button id="downloadProcessReport">Download grouped report</button>
-                    <button id="downloadVerificationReport">Download verification report</button>
-                    <a class="button-link" href="#verification-panel">Verify</a>
-                </div>
-                <div class="process-controls">
-                    <label>Search
-                        <input id="processFilter" placeholder="Program, publisher, path, PID...">
-                    </label>
-                    <label>Publisher
-                        <span class="tooltip-wrap">
-                            <span class="info-icon" tabindex="0" role="button" aria-label="Publisher grouping note" aria-describedby="publisherTooltip">i</span>
-                            <span id="publisherTooltip" class="tooltip-text" role="tooltip">Grouped locally from current process data. Review flags are not malware verdicts.</span>
-                        </span>
-                        <select id="processPublisherFilter"><option value="">All publishers</option></select>
-                    </label>
-                    <label>Group by
-                        <select id="processGroupBy">
-                            <option value="publisher">Publisher</option>
-                            <option value="memory">Largest memory consumed</option>
-                            <option value="uncategorized">Uncategorized only</option>
-                            <option value="needsReview">Needs review</option>
-                        </select>
-                    </label>
-                    <label>Review reason
-                        <select id="processReviewFilter"><option value="">All reasons</option></select>
-                    </label>
-                    <label><input id="needsReviewOnly" type="checkbox"> Needs review only</label>
-                </div>
-                <div class="process-panel-body">
-                    <div id="processSummary" class="process-summary-grid"></div>
-                    <div id="processGroupTree" class="process-group-tree"><p class="muted">Refresh processes to see grouped results.</p></div>
-                    <div class="table-wrap"><table class="process-table"><thead><tr><th>Program</th><th>Memory</th><th>Indicators</th><th>Action</th></tr></thead><tbody id="processRows"></tbody></table></div>
-                </div>
-            </section>
-            <button id="processSplitter" class="process-splitter" type="button" aria-label="Drag to resize process list and process details panels" title="Drag to resize panels"></button>
-            <section class="section detail-panel process-panel">
-                <h2>Process Details</h2>
-                <div id="processDetail" class="muted process-detail-scroll">Select any process row or use the Details button to see technical details.</div>
-            </section>
-        </div>
-        <section id="verification-panel" class="section verification-guide">
-            <h2>Verification Guide</h2>
-            <p>This report can help you decide what to review, but it does not prove that a program is safe or malicious. Use the steps below to verify a file locally on your PC before making any decision.</p>
-
-            <h3>Check the digital signature</h3>
-            <p>A digital signature helps confirm who published a file. A valid signature from a known publisher is a good sign, but it does not guarantee the file is safe. An unsigned file is not automatically dangerous, but it deserves more caution.</p>
-            <ol>
-                <li>Find the file path shown in the report.</li>
-                <li>Right-click the file.</li>
-                <li>Choose Properties.</li>
-                <li>Open the Digital Signatures tab if it exists.</li>
-                <li>Select the signature and click Details.</li>
-                <li>Check whether Windows says the signature is valid.</li>
-                <li>Compare the signer or publisher name with what you expected.</li>
-            </ol>
-            <p>Advanced PowerShell option:</p>
-            <pre><code>Get-AuthenticodeSignature "C:\Path\To\File.exe"</code></pre>
-            <ul>
-                <li><strong>Status: Valid</strong> means Windows recognizes the signature as valid.</li>
-                <li><strong>Status: NotSigned</strong> means the file has no digital signature.</li>
-                <li><strong>Status: UnknownError, HashMismatch, or NotTrusted</strong> means the file needs extra review.</li>
-            </ul>
-
-            <h3>Check the SHA-256 hash</h3>
-            <p>SHA-256 is a unique fingerprint of a file. If the file changes, the hash changes. This helps confirm whether a file matches a known official copy.</p>
-            <ol>
-                <li>Copy the file path from the report.</li>
-                <li>Open PowerShell.</li>
-                <li>Run the command below.</li>
-                <li>Copy the SHA256 result.</li>
-                <li>Compare it with the hash from the official vendor, trusted download page, or internal records.</li>
-                <li>If the hash does not match, do not assume immediately, but treat the file as suspicious and investigate further.</li>
-            </ol>
-            <pre><code>Get-FileHash "C:\Path\To\File.exe" -Algorithm SHA256</code></pre>
-            <p class="notice">Do not upload private company files, personal files, or unknown executables to public websites unless you understand the privacy risk. Prefer official vendor pages, internal security tools, or local verification first.</p>
-
-            <h3>What to do next</h3>
-            <ul>
-                <li>If the signature is valid and the publisher is expected, mark it as reviewed.</li>
-                <li>If the file is unsigned but located in a trusted app folder, inspect it carefully before deciding.</li>
-                <li>If the publisher is unknown, the path looks strange, or the hash does not match the official source, do not delete it immediately. Research it first or ask someone technical.</li>
-                <li>Use official uninstallers, Windows Settings, or vendor tools instead of deleting program files manually.</li>
-            </ul>
-            <p><a class="button-link" href="#processTop">Back to top</a></p>
-        </section>
+        {process_layout}
     </section>
 
-    <section id="tab-installer" class="tab-panel hidden">
-        <section class="action-alert warning">
-            <h2>Before Reviewing Windows Installer Cache</h2>
-            <p><code>C:\\Windows\\Installer</code> is managed by Windows Installer. Cached <code>.msi</code> and <code>.msp</code> files may be required later for repair, update, modify, or uninstall operations.</p>
-            <p>This dashboard only scans and labels evidence. It does not delete installer cache files, and a probable-orphan result is not a safe-to-delete verdict.</p>
-        </section>
+    {installer_layout}
 
-        <section class="section">
-            <h2>Installer Cache Review</h2>
-            <p class="muted">This read-only check compares exact registry paths, reads MSI/MSP metadata, checks installed products and patches, and asks Windows Installer whether an MSP applies to an installed target without launching it. Use it to create a review list, not to clean automatically.</p>
-            <div class="actions">
-                <button id="refreshInstallerCache" class="primary">Scan installer cache</button>
-                <button id="exportInstallerCandidates" disabled>Export review candidates CSV</button>
-                <button id="exportInstallerBackupManifest" disabled>Export backup-review manifest</button>
-            </div>
-            <div id="installerCacheStatus" class="status-line">Installer cache has not been scanned yet.</div>
-            <div id="installerCacheSummary" class="grid" style="margin-top:12px">
-                <div class="metric"><div class="label">Status</div><div class="value">Not Run</div></div>
-                <div class="metric"><div class="label">MSI/MSP Files</div><div class="value">0</div></div>
-                <div class="metric"><div class="label">Direct References</div><div class="value">0</div></div>
-                <div class="metric"><div class="label">Installed Matches</div><div class="value">0</div></div>
-                <div class="metric"><div class="label">Patch Matches</div><div class="value">0</div></div>
-                <div class="metric"><div class="label">Installed MSP Targets</div><div class="value">0</div></div>
-                <div class="metric"><div class="label">Backup Review Candidates</div><div class="value">0</div></div>
-                <div class="metric"><div class="label">Probable Orphans</div><div class="value">0</div></div>
-                <div class="metric"><div class="label">Unknown</div><div class="value">0</div></div>
-            </div>
-            <details class="installer-evidence"><summary>View installer context coverage</summary><div id="installerCoverageDetails" class="muted">Run the review to see which product, patch, and registry scopes were checked.</div></details>
-        </section>
+    {security_layout}
 
-        <section class="section">
-            <h2>Largest Installer Cache Files</h2>
-            <p class="muted">Keep direct references and installed product or patch matches. Probable orphan and unknown rows still require manual review because registration visibility can be limited.</p>
-            <div class="installer-controls">
-                <div><label for="installerStatusFilter">Decision</label><select id="installerStatusFilter"><option value="all">All decisions</option><option value="keep">Keep evidence</option><option value="review">Needs review</option></select></div>
-                <div><label for="installerConfidenceFilter">Confidence</label><select id="installerConfidenceFilter"><option value="all">All confidence levels</option><option>Definitive</option><option>Strong</option><option>High</option><option>Medium</option><option>Low</option><option>Unknown</option></select></div>
-                <div><label for="installerTypeFilter">Package type</label><select id="installerTypeFilter"><option value="all">MSI and MSP</option><option value=".msi">MSI products</option><option value=".msp">MSP patches</option></select></div>
-                <div><label for="installerEligibilityFilter">Backup review</label><select id="installerEligibilityFilter"><option value="all">All eligibility states</option><option>Backup review candidate</option><option>Manual investigation</option><option>Not eligible</option></select></div>
-                <div><label><input id="installerIncompleteOnly" type="checkbox"> Incomplete checks only</label></div>
-            </div>
-            <div id="installerVisibleCount" class="installer-filter-count">0 files shown</div>
-            <div class="table-wrap">
-                <table>
-                    <thead><tr><th>File</th><th>Size</th><th>Modified</th><th>Status</th><th>Confidence</th><th>Applicability</th><th>Product / Publisher</th><th>Recommendation / Evidence</th></tr></thead>
-                    <tbody id="installerCacheRows"><tr><td colspan="8">Scan installer cache to populate this table.</td></tr></tbody>
-                </table>
-            </div>
-        </section>
+    {history_layout}
 
-        <section class="section">
-            <h2>Missing Registered Cache Files</h2>
-            <p class="muted">These are registry references that point to cache files that were not found. They can explain future repair, update, or uninstall failures.</p>
-            <div class="table-wrap">
-                <table>
-                    <thead><tr><th>Missing File</th><th>Product / Publisher</th><th>Recommendation</th></tr></thead>
-                    <tbody id="installerMissingRows"><tr><td colspan="3">No installer cache scan has been run.</td></tr></tbody>
-                </table>
-            </div>
-        </section>
+    {help_layout}
 
-        <section class="section">
-            <h2>Safe Review Workflow</h2>
-            <ol>
-                <li>Use Windows Storage settings and Disk Cleanup first.</li>
-                <li>Run this read-only cache review.</li>
-                <li>Export review candidates if any are found.</li>
-                <li>Review the ProductCode, PatchCode, target ProductCodes, applicability, confidence, and incomplete checks.</li>
-                <li>Keep a backup outside <code>C:\\Windows\\Installer</code> before any manual removal.</li>
-                <li>Confirm Windows Update, app updates, repair, modify, and uninstall operations still work.</li>
-            </ol>
-            <p class="notice">Do not delete files from <code>C:\\Windows\\Installer</code> based only on size, date, or filename.</p>
-        </section>
-    </section>
-
-    <section id="tab-security" class="tab-panel hidden">
-        <section class="action-alert info">
-            <h2>Before You Run a Security Check</h2>
-            <p>This local review area reads Windows security-related indicators such as startup entries, browser policies, proxy settings, DNS settings, Defender exclusions, scheduled tasks, services summary, referenced file verification, and optional Advanced Review sources.</p>
-            <p>It is designed as a local read-only review workflow. Findings mean review this, not this is malware. Advanced Review may take longer and may need Administrator permission for complete WMI, event log, Sysmon, driver, service, and Explorer extension data.</p>
-        </section>
-
-        <div class="security-layout">
-            <div>
-                <section class="section">
-                    <h2>Security Check Setup</h2>
-                    <p>Choose how the local review should run. Standard Review is the active read-only collector set.</p>
-                    <label style="margin-top:10px"><input id="ackSecurityCheck" type="checkbox" style="width:auto"> I understand this is a review report and not a malware verdict.</label>
-
-                    <h3>Check Mode</h3>
-                    <div class="security-mode-grid">
-                        <label class="security-mode">
-                            <input type="radio" name="securityMode" value="standard" checked>
-                            <strong>Standard Review</strong>
-                            <span class="muted">Startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, services summary, command/name indicators, and referenced file verification.</span>
-                        </label>
-                        <label class="security-mode">
-                            <input type="radio" name="securityMode" value="advanced">
-                            <strong>Advanced Review</strong>
-                            <span class="muted">Adds WMI persistence, event log correlation, optional Sysmon if already installed, deeper services/drivers, and Explorer autorun-style locations. It may take longer and some sources may need Administrator permission.</span>
-                        </label>
-                    </div>
-
-                    <h3>Options</h3>
-                    <div class="security-option-list">
-                        <label><input id="securityRegistryBackup" type="checkbox" disabled> Registry backups (unavailable in this version)</label>
-                        <label>Compare against baseline
-                            <select id="securityBaselineSelect">
-                                <option value="">No baseline comparison</option>
-                            </select>
-                        </label>
-                        <label><input id="securityWmiCheck" type="checkbox" checked> Include WMI persistence check</label>
-                        <label><input id="securityEventLogCorrelation" type="checkbox" checked> Include Event Log correlation</label>
-                        <label><input id="securitySysmonCorrelation" type="checkbox" checked> Include optional Sysmon data if installed</label>
-                    </div>
-
-                    <div class="actions">
-                        <button id="startSecurityCheck" class="primary" disabled>Start Security Check</button>
-                        <button id="cancelSecurityCheck" class="danger" disabled>Cancel Security Check</button>
-                    </div>
-                </section>
-
-                <section class="section">
-                    <h2>Security Check Progress</h2>
-                    <div id="securityStatus" class="status-line">No Security Check running.</div>
-                    <p class="muted">This local read-only check records progress, findings, skipped sources, and verification evidence without changing system settings.</p>
-                    <div id="securityProgress" class="security-progress">
-                        <div class="security-step"><span>Preparing local review</span><span class="security-step-status">Waiting</span></div>
-                        <div class="security-step"><span>Reading standard security locations</span><span class="security-step-status">Waiting</span></div>
-                        <div class="security-step"><span>Checking file signatures and SHA-256 hashes</span><span class="security-step-status">Waiting</span></div>
-                        <div class="security-step"><span>Running optional Advanced Review collectors</span><span class="security-step-status">Waiting</span></div>
-                        <div class="security-step"><span>Saving local security check record</span><span class="security-step-status">Waiting</span></div>
-                    </div>
-                </section>
-            </div>
-
-            <div>
-                <section class="section">
-                    <h2>Security Summary</h2>
-                    <div id="securitySummary" class="grid">
-                        <div class="metric"><div class="label">Overall Status</div><div class="value">Not Run</div></div>
-                        <div class="metric"><div class="label">Findings</div><div class="value">0</div></div>
-                        <div class="metric"><div class="label">Needs Review</div><div class="value">0</div></div>
-                        <div class="metric"><div class="label">No Obvious Issue</div><div class="value">0</div></div>
-                        <div class="metric"><div class="label">Skipped Sources</div><div class="value">0</div></div>
-                    </div>
-                </section>
-
-                <section class="section">
-                    <h2>Baseline Comparison</h2>
-                    <p class="muted">Create a baseline only after reviewing that the current completed Security Check looks normal. New, changed, or removed labels are comparison signals, not proof that something is harmful.</p>
-                    <div class="actions">
-                        <button id="refreshSecurityBaselines">Refresh baselines</button>
-                        <button id="createSecurityBaseline" disabled>Create baseline from current run</button>
-                    </div>
-                    <div id="securityBaselineSummary" class="grid" style="margin-top:12px">
-                        <div class="metric"><div class="label">Baseline</div><div class="value">None</div></div>
-                        <div class="metric"><div class="label">New</div><div class="value">0</div></div>
-                        <div class="metric"><div class="label">Changed</div><div class="value">0</div></div>
-                        <div class="metric"><div class="label">Removed</div><div class="value">0</div></div>
-                    </div>
-                    <div class="table-wrap" style="margin-top:12px">
-                        <table>
-                            <thead><tr><th>Status</th><th>Category</th><th>Item</th><th>Meaning</th></tr></thead>
-                            <tbody id="securityBaselineRows"><tr><td colspan="4">No baseline comparison loaded.</td></tr></tbody>
-                        </table>
-                    </div>
-                </section>
-
-                <section class="section">
-                    <h2>Known-Safe Allowlist</h2>
-                    <p class="muted">Allowlisting is local-only and lowers review priority for matching future findings. It does not hide evidence and does not prove an item is safe forever.</p>
-                    <div class="actions">
-                        <button id="refreshSecurityAllowlist">Refresh allowlist</button>
-                        <button id="exportSecurityAllowlist">Export allowlist</button>
-                        <button id="importSecurityAllowlist">Import allowlist</button>
-                        <input id="securityAllowlistFile" type="file" accept="application/json,.json" style="display:none">
-                    </div>
-                    <div id="securityAllowlistSummary" class="grid" style="margin-top:12px">
-                        <div class="metric"><div class="label">Entries</div><div class="value">0</div></div>
-                        <div class="metric"><div class="label">Matches</div><div class="value">0</div></div>
-                    </div>
-                    <div class="table-wrap" style="margin-top:12px">
-                        <table>
-                            <thead><tr><th>Created</th><th>Category</th><th>Item</th><th>Note</th><th>Action</th></tr></thead>
-                            <tbody id="securityAllowlistRows"><tr><td colspan="5">No allowlist entries loaded.</td></tr></tbody>
-                        </table>
-                    </div>
-                </section>
-
-                <section class="section">
-                    <h2>Findings Review</h2>
-                    <p class="muted">Run a Security Check to review startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, services summary, and referenced file verification. Findings are review items with evidence, not malware verdicts.</p>
-                    <div class="form-grid">
-                        <label>Search
-                            <input id="securityFindingFilter" placeholder="Finding, category, setting, path, registry key...">
-                        </label>
-                        <label>Severity
-                            <select id="securitySeverityFilter">
-                                <option>All severities</option>
-                                <option>High Review</option>
-                                <option>Medium Review</option>
-                                <option>Low Review</option>
-                                <option>Info</option>
-                            </select>
-                        </label>
-                        <label>Category
-                            <select id="securityCategoryFilter">
-                                <option>All categories</option>
-                            </select>
-                        </label>
-                        <label>Status
-                            <select id="securityStatusFilter">
-                                <option>All statuses</option>
-                            </select>
-                        </label>
-                        <label>Signal
-                            <select id="securitySignalFilter">
-                                <option>All signals</option>
-                                <option value="unsigned">Unsigned files</option>
-                                <option value="command">Command indicators</option>
-                                <option value="userWritable">User-writable paths</option>
-                            </select>
-                        </label>
-                        <label>Baseline
-                            <select id="securityBaselineFilter">
-                                <option>All baseline labels</option>
-                                <option value="new">New</option>
-                                <option value="changed">Changed</option>
-                                <option value="unchanged">Unchanged</option>
-                            </select>
-                        </label>
-                    </div>
-                    <div class="table-wrap" style="margin-top:12px">
-                        <table>
-                            <thead><tr><th>Severity</th><th>Score</th><th>Category</th><th>Item</th><th>Reason</th><th>Action</th></tr></thead>
-                            <tbody id="securityFindingsRows"><tr><td colspan="6">No security findings yet. Run a Security Check to populate this table.</td></tr></tbody>
-                        </table>
-                    </div>
-                </section>
-
-                <section class="section">
-                    <h2>Finding Details</h2>
-                    <div id="securityFindingDetail" class="security-detail-panel">
-                        <p class="muted">Select a finding to see plain-language explanation, technical evidence, and safe next steps.</p>
-                        <span class="security-badge">What this is</span>
-                        <span class="security-badge">Why it matters</span>
-                        <span class="security-badge">Technical evidence</span>
-                        <span class="security-badge">Safe next steps</span>
-                    </div>
-                </section>
-
-                <section class="section">
-                    <h2>Timeline</h2>
-                    <p class="muted">Timeline rows are ordered evidence points from the current Security Check record and local baselines. Times are for review context only and do not prove cause or harm.</p>
-                    <div id="securityTimelineSummary" class="grid">
-                        <div class="metric"><div class="label">Timeline Rows</div><div class="value">0</div></div>
-                        <div class="metric"><div class="label">Missing Times</div><div class="value">0</div></div>
-                    </div>
-                    <div class="table-wrap" style="margin-top:12px">
-                        <table>
-                            <thead><tr><th>Date / Time</th><th>Event Type</th><th>Item</th><th>Summary</th><th>Severity</th><th>Action</th></tr></thead>
-                            <tbody id="securityTimelineRows"><tr><td colspan="6">No timeline loaded. Run or load a Security Check record.</td></tr></tbody>
-                        </table>
-                    </div>
-                </section>
-            </div>
-        </div>
-
-        <section class="section">
-            <h2>Review Categories</h2>
-            <p>These blocks summarize the current Standard Review collectors. Empty or skipped sources are shown calmly so the run can still finish.</p>
-            <div id="securityCategoryBlocks" class="category-list">
-                <div class="category-item"><strong>Registry Startup</strong><p>Run keys and startup-folder entries.</p><span class="security-badge">ready</span></div>
-                <div class="category-item"><strong>Browser Policy Review</strong><p>Chrome and Edge managed settings, forced extensions, homepage, search, and proxy policies.</p><span class="security-badge">ready</span></div>
-                <div class="category-item"><strong>Proxy And DNS Review</strong><p>Proxy, PAC script, and DNS server indicators.</p><span class="security-badge">ready</span></div>
-                <div class="category-item"><strong>Microsoft Defender Exclusions</strong><p>Excluded paths, processes, extensions, and IP addresses.</p><span class="security-badge">ready</span></div>
-                <div class="category-item"><strong>Scheduled Tasks Review</strong><p>Task actions, triggers, authors, last run, next run, and command review indicators.</p><span class="security-badge">ready</span></div>
-                <div class="category-item"><strong>Windows Services Summary</strong><p>Scoped automatic-service summary and individual service command/name review items.</p><span class="security-badge">ready</span></div>
-                <div class="category-item"><strong>File Verification</strong><p>File existence, Authenticode signatures, publishers, SHA-256 hashes, and timestamps.</p><span class="security-badge">ready</span></div>
-                <div class="category-item"><strong>Advanced Review</strong><p>WMI persistence, event log correlation, optional Sysmon, deeper services/drivers, and Explorer autorun-style locations.</p><span class="security-badge">advanced</span></div>
-            </div>
-        </section>
-
-        <section class="section">
-            <h2>Reports</h2>
-            <p>Download local reports from the current completed or cancelled Security Check record. Reports may include local paths, usernames, command lines, registry values, hashes, and installed software details, so review them before sharing.</p>
-            <div class="actions">
-                <button id="downloadSecurityFullReport" disabled>Download Full Security Report</button>
-                <button id="downloadSecurityFindingsReport" disabled>Download Findings Only</button>
-                <button id="downloadSecurityVerificationReport" disabled>Download Verification Report</button>
-                <button id="downloadSecurityJsonReport" disabled>Download Technical JSON</button>
-            </div>
-        </section>
-    </section>
-
-    <section id="tab-history" class="tab-panel hidden">
-        <section class="section">
-            <h2>Scan History</h2>
-            <div class="actions"><button id="refreshHistory">Refresh history</button></div>
-            <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Date</th><th>Status</th><th>Root</th><th>Total</th><th>Files</th><th>Skipped</th><th>Action</th></tr></thead><tbody id="historyRows"></tbody></table></div>
-        </section>
-    </section>
-
-    <section id="tab-manual" class="tab-panel hidden">
-        <section class="section">
-            <h2>User Manual</h2>
-            <p>This guide explains how to use the dashboard safely. It is local to this app and does not fetch external content.</p>
-            <div class="manual-grid">
-                <div class="manual-section full">
-                    <h3>Purpose Of This Tool</h3>
-                    <p>The dashboard is a reporting tool only. It scans selected folders or drives and shows which folders, file types, and individual files are using the most storage.</p>
-                    <p>It does not delete, move, rename, compress, kill, quarantine, upload, or modify files or processes. Cleanup decisions must be reviewed and performed manually by the user.</p>
-                </div>
-                <div class="manual-section">
-                    <h3>Recommended First Scan</h3>
-                    <p>For most users, start with <code>C:\\Users</code>. This is usually faster and safer than scanning the full drive.</p>
-                    <ul>
-                        <li><code>C:\\Users\\YourName\\Downloads</code></li>
-                        <li><code>C:\\Users\\YourName\\Desktop</code></li>
-                        <li><code>C:\\Users\\YourName\\Documents</code></li>
-                        <li><code>C:\\Users\\YourName\\Videos</code></li>
-                        <li><code>C:\\Users\\YourName\\Pictures</code></li>
-                    </ul>
-                </div>
-                <div class="manual-section">
-                    <h3>How To Use The Dashboard</h3>
-                    <ol>
-                        <li>Choose a drive or enter a folder path in the Scan tab.</li>
-                        <li>Read the safety notice and acknowledge it for full-drive or sensitive-folder scans.</li>
-                        <li>Start the scan and watch the Scan Status panel.</li>
-                        <li>Review Results: biggest folders, file types, biggest files, tree view, and skipped paths.</li>
-                        <li>Use Process Review for local process indicators, not final malware decisions.</li>
-                        <li>Open History to compare previous scans.</li>
-                        <li>Use Exit App when no scan is running to stop the local server.</li>
-                    </ol>
-                </div>
-                <div class="manual-section full">
-                    <h3>Scan Settings Explained</h3>
-                    <p>These settings control how much detail the dashboard collects and displays. Higher values can show more detail, but they can also make scans and browser rendering slower.</p>
-                    <ul>
-                        <li><strong>Top items:</strong> the maximum number of biggest folders, file types, and files shown in the results tables. Example: use <code>100</code> for a quick cleanup review, or <code>300</code> when investigating a large project folder.</li>
-                        <li><strong>Tree depth:</strong> how many folder levels the Large Folder Tree expands. Example: <code>3</code> shows a simple overview like Users, Downloads, and Videos; <code>8</code> is useful for deep project folders.</li>
-                        <li><strong>Children per folder:</strong> the maximum number of subfolders shown under each folder in the tree. Example: <code>30</code> keeps the tree compact; <code>100</code> helps when a folder contains many important subfolders.</li>
-                        <li><strong>Min tree size MB:</strong> hides folders smaller than this size from the tree. Example: <code>100</code> focuses on large storage users, <code>500</code> makes full-drive scans easier to read, and <code>0</code> shows very small folders too.</li>
-                    </ul>
-                </div>
-                <div class="manual-section full">
-                    <h3>Scan Setting Examples And Use Cases</h3>
-                    <ul>
-                        <li><strong>Quick personal cleanup:</strong> scan <code>C:\\Users</code> with top items <code>100</code>, tree depth <code>3</code>, children per folder <code>30</code>, and min tree size <code>100 MB</code>.</li>
-                        <li><strong>Full C drive review:</strong> keep the default settings or raise min tree size to <code>500 MB</code> so Windows, app, and user folders are easier to compare. Leave reparse points unchecked unless you have a technical reason.</li>
-                        <li><strong>Deep project investigation:</strong> scan the specific project folder, then use top items <code>300</code>, tree depth <code>8</code>, children per folder <code>100</code>, and min tree size <code>0</code> or <code>25 MB</code>.</li>
-                        <li><strong>After cleanup:</strong> rerun the same folder scan with the same settings so the new history record can be compared with the previous result.</li>
-                    </ul>
-                </div>
-                <div class="manual-section full">
-                    <h3>Reparse Points, Junctions, And Symlinks</h3>
-                    <p>Windows can create folder entries that point somewhere else instead of storing files directly inside that folder. These are commonly called reparse points, junctions, or symlinks.</p>
-                    <ul>
-                        <li><strong>Reparse point:</strong> the general Windows feature for special filesystem links and redirects.</li>
-                        <li><strong>Junction:</strong> a Windows directory link that redirects one folder path to another folder path. Example: a compatibility folder may point from one system location to another.</li>
-                        <li><strong>Symlink:</strong> a symbolic link created by a user, app, developer tool, backup tool, or package manager. Example: a project folder may link to shared assets on <code>D:\\SharedAssets</code>.</li>
-                    </ul>
-                    <p>The dashboard skips these by default to avoid scanning the same files twice, following loops, or showing misleading totals. Include them only when a technical user intentionally wants to follow linked folders and understands that totals may include redirected data.</p>
-                </div>
-                <div class="manual-section">
-                    <h3>Common Use Cases</h3>
-                    <ul>
-                        <li>Find large files in Downloads, Desktop, Videos, Pictures, and Documents.</li>
-                        <li>Review old installers, ZIP files, archives, exports, videos, and backups.</li>
-                        <li>Check large Unity, Blender, Unreal, programming, AI, or creative project folders.</li>
-                        <li>Understand skipped or access-denied paths before rerunning as Administrator.</li>
-                        <li>Review unfamiliar processes with local indicators and technical details.</li>
-                        <li>Run another scan after cleanup to confirm reclaimed space.</li>
-                    </ul>
-                </div>
-                <div class="manual-section">
-                    <h3>What To Review First</h3>
-                    <ul>
-                        <li><strong>Downloads:</strong> old installers, duplicate ZIP files, downloaded videos, Unity packages, Blender files, and backup archives.</li>
-                        <li><strong>Desktop:</strong> temporary screenshots, copied project folders, exported builds, and old archives.</li>
-                        <li><strong>Videos:</strong> OBS recordings, gameplay captures, raw footage, and test exports.</li>
-                        <li><strong>Pictures:</strong> duplicate screenshots, old references, PNG exports, PSD files, and AI-generated images.</li>
-                        <li><strong>Project folders:</strong> generated build folders, caches, dependency folders, and old exports.</li>
-                    </ul>
-                </div>
-                <div class="manual-section">
-                    <h3>Important Do Rules</h3>
-                    <ul>
-                        <li>Do scan <code>C:\\Users</code> or your own user folder first for a practical cleanup review.</li>
-                        <li>Do open large folders manually before deleting anything.</li>
-                        <li>Do use official cleanup tools first: Storage Sense, Disk Cleanup, app uninstallers, launcher cleanup tools, browser settings, and package manager cleanup commands.</li>
-                        <li>Do run as Administrator only when you need a more complete full-drive scan.</li>
-                        <li>Do keep reports private because they may include usernames, project names, client names, source code paths, and personal filenames.</li>
-                        <li>Do close heavy apps such as Unity, Blender, Unreal, Visual Studio, game launchers, video editors, AI scripts, and backup tools when practical.</li>
-                    </ul>
-                </div>
-                <div class="manual-section">
-                    <h3>Important Don't Rules</h3>
-                    <ul>
-                        <li>Don't delete system files just because they are large.</li>
-                        <li>Don't manually delete files inside <code>C:\\Windows</code>, especially <code>System32</code>, <code>WinSxS</code>, <code>Installer</code>, or <code>SoftwareDistribution</code>.</li>
-                        <li>Don't manually delete folders inside <code>Program Files</code> or <code>Program Files (x86)</code>; use uninstallers instead.</li>
-                        <li>Don't randomly delete <code>AppData</code>; it can contain browser profiles, game saves, app settings, local databases, sessions, and caches.</li>
-                        <li>Don't randomly delete Unity <code>Assets</code>, <code>ProjectSettings</code>, or <code>Packages</code>.</li>
-                        <li>Don't assume unknown folders or processes are harmful. NVIDIA, Microsoft, Unity, Visual Studio, package manager, and launcher folders can look unfamiliar but be legitimate.</li>
-                        <li>Don't share reports publicly without redacting private paths.</li>
-                    </ul>
-                </div>
-                <div class="manual-section">
-                    <h3>Good Cleanup Candidates</h3>
-                    <ul>
-                        <li>Old installers in Downloads after the app is already installed.</li>
-                        <li>Duplicate ZIP, RAR, and 7Z files.</li>
-                        <li>Old exported videos, game recordings, and render tests.</li>
-                        <li>Temporary screenshots and failed downloads.</li>
-                        <li>Old build folders and old exported Unity builds.</li>
-                        <li>Old compressed backups after confirming another backup exists.</li>
-                    </ul>
-                </div>
-                <div class="manual-section">
-                    <h3>Folders That Need Extra Care</h3>
-                    <ul>
-                        <li><code>C:\\Windows</code></li>
-                        <li><code>C:\\Program Files</code> and <code>C:\\Program Files (x86)</code></li>
-                        <li><code>C:\\ProgramData</code></li>
-                        <li><code>C:\\Users\\YourName\\AppData</code></li>
-                        <li><code>C:\\Recovery</code> and <code>C:\\System Volume Information</code></li>
-                        <li>Source code repositories, client project folders, database folders, AI datasets, and active game projects.</li>
-                    </ul>
-                </div>
-                <div class="manual-section full">
-                    <h3>Recommended Cleanup Workflow</h3>
-                    <ol>
-                        <li>Scan <code>C:\\Users</code> first.</li>
-                        <li>Review the biggest folders manually and ask: Do I still need this? Is it active? Is it a backup? Can it be recreated? Is there an official cleanup method?</li>
-                        <li>Review file types such as <code>.mp4</code>, <code>.zip</code>, <code>.unitypackage</code>, <code>.blend</code>, and <code>.log</code> to understand storage patterns.</li>
-                        <li>Review biggest files one by one. Do not delete a large file unless you know what it is.</li>
-                        <li>Use safe cleanup methods first: Storage Sense, Disk Cleanup, uninstall unused apps, clear browser cache, clear launcher/editor cache, or move personal files to another drive.</li>
-                        <li>Run the scan again after cleanup to confirm the result.</li>
-                    </ol>
-                </div>
-                <div class="manual-section">
-                    <h3>Unity Project Notes</h3>
-                    <p>Common large folders include <code>Library</code>, <code>Temp</code>, <code>Obj</code>, <code>Logs</code>, <code>Build</code>, <code>Builds</code>, and <code>UserSettings</code>.</p>
-                    <p>Do not casually delete <code>Assets</code>, <code>ProjectSettings</code>, or <code>Packages</code>. <code>Library</code> can often be regenerated, but close Unity first and understand that the next open may be slower.</p>
-                </div>
-                <div class="manual-section">
-                    <h3>Blender And 3D Notes</h3>
-                    <p>Large files may include <code>.blend</code>, <code>.fbx</code>, <code>.obj</code>, <code>.glb</code>, <code>.gltf</code>, <code>.png</code>, <code>.tga</code>, <code>.exr</code>, <code>.psd</code>, <code>.wav</code>, and <code>.mp4</code>.</p>
-                    <p>Remove duplicate exports, old render tests, and archived versions only after confirming models, textures, and references are no longer needed.</p>
-                </div>
-                <div class="manual-section">
-                    <h3>Developer Folder Notes</h3>
-                    <p>Generated folders can be large: <code>node_modules</code>, <code>.venv</code>, <code>venv</code>, <code>__pycache__</code>, <code>dist</code>, <code>build</code>, <code>.cache</code>, <code>.gradle</code>, <code>.nuget</code>, <code>obj</code>, and <code>bin</code>.</p>
-                    <p>Some can be regenerated, but do not delete source folders such as <code>src</code>, <code>Assets</code>, <code>Scripts</code>, <code>ProjectSettings</code>, <code>Packages</code>, or <code>.git</code> unless you know exactly what you are doing.</p>
-                </div>
-                <div class="manual-section">
-                    <h3>Process Review Caution</h3>
-                    <p>A process may look unfamiliar but still be legitimate. The dashboard shows local indicators such as path, publisher/signature data, memory use, and command line where available.</p>
-                    <p>These indicators are not a final malware or safety verdict.</p>
-                </div>
-                <div class="manual-section">
-                    <h3>Report Privacy Reminder</h3>
-                    <p>Reports may reveal usernames, private projects, client names, file names, downloaded content, personal folder structure, business documents, and source code paths.</p>
-                    <p>Before sharing, redact paths such as <code>C:\\Users\\YourName\\Documents\\ClientName_PrivateProject</code>.</p>
-                </div>
-                <div class="manual-section full">
-                    <h3>Final Safety Rule</h3>
-                    <p>A large file is not automatically a bad file. Before deleting anything, confirm what it is, which app or project uses it, whether it can be recreated, whether you have a backup, whether there is an official cleanup method, and whether deleting it could break Windows, an app, or a project.</p>
-                    <p>When unsure, do not delete it immediately. Back it up or move it to a temporary review folder first.</p>
-                </div>
-            </div>
-        </section>
-    </section>
-
-    <section id="tab-about" class="tab-panel hidden">
-        <section class="section">
-            <h2>About And Safety</h2>
-            <p>This app runs locally on 127.0.0.1. It does not upload scan or process data.</p>
-            <p>Process review uses local metadata and risk indicators. It cannot prove that a program is safe or harmful.</p>
-            <pre id="versionInfo"></pre>
-        </section>
-    </section>
+    {about_layout}
 </main>
 </div>
 <script>
@@ -7419,11 +6870,12 @@ async function writeClipboardText(text) {{
 }}
 
 async function copyDirectoryFromButton(button) {{
+    const actionAlert = Studio.actionNotifier();
     const path = button.dataset.copyPath || '';
     const label = button.dataset.copyLabel || 'directory';
 
     if (!path) {{
-        showActionAlert('warning', 'Copy Directory Unavailable', 'No directory path is available for this result row.', [
+        actionAlert('warning', 'Copy Directory Unavailable', 'No directory path is available for this result row.', [
             'Try selecting another row with a visible path.'
         ]);
         return;
@@ -7440,12 +6892,12 @@ async function copyDirectoryFromButton(button) {{
             if (originalLabel) button.setAttribute('aria-label', originalLabel);
             else button.removeAttribute('aria-label');
         }}, 1400);
-        showActionAlert('success', 'Directory Copied', 'The directory path was copied to the clipboard.', [
+        actionAlert('success', 'Directory Copied', 'The directory path was copied to the clipboard.', [
             `Source: ${{label}}`,
             `Path: ${{path}}`
         ]);
     }} catch (error) {{
-        showActionAlert('error', 'Copy Directory Failed', error.message, [
+        actionAlert('error', 'Copy Directory Failed', error.message, [
             'Your browser may have blocked clipboard access.',
             `Path: ${{path}}`
         ]);
@@ -7476,8 +6928,8 @@ async function api(path, options = {{}}) {{
     return data;
 }}
 
-function showActionAlert(type, title, message, details = []) {{
-    Studio.notify(type, title, message, details);
+function showActionAlert(type, title, message, details = [], options = {{}}) {{
+    Studio.notify(type, title, message, details, options);
 }}
 
 function setExitState(workActive, reason = '', workType = 'scan') {{
@@ -7508,6 +6960,8 @@ function setExitState(workActive, reason = '', workType = 'scan') {{
 
 function showTab(name) {{
     name = Studio.navigate(name, true);
+    if (name !== 'processes') ProcessWorkspace.hide();
+    Workspace.onNavigate(name);
 
     if (name === 'manual') {{
         showActionAlert('info', 'Manual Opened', 'The user manual explains safe scan usage, cleanup workflow, use cases, and expanded do\\'s and don\\'ts.', [
@@ -7618,7 +7072,7 @@ function renderInstallerFiles() {{
     }});
 
     $('installerVisibleCount').textContent = `${{visible.length}} of ${{files.length}} files shown`;
-    $('installerCacheRows').innerHTML = visible.map(file => `
+    $('installerCacheRows').innerHTML = RemainingWorkspace.pageInstallerFiles(visible).map(file => `
         <tr>
             <td><strong>${{esc(file.name)}}</strong><br><span class="muted">${{esc(file.package_type || file.extension || 'Installer package')}}</span><br><code>${{esc(file.path)}}</code></td>
             <td data-sort="${{esc(file.size_bytes || 0)}}">${{esc(file.size || '0 B')}}</td>
@@ -7636,21 +7090,9 @@ function renderInstallerCache(data) {{
     state.installerCache = data || null;
     const summary = data?.summary || {{}};
     $('installerCacheStatus').innerHTML = data
-        ? `<strong>${{esc(summary.status || 'Review complete')}}</strong><br><span class="muted">Coverage: ${{esc(data.coverage?.status || 'Unavailable')}} | Cache path: <code>${{esc(data.cache_path || 'Unavailable')}}</code> | Collected: ${{esc(data.collected_at || 'Unavailable')}}</span>`
+        ? `<strong>${{esc(summary.status || 'Not recorded')}}</strong><br><span class="muted">Coverage: ${{esc(data.coverage?.status || 'Unavailable')}} | Cache path: <code>${{esc(data.cache_path || 'Unavailable')}}</code> | Collected: ${{esc(data.collected_at || 'Unavailable')}}</span>`
         : 'Installer cache has not been scanned yet.';
-    $('installerCacheSummary').innerHTML = [
-        metric('Status', summary.status || 'Not Run'),
-        metric('MSI/MSP Files', summary.cache_files || 0),
-        metric('Direct References', summary.registered_files || 0),
-        metric('Installed MSI Matches', summary.installed_product_matches || 0),
-        metric('Registered MSP Matches', summary.registered_patch_matches || 0),
-        metric('Installed MSP Targets', summary.installed_target_matches || 0),
-        metric('Backup Review Candidates', summary.backup_review_candidates || 0),
-        metric('Probable Orphans', summary.probable_orphans || 0),
-        metric('Unknown', summary.unknown_files || 0),
-        metric('Review Size', summary.orphan_candidate_size || '0 B'),
-        metric('Missing Registered', summary.missing_registered_files || 0)
-    ].join('');
+    RemainingWorkspace.renderInstallerSummary(data);
 
     const registryCoverage = data?.coverage?.registry || {{}};
     const contextRows = asArray(data?.coverage?.installer_contexts).map(item =>
@@ -7661,14 +7103,7 @@ function renderInstallerCache(data) {{
     const files = asArray(data?.files);
     renderInstallerFiles();
 
-    const missing = asArray(data?.missing_registered_files);
-    $('installerMissingRows').innerHTML = missing.map(item => `
-        <tr>
-            <td><code>${{esc(item.path || 'Unavailable')}}</code></td>
-            <td>${{esc(installerJoined(item.products))}}<br><span class="muted">${{esc(installerJoined(item.publishers))}}</span></td>
-            <td>${{esc(item.recommendation || 'Restore from original media or vendor repair if an installer asks for this cache file.')}}</td>
-        </tr>
-    `).join('') || '<tr><td colspan="3">No missing registered cache files were reported.</td></tr>';
+    RemainingWorkspace.renderInstallerMissing(data?.missing_registered_files, {{coverage:data?.coverage?.status}});
 
     $('exportInstallerCandidates').disabled = !files.some(file => file.needs_review);
     $('exportInstallerBackupManifest').disabled = !installerManifestReady();
@@ -7680,12 +7115,14 @@ function renderInstallerCache(data) {{
 }}
 
 async function refreshInstallerCache() {{
+    const actionAlert = Studio.actionNotifier();
     state.installerCache = null;
+    renderInstallerCache(null);
     $('refreshInstallerCache').disabled = true;
     $('exportInstallerCandidates').disabled = true;
     $('exportInstallerBackupManifest').disabled = true;
     $('installerCacheStatus').innerHTML = 'Reading cache files, registry paths, package metadata, installed targets, and patch applicability...';
-    showActionAlert('info', 'Installer Cache Scan Started', 'The dashboard is running a local read-only review of cached MSI/MSP files.', [
+    actionAlert('info', 'Installer Cache Scan Started', 'The dashboard is running a local read-only review of cached MSI/MSP files.', [
         'No files will be deleted or changed.',
         'This can take a moment on systems with many installer packages.'
     ]);
@@ -7695,7 +7132,7 @@ async function refreshInstallerCache() {{
         renderInstallerCache(data);
         const summary = data.summary || {{}};
         const notes = asArray(data.errors);
-        showActionAlert(notes.length ? 'warning' : 'success', notes.length ? 'Installer Cache Review Complete With Notes' : 'Installer Cache Review Complete', notes.length ? 'The read-only review finished, but some installer records were not visible.' : 'The read-only installer cache review finished.', [
+        actionAlert(notes.length ? 'warning' : 'success', notes.length ? 'Installer Cache Review Complete With Notes' : 'Installer Cache Review Complete', notes.length ? 'The read-only review finished, but some installer records were not visible.' : 'The read-only installer cache review finished.', [
             `MSI/MSP files: ${{summary.cache_files || 0}}`,
             `Direct references: ${{summary.registered_files || 0}}`,
             `Installed product matches: ${{summary.installed_product_matches || 0}}`,
@@ -7711,7 +7148,7 @@ async function refreshInstallerCache() {{
         $('installerCacheStatus').textContent = error.message;
         $('installerCacheRows').innerHTML = '<tr><td colspan="8">Installer cache review failed.</td></tr>';
         $('installerMissingRows').innerHTML = '<tr><td colspan="3">Installer cache review failed.</td></tr>';
-        showActionAlert('error', 'Installer Cache Review Failed', error.message, [
+        actionAlert('error', 'Installer Cache Review Failed', error.message, [
             'Run the dashboard as Administrator if Windows blocks access to installer cache or registry metadata.',
             'No files were changed.'
         ]);
@@ -7728,9 +7165,10 @@ function csvCell(value) {{
 }}
 
 function exportInstallerCandidatesCsv() {{
+    const actionAlert = Studio.actionNotifier();
     const candidates = asArray(state.installerCache?.files).filter(file => file.needs_review);
     if (!candidates.length) {{
-        showActionAlert('info', 'No Installer Candidates To Export', 'The latest installer cache review did not report files needing manual review.', [
+        actionAlert('info', 'No Installer Candidates To Export', 'The latest installer cache review did not report files needing manual review.', [
             'Direct references and installed product or patch matches should be kept.'
         ]);
         return;
@@ -7766,16 +7204,17 @@ function exportInstallerCandidatesCsv() {{
     const csv = [header, ...rows].map(row => row.map(csvCell).join(',')).join('\\r\\n');
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     downloadSecurityBlob(`installer-cache-review-candidates-${{stamp}}.csv`, csv, 'text/csv');
-    showActionAlert('success', 'Installer Candidates Exported', 'A local CSV of installer files needing review was generated.', [
+    actionAlert('success', 'Installer Candidates Exported', 'A local CSV of installer files needing review was generated.', [
         `Candidates exported: ${{candidates.length}}`,
         'This CSV is a review list, not a delete list.'
     ]);
 }}
 
 async function exportInstallerBackupManifest() {{
+    const actionAlert = Studio.actionNotifier();
     const eligible = asArray(state.installerCache?.files).filter(file => file.backup_review?.eligible_for_manifest);
     if (!installerManifestReady()) {{
-        showActionAlert('info', 'No Backup Review Candidates', 'The latest review has no files that meet every manifest requirement.', [
+        actionAlert('info', 'No Backup Review Candidates', 'The latest review has no files that meet every manifest requirement.', [
             'Low, Medium, Unknown, incomplete, registered, and installed-match results are excluded.'
         ]);
         return;
@@ -7786,7 +7225,7 @@ async function exportInstallerBackupManifest() {{
     button.disabled = true;
     $('refreshInstallerCache').disabled = true;
     button.textContent = 'Validating candidates...';
-    showActionAlert('info', 'Building Backup Review Manifest', 'The server is repeating installer checks and calculating SHA-256 hashes for qualifying candidates.', [
+    actionAlert('info', 'Building Backup Review Manifest', 'The server is repeating installer checks and calculating SHA-256 hashes for qualifying candidates.', [
         `Files to hash: ${{eligible.length}}`,
         'No installer files will be moved, deleted, launched, or changed.'
     ]);
@@ -7812,7 +7251,7 @@ async function exportInstallerBackupManifest() {{
             state.installerCache.summary.backup_review_candidates = asArray(state.installerCache.files).filter(file => file.backup_review?.eligible_for_manifest).length;
             renderInstallerCache(state.installerCache);
         }}
-        showActionAlert(issues.length ? 'warning' : 'success', issues.length ? 'Manifest Requires A New Review' : 'Backup Review Manifest Exported', 'The manifest records current validation results for the displayed candidates.', [
+        actionAlert(issues.length ? 'warning' : 'success', issues.length ? 'Manifest Requires A New Review' : 'Backup Review Manifest Exported', 'The manifest records current validation results for the displayed candidates.', [
             `Candidates checked: ${{manifest.candidate_count || 0}}`,
             `Validated candidates: ${{manifest.eligible_candidate_count || 0}}`,
             `Invalidated files: ${{issues.length}}`,
@@ -7820,7 +7259,7 @@ async function exportInstallerBackupManifest() {{
         ]);
     }} catch (error) {{
         if (state.installerCache) state.installerCache.manifestRequiresRefresh = true;
-        showActionAlert('error', 'Manifest Export Failed', error.message, [
+        actionAlert('error', 'Manifest Export Failed', error.message, [
             'Run Installer Cache review again if the server was restarted.',
             'No installer files were changed.'
         ]);
@@ -7831,20 +7270,9 @@ async function exportInstallerBackupManifest() {{
     }}
 }}
 
-function renderSecurityProgress(steps = []) {{
-    const rows = steps.length ? steps : [
-        {{ label: 'Preparing local review', status: 'Waiting', detail: 'Waiting to start.' }},
-        {{ label: 'Reading standard security locations', status: 'Waiting', detail: 'Waiting to read local review sources.' }},
-        {{ label: 'Checking file signatures and SHA-256 hashes', status: 'Waiting', detail: 'Waiting to verify referenced files.' }},
-        {{ label: 'Running optional Advanced Review collectors', status: 'Waiting', detail: 'Waiting for Advanced Review selection.' }},
-        {{ label: 'Saving local security check record', status: 'Waiting', detail: 'No lifecycle record has been saved yet.' }}
-    ];
-    $('securityProgress').innerHTML = rows.map(step => `
-        <div class="security-step">
-            <span><strong>${{esc(step.label)}}</strong><br><span class="muted">${{esc(step.detail || '')}}</span></span>
-            <span class="security-step-status">${{esc(step.status || 'Waiting')}}</span>
-        </div>
-    `).join('');
+function renderSecurityProgress(steps = [], status = null) {{
+    const rows = Workspace.stepRows(steps, status);
+    $('securityProgress').innerHTML = rows.map(step => `<div class="security-step"><span><strong>${{esc(step.label)}}</strong><br><span class="muted">${{esc(step.detail || '')}}</span></span><span class="security-step-status">${{esc(step.status)}}</span></div>`).join('');
 }}
 
 function uniqueCount(items) {{
@@ -7892,27 +7320,18 @@ function securityCoverageHtml(status) {{
 }}
 
 function renderSecuritySummary(summary = {{}}, status = null) {{
-    const findings = status?.findings || [];
-    const needsReview = findings.filter(finding => finding.status === 'Needs Review').length;
-    const noObvious = findings.filter(finding => finding.status === 'No Obvious Issue').length;
-    const categories = uniqueCount(findings.map(finding => finding.category));
     const coverage = securityCoverageView(status);
+    const ran = Boolean(status?.check_id);
+    const findings = Array.isArray(status?.findings) ? status.findings : null;
+    const missing = ran ? 'Not recorded' : 'Not run';
     $('securitySummary').innerHTML = [
-        metric('Overall Status', summary.overall_status || 'Not Run'),
+        metric('Overall Status', status?.status || 'Not run'),
         metric('Collector Coverage', coverage.status),
-        metric('Complete Collectors', coverage.recorded ? `${{coverage.complete}} / ${{coverage.selected}} selected` : coverage.status),
-        metric('Disabled Collectors', coverage.recorded ? coverage.disabled : coverage.status),
-        metric('Findings', summary.findings_total || 0),
-        metric('Needs Review', needsReview),
-        metric('No Obvious Issue', noObvious),
-        metric('High Review', summary.high_review || 0),
-        metric('Medium Review', summary.medium_review || 0),
-        metric('Low Review', summary.low_review || 0),
-        metric('Categories', categories),
-        metric('Unsigned Files', summary.unsigned_files || 0),
-        metric('Allowlist Matches', summary.allowlist_matches || 0),
-        metric('Baseline Changes', summary.baseline_changes || 0),
-        metric('Skipped Sources', summary.skipped_count || 0)
+        metric('Findings', summary.findings_total ?? (findings ? findings.length : missing)),
+        metric('Needs Review', findings ? findings.filter(f=>f.status === 'Needs Review').length : missing),
+        metric('Skipped Sources', summary.skipped_count ?? missing),
+        metric('Baseline Changes', status?.baseline_comparison
+            ? ['new','changed','removed'].reduce((total,key)=>total + (status.baseline_comparison[key] ?? 0),0) : 'Not compared')
     ].join('') + (coverage.recorded && !['complete','pending','running'].includes(coverage.status)
         ? '<p class="notice warning" role="status">Collector coverage is incomplete. Review source limitations before interpreting missing findings.</p>' : '');
 }}
@@ -7980,33 +7399,35 @@ function baselineMeaning(label) {{
 }}
 
 async function refreshSecurityBaselines(showAlert = true) {{
+    const actionAlert = Studio.actionNotifier();
     try {{
         const data = await api('/api/security-baselines');
         state.securityBaselines = data.baselines || [];
         renderSecurityBaselineControls();
         if (showAlert) {{
-            showActionAlert('success', 'Baselines Refreshed', 'Local Security Check baselines were loaded from this computer.', [
+            actionAlert('success', 'Baselines Refreshed', 'Local Security Check baselines were loaded from this computer.', [
                 `Baselines available: ${{state.securityBaselines.length}}`
             ]);
         }}
     }} catch (error) {{
-        showActionAlert('error', 'Baseline Load Failed', error.message, [
+        actionAlert('error', 'Baseline Load Failed', error.message, [
             'Baseline files stay local under the app folder.'
         ]);
     }}
 }}
 
 async function createSecurityBaseline() {{
+    const actionAlert = Studio.actionNotifier();
     const status = state.currentSecurityStatus;
     if (!securityReportReady(status) || status.status !== 'completed') {{
-        showActionAlert('warning', 'Baseline Unavailable', 'Create a baseline only from a completed Security Check record.', [
+        actionAlert('warning', 'Baseline Unavailable', 'Create a baseline only from a completed Security Check record.', [
             'Run a Security Check and review the results first.'
         ]);
         return;
     }}
     const confirmed = confirm('Create Security Baseline?\\n\\nOnly create a baseline after reviewing that this Security Check represents a known-good state. New or changed items in later comparisons are review signals, not proof of harm.');
     if (!confirmed) {{
-        showActionAlert('info', 'Baseline Creation Cancelled', 'No baseline was created.', [
+        actionAlert('info', 'Baseline Creation Cancelled', 'No baseline was created.', [
             'Create a baseline only after reviewing the current system state.'
         ]);
         return;
@@ -8019,13 +7440,13 @@ async function createSecurityBaseline() {{
         }});
         state.securityBaselines = data.baselines || [];
         renderSecurityBaselineControls();
-        showActionAlert('success', 'Security Baseline Created', 'A local baseline was created from the completed Security Check record.', [
+        actionAlert('success', 'Security Baseline Created', 'A local baseline was created from the completed Security Check record.', [
             `Baseline: ${{data.baseline?.label || data.baseline?.baseline_id}}`,
             `Items: ${{data.baseline?.item_count || 0}}`,
             'Future Security Checks can compare against this baseline.'
         ]);
     }} catch (error) {{
-        showActionAlert('error', 'Baseline Creation Failed', error.message, [
+        actionAlert('error', 'Baseline Creation Failed', error.message, [
             'Only completed Security Check records can become baselines.'
         ]);
     }}
@@ -8081,7 +7502,10 @@ function buildSecurityTimelineRows(status) {{
     if (!status || !status.check_id) return rows;
 
     addTimelineRow(rows, status.started_at, 'Security Check Started', status.check_id, `Mode: ${{status.mode || 'standard'}}`, 'Info');
-    addTimelineRow(rows, status.completed_at, 'Security Check Completed', status.check_id, `Status: ${{status.status || 'Unavailable'}}`, status.status === 'failed' ? 'High Review' : 'Info');
+    if (status.completed_at || ['completed','cancelled','failed'].includes(status.status)) {{
+        const outcome = status.status === 'completed' ? 'Completed' : status.status === 'cancelled' ? 'Cancelled' : status.status === 'failed' ? 'Failed' : 'Finalized';
+        addTimelineRow(rows, status.completed_at, `Security Check ${{outcome}}`, status.check_id, `Status: ${{status.status || 'Unavailable'}}`, status.status === 'failed' ? 'High Review' : 'Info');
+    }}
 
     const comparison = status.baseline_comparison || null;
     if (comparison) {{
@@ -8127,50 +7551,33 @@ function buildSecurityTimelineRows(status) {{
 }}
 
 function renderSecurityTimeline(status) {{
-    const rows = buildSecurityTimelineRows(status);
-    const missing = rows.filter(row => row.missingTime).length;
-    $('securityTimelineSummary').innerHTML = [
-        metric('Timeline Rows', rows.length),
-        metric('Missing Times', missing),
-        metric('Evidence Only', 'No causation')
-    ].join('');
-    $('securityTimelineRows').innerHTML = rows.map(row => {{
-        const action = row.findingId
-            ? `<button type="button" data-timeline-finding="${{esc(row.findingId)}}">Details</button>`
-            : '<span class="muted">No linked finding</span>';
-        return `<tr>
-            <td>${{esc(row.time || 'Time unavailable')}}</td>
-            <td>${{esc(row.type)}}</td>
-            <td>${{esc(row.item)}}</td>
-            <td>${{esc(row.summary)}}</td>
-            <td>${{esc(row.severity)}}</td>
-            <td>${{action}}</td>
-        </tr>`;
-    }}).join('') || '<tr><td colspan="6">No timeline rows are available for this Security Check record.</td></tr>';
+    Workspace.renderTimeline(status);
 }}
 
 async function refreshSecurityAllowlist(showAlert = true) {{
+    const actionAlert = Studio.actionNotifier();
     try {{
         const data = await api('/api/security-allowlist');
         state.securityAllowlist = data;
         renderSecurityAllowlist(data, state.currentSecurityStatus);
         if (showAlert) {{
-            showActionAlert('success', 'Allowlist Refreshed', 'Local known-safe allowlist entries were loaded from this computer.', [
+            actionAlert('success', 'Allowlist Refreshed', 'Local known-safe allowlist entries were loaded from this computer.', [
                 `Entries: ${{data.entry_count || 0}}`,
                 'Allowlisting lowers review priority only; it does not prove safety.'
             ]);
         }}
     }} catch (error) {{
-        showActionAlert('error', 'Allowlist Load Failed', error.message, [
+        actionAlert('error', 'Allowlist Load Failed', error.message, [
             'The allowlist is stored locally as windows/allowlist.local.json.'
         ]);
     }}
 }}
 
 async function addSelectedFindingToAllowlist(findingId) {{
+    const actionAlert = Studio.actionNotifier();
     const status = state.currentSecurityStatus;
     if (!securityReportReady(status)) {{
-        showActionAlert('warning', 'Allowlist Unavailable', 'Add allowlist entries only from a completed or cancelled Security Check record.', [
+        actionAlert('warning', 'Allowlist Unavailable', 'Add allowlist entries only from a completed or cancelled Security Check record.', [
             'Run or load a Security Check record first.'
         ]);
         return;
@@ -8179,7 +7586,7 @@ async function addSelectedFindingToAllowlist(findingId) {{
     if (!finding) return;
     const confirmed = confirm('Add To Local Allowlist?\\n\\nThis lowers review priority for matching future findings. It does not hide evidence and does not prove the item is safe forever.');
     if (!confirmed) {{
-        showActionAlert('info', 'Allowlist Add Cancelled', 'No allowlist entry was created.', [
+        actionAlert('info', 'Allowlist Add Cancelled', 'No allowlist entry was created.', [
             'Only add entries after reviewing the evidence.'
         ]);
         return;
@@ -8197,18 +7604,19 @@ async function addSelectedFindingToAllowlist(findingId) {{
         }});
         state.securityAllowlist = data.allowlist;
         renderSecurityAllowlist(data.allowlist, state.currentSecurityStatus);
-        showActionAlert('success', 'Allowlist Entry Added', 'A local allowlist entry was created for matching future findings.', [
+        actionAlert('success', 'Allowlist Entry Added', 'A local allowlist entry was created for matching future findings.', [
             `Entry: ${{data.entry?.label || data.entry?.entry_id}}`,
             'Evidence remains visible and allowlisting is not a safety guarantee.'
         ]);
     }} catch (error) {{
-        showActionAlert('error', 'Allowlist Add Failed', error.message, [
+        actionAlert('error', 'Allowlist Add Failed', error.message, [
             'Only completed or cancelled Security Check records can be used.'
         ]);
     }}
 }}
 
 async function removeSecurityAllowlistEntry(entryId) {{
+    const actionAlert = Studio.actionNotifier();
     const confirmed = confirm('Remove Allowlist Entry?\\n\\nFuture findings will no longer have their review priority lowered by this entry.');
     if (!confirmed) return;
     try {{
@@ -8218,17 +7626,18 @@ async function removeSecurityAllowlistEntry(entryId) {{
         }});
         state.securityAllowlist = data.allowlist;
         renderSecurityAllowlist(data.allowlist, state.currentSecurityStatus);
-        showActionAlert('success', 'Allowlist Entry Removed', 'The local allowlist entry was removed.', [
+        actionAlert('success', 'Allowlist Entry Removed', 'The local allowlist entry was removed.', [
             `Entry: ${{data.entry?.label || entryId}}`
         ]);
     }} catch (error) {{
-        showActionAlert('error', 'Allowlist Remove Failed', error.message, [
+        actionAlert('error', 'Allowlist Remove Failed', error.message, [
             'Refresh the allowlist and try again if the entry was already removed.'
         ]);
     }}
 }}
 
 function exportSecurityAllowlist() {{
+    const actionAlert = Studio.actionNotifier();
     const allowlist = state.securityAllowlist || {{ schema_version: 'security-allowlist-v1', entries: [] }};
     const payload = {{
         schema_version: 'security-allowlist-export-v1',
@@ -8237,12 +7646,13 @@ function exportSecurityAllowlist() {{
         entries: allowlist.entries || []
     }};
     downloadSecurityBlob(`security-allowlist-${{new Date().toISOString().replace(/[:.]/g, '-')}}.json`, JSON.stringify(payload, null, 2), 'application/json');
-    showActionAlert('success', 'Allowlist Exported', 'A local JSON allowlist export was generated.', [
+    actionAlert('success', 'Allowlist Exported', 'A local JSON allowlist export was generated.', [
         'Review before sharing because entries can reveal local software and paths.'
     ]);
 }}
 
 async function importSecurityAllowlistFromFile(file) {{
+    const actionAlert = Studio.actionNotifier();
     if (!file) return;
     const confirmed = confirm('Import Allowlist?\\n\\nImported entries lower review priority for matching future findings. Import only allowlists you trust.');
     if (!confirmed) return;
@@ -8256,12 +7666,12 @@ async function importSecurityAllowlistFromFile(file) {{
         }});
         state.securityAllowlist = data.allowlist;
         renderSecurityAllowlist(data.allowlist, state.currentSecurityStatus);
-        showActionAlert('success', 'Allowlist Imported', 'The imported allowlist was validated and merged locally.', [
+        actionAlert('success', 'Allowlist Imported', 'The imported allowlist was validated and merged locally.', [
             `Entries: ${{data.allowlist?.entry_count || 0}}`,
             'Allowlisting is not a safety guarantee.'
         ]);
     }} catch (error) {{
-        showActionAlert('error', 'Allowlist Import Failed', error.message, [
+        actionAlert('error', 'Allowlist Import Failed', error.message, [
             'The import must be valid JSON with allowlist entries and valid match keys.'
         ]);
     }} finally {{
@@ -8279,7 +7689,7 @@ function findingSearchText(finding) {{
         finding.allowlist_status,
         (finding.review_reasons || []).join(' '),
         finding.plain_explanation,
-        JSON.stringify(finding.evidence || {{}})
+        Workspace.searchText(finding.evidence || {{}})
     ].join(' ').toLowerCase();
 }}
 
@@ -8288,7 +7698,11 @@ function updateSelectOptions(selectId, values, allLabel) {{
     if (!select) return;
     const current = select.value || allLabel;
     const options = [allLabel, ...Array.from(new Set(values.filter(Boolean))).sort()];
-    select.innerHTML = options.map(value => `<option>${{esc(value)}}</option>`).join('');
+    const key = JSON.stringify(options);
+    if (select.dataset.optionsKey !== key) {{
+        select.innerHTML = options.map(value => `<option>${{esc(value)}}</option>`).join('');
+        select.dataset.optionsKey = key;
+    }}
     select.value = options.includes(current) ? current : allLabel;
 }}
 
@@ -8380,33 +7794,7 @@ function renderSecurityCategoryBlocks(status) {{
 }}
 
 function renderSecurityFindings(status) {{
-    const findings = filteredSecurityFindings(status);
-    if (!findings.length) {{
-        const hasAny = (status?.findings || []).length > 0;
-        $('securityFindingsRows').innerHTML = `<tr><td colspan="6">${{hasAny ? 'No findings match the current filter.' : 'No findings were collected yet. Run a Security Check or review skipped sources below.'}}</td></tr>`;
-        renderSecurityRunDetail(status);
-        return;
-    }}
-    $('securityFindingsRows').innerHTML = findings.map(finding => {{
-        const reasons = (finding.review_reasons || []).join('; ') || finding.status || 'Review item';
-        const baseline = finding.baseline_status ? `<br><span class="security-badge">${{esc(finding.baseline_status)}}</span>` : '';
-        const allowlist = finding.allowlist_status ? `<br><span class="security-badge">allowlist match</span>` : '';
-        const selected = finding.finding_id === state.selectedSecurityFindingId ? ' selected' : '';
-        return `<tr class="security-finding-row${{selected}}" tabindex="0" role="button" aria-label="Open finding details" data-security-finding="${{esc(finding.finding_id)}}">
-            <td>${{esc(finding.severity || 'Info')}}</td>
-            <td>${{esc(finding.score ?? 0)}}</td>
-            <td>${{esc(finding.category || 'Uncategorized')}}</td>
-            <td>${{esc(finding.title || 'Untitled')}}${{baseline}}${{allowlist}}</td>
-            <td>${{esc(reasons)}}</td>
-            <td><button type="button" data-security-finding="${{esc(finding.finding_id)}}">Details</button></td>
-        </tr>`;
-    }}).join('');
-
-    if (state.selectedSecurityFindingId && findings.some(finding => finding.finding_id === state.selectedSecurityFindingId)) {{
-        renderSecurityFindingDetail(status, state.selectedSecurityFindingId);
-    }} else {{
-        renderSecurityRunDetail(status);
-    }}
+    Workspace.renderFindings(status);
 }}
 
 function renderSecurityRunDetail(status) {{
@@ -8425,6 +7813,10 @@ function renderSecurityRunDetail(status) {{
 }}
 
 function renderSecurityFindingDetail(status, findingId) {{
+    Workspace.openFinding(status, findingId);
+}}
+
+function renderSecurityFindingContent(status, findingId) {{
     const finding = (status?.findings || []).find(item => item.finding_id === findingId);
     if (!finding) {{
         renderSecurityRunDetail(status);
@@ -8614,7 +8006,7 @@ function securityTimelineHtml(status) {{
 }}
 
 function securityStepsHtml(status) {{
-    const rows = asArray(status.steps).map(step => `<tr><td>${{esc(step.label || step.id || 'Step')}}</td><td>${{esc(step.status || 'Unknown')}}</td><td>${{esc(step.detail || '')}}</td></tr>`).join('');
+    const rows = Workspace.stepRows(status.steps, status).map(step => `<tr><td>${{esc(step.label || step.id || 'Step')}}</td><td>${{esc(step.status || 'Not recorded')}}</td><td>${{esc(step.detail || '')}}</td></tr>`).join('');
     return `<h2>Lifecycle Steps</h2>
 <table><thead><tr><th>Step</th><th>Status</th><th>Detail</th></tr></thead>
 <tbody>${{rows || '<tr><td colspan="3">No lifecycle step details recorded.</td></tr>'}}</tbody></table>`;
@@ -8691,9 +8083,10 @@ function downloadSecurityBlob(filename, content, mimeType) {{
 }}
 
 function downloadSecurityReport(kind) {{
+    const actionAlert = Studio.actionNotifier();
     const status = state.currentSecurityStatus;
     if (!securityReportReady(status)) {{
-        showActionAlert('warning', 'Security Report Unavailable', 'Run or load a completed Security Check before downloading a report.', [
+        actionAlert('warning', 'Security Report Unavailable', 'Run or load a completed Security Check before downloading a report.', [
             'Reports are generated locally from completed or cancelled Security Check records.'
         ]);
         return;
@@ -8706,7 +8099,7 @@ function downloadSecurityReport(kind) {{
     }};
     const [builder, filename, title] = builders[kind];
     downloadSecurityBlob(filename, builder(status), 'text/html');
-    showActionAlert('success', title, 'A local HTML report was generated from the current Security Check record.', [
+    actionAlert('success', title, 'A local HTML report was generated from the current Security Check record.', [
         `Check ID: ${{status.check_id}}`,
         `Findings: ${{status.summary?.findings_total || asArray(status.findings).length}}`,
         'Reports may include private local system details. Review before sharing.'
@@ -8714,9 +8107,10 @@ function downloadSecurityReport(kind) {{
 }}
 
 function downloadSecurityJsonReport() {{
+    const actionAlert = Studio.actionNotifier();
     const status = state.currentSecurityStatus;
     if (!securityReportReady(status)) {{
-        showActionAlert('warning', 'Technical JSON Unavailable', 'Run or load a completed Security Check before downloading technical JSON.', [
+        actionAlert('warning', 'Technical JSON Unavailable', 'Run or load a completed Security Check before downloading technical JSON.', [
             'Technical JSON is generated only when this button is clicked.'
         ]);
         return;
@@ -8730,7 +8124,7 @@ function downloadSecurityJsonReport() {{
         record: status
     }};
     downloadSecurityBlob(`security-check-technical-${{securityReportStamp(status)}}.json`, JSON.stringify(payload, null, 2), 'application/json');
-    showActionAlert('success', 'Technical JSON Downloaded', 'A local JSON export was generated only after the explicit download action.', [
+    actionAlert('success', 'Technical JSON Downloaded', 'A local JSON export was generated only after the explicit download action.', [
         `Check ID: ${{status.check_id}}`,
         'Review JSON before sharing because it may contain private local system details.'
     ]);
@@ -8747,16 +8141,18 @@ function renderSecurityCheckStatus(status) {{
         $('securityStatus').textContent = 'No Security Check running.';
         renderSecurityProgress();
         renderSecuritySummary();
+        Workspace.renderCoverage(null);
         renderSecurityFilterOptions(null);
         renderSecurityCategoryBlocks(null);
-        $('securityFindingsRows').innerHTML = '<tr><td colspan="6">No security findings yet. Run a Security Check to populate this table.</td></tr>';
+        renderSecurityFindings(null);
         renderSecurityRunDetail(null);
         return;
     }}
 
     state.currentSecurityStatus = status;
-    renderSecurityProgress(status.steps || []);
+    renderSecurityProgress(status.steps || [], status);
     renderSecuritySummary(status.summary || {{}}, status);
+    Workspace.renderCoverage(status);
     renderSecurityFilterOptions(status);
     const options = status.options || {{}};
     $('securityStatus').innerHTML = `Security Check <code>${{esc(status.check_id)}}</code><br>Status: <strong>${{esc(status.status)}}</strong> | Mode: ${{esc(status.mode || 'standard')}} | Registry backup opt-in: ${{options.registry_backup_opt_in ? 'yes' : 'no'}}`;
@@ -8769,6 +8165,7 @@ function renderSecurityCheckStatus(status) {{
 }}
 
 async function startSecurityCheck() {{
+    const actionAlert = Studio.actionNotifier();
     const advanced = selectedSecurityMode() === 'advanced';
     const payload = {{
         acknowledgeSafety: $('ackSecurityCheck').checked,
@@ -8779,7 +8176,7 @@ async function startSecurityCheck() {{
         eventLogCorrelation: advanced && $('securityEventLogCorrelation').checked,
         sysmonCorrelation: advanced && $('securitySysmonCorrelation').checked
     }};
-    showActionAlert('info', 'Security Check Starting', 'The dashboard is asking the local server to start a read-only lifecycle job.', [
+    actionAlert('info', 'Security Check Starting', 'The dashboard is asking the local server to start a read-only lifecycle job.', [
         `Mode: ${{payload.mode}}`,
         `Registry backup opt-in: ${{payload.registryBackup ? 'yes' : 'no'}}`,
         `Baseline comparison: ${{payload.baselineId ? 'enabled' : 'none'}}`,
@@ -8795,14 +8192,14 @@ async function startSecurityCheck() {{
         setExitState(true, 'Cancel or wait for the current Security Check to finish before exiting.', 'security');
         renderSecurityCheckStatus(status);
         showTab('security');
-        showActionAlert('success', 'Security Check Started', 'Lifecycle progress is now visible in the Security Check tab.', [
+        actionAlert('success', 'Security Check Started', 'Lifecycle progress is now visible in the Security Check tab.', [
             `Check ID: ${{status.check_id}}`,
             status.options?.baseline_compare ? `Comparing against baseline: ${{status.options.baseline_label || status.options.baseline_id}}` : 'No baseline comparison selected.',
             status.mode === 'advanced' ? 'Advanced Review collectors are included in this run.' : 'Standard Review collectors are included in this run.',
             'Signature status and SHA-256 are collected for referenced files when available. Reports are available after the run completes.'
         ]);
     }} catch (error) {{
-        showActionAlert('error', 'Security Check Failed To Start', error.message, [
+        actionAlert('error', 'Security Check Failed To Start', error.message, [
             'Confirm the acknowledgement checkbox is selected.',
             'Wait for any active disk scan or Security Check to finish.'
         ]);
@@ -8810,13 +8207,14 @@ async function startSecurityCheck() {{
 }}
 
 async function cancelSecurityCheck() {{
-    showActionAlert('warning', 'Security Check Cancellation Requested', 'The dashboard is asking the local Security Check lifecycle job to stop.', [
+    const actionAlert = Studio.actionNotifier();
+    actionAlert('warning', 'Security Check Cancellation Requested', 'The dashboard is asking the local Security Check lifecycle job to stop.', [
         'A partial local lifecycle record may be saved.'
     ]);
     try {{
         await api('/api/security-checks/cancel', {{ method: 'POST', body: '{{}}' }});
     }} catch (error) {{
-        showActionAlert('error', 'Security Check Cancel Failed', error.message, ['There may be no active Security Check to cancel.']);
+        actionAlert('error', 'Security Check Cancel Failed', error.message, ['There may be no active Security Check to cancel.']);
     }}
 }}
 
@@ -8846,14 +8244,16 @@ async function pollSecurityStatus() {{
             const statusKey = `${{status.check_id}}:${{status.status}}`;
             if (state.lastSecurityStatusKey !== statusKey) {{
                 state.lastSecurityStatusKey = statusKey;
-                const alertType = status.status === 'completed' ? 'success' : (status.status === 'cancelled' ? 'warning' : 'error');
+                const coverage = securityCoverageView(status);
+                const alertType = status.status === 'completed' ? (coverage.status === 'complete' ? 'success' : 'warning') : (status.status === 'cancelled' ? 'warning' : 'error');
                 const title = status.status === 'completed' ? 'Security Check Completed' : (status.status === 'cancelled' ? 'Security Check Cancelled' : 'Security Check Failed');
                 showActionAlert(alertType, title, `Security Check status: ${{status.status}}.`, [
                     `Check ID: ${{status.check_id}}`,
                     `Record: ${{status.record_path || 'Unavailable'}}`,
                     status.error ? `Error: ${{status.error}}` : 'A local lifecycle record was saved.',
-                    `Findings collected: ${{status.summary?.findings_total || 0}}; skipped sources: ${{status.summary?.skipped_count || 0}}.`
-                ]);
+                    `Findings collected: ${{status.summary?.findings_total ?? 'Not recorded'}}; skipped sources: ${{status.summary?.skipped_count ?? 'Not recorded'}}.`,
+                    `Collector coverage: ${{coverage.status}}. Missing evidence is not a clean result.`
+                ], {{eventId: `security:${{statusKey}}`}});
             }}
         }}
     }} catch (error) {{
@@ -8966,7 +8366,7 @@ function renderResult(record) {{
 async function loadInitial() {{
     try {{
         const info = await api('/api/state');
-        $('versionInfo').textContent = JSON.stringify(info.version, null, 2);
+        RemainingWorkspace.renderAbout(info.version);
         $('driveSelect').innerHTML = info.drives.map(d => `<option value="${{esc(d.path)}}">${{esc(d.label)}}</option>`).join('');
         state.securityBaselines = info.security_baselines || [];
         state.securityAllowlist = info.security_allowlist || null;
@@ -8989,6 +8389,7 @@ async function loadInitial() {{
 }}
 
 async function startScan() {{
+    const actionAlert = Studio.actionNotifier();
     const payload = {{
         root: $('rootPath').value,
         top: $('topItems').value,
@@ -8999,24 +8400,24 @@ async function startScan() {{
         acknowledgeSafety: $('ackSafety').checked
     }};
     const scanType = /^[A-Za-z]:\\\\?$/.test(payload.root.trim()) ? 'drive' : 'directory';
-    showActionAlert('info', 'Scan Starting', 'The dashboard is asking the local server to start a read-only scan.', [
+    actionAlert('info', 'Scan Starting', 'The dashboard is asking the local server to start a read-only scan.', [
         `Path: ${{payload.root}}`,
         `Scan type: ${{scanType}}`,
         `Safety acknowledged: ${{payload.acknowledgeSafety ? 'yes' : 'no'}}`
     ]);
     try {{
-        await api('/api/scans', {{ method: 'POST', body: JSON.stringify(payload) }});
+        const started = await api('/api/scans', {{ method: 'POST', body: JSON.stringify(payload) }});
         $('startScan').disabled = true;
         $('cancelScan').disabled = false;
         setExitState(true, 'Cancel or wait for the current scan to finish before exiting.');
         updateSecurityCheckStartState();
-        showActionAlert('success', 'Scan Started', 'Live progress is now visible in the scan status panel.', [
+        actionAlert('success', 'Scan Started', 'Live progress is now visible in the scan status panel.', [
             `Path: ${{payload.root}}`,
             'The tool is still read-only and will save a local scan record when done.'
-        ]);
+        ], started.scan_id ? {{eventId:`scan:${{started.scan_id}}:started`}} : {{}});
         showTab('scan');
     }} catch (error) {{
-        showActionAlert('error', 'Action Failed', error.message, [
+        actionAlert('error', 'Action Failed', error.message, [
             'Check the path and safety acknowledgement.',
             'Full-drive and sensitive-folder scans require acknowledgement.'
         ]);
@@ -9062,7 +8463,7 @@ async function pollStatus() {{
                         `Health: ${{status.result.scan_health?.title || 'Unavailable'}}`,
                         status.result.scan_health?.message || 'Review scan health details in Results.',
                         status.error ? `Error: ${{status.error}}` : 'A local scan record was saved.'
-                    ]);
+                    ], {{eventId:`scan:${{status.scan_id}}:${{status.status}}`}});
                 }}
             }}
         }}
@@ -9079,14 +8480,15 @@ async function pollStatus() {{
 }}
 
 async function cancelScan() {{
-    showActionAlert('warning', 'Scan Cancellation Requested', 'The dashboard is asking the scanner to stop.', [
+    const actionAlert = Studio.actionNotifier();
+    actionAlert('warning', 'Scan Cancellation Requested', 'The dashboard is asking the scanner to stop.', [
         'Cancellation may take a moment.',
         'A partial local record may be saved.'
     ]);
     try {{
         await api('/api/scans/cancel', {{ method: 'POST', body: '{{}}' }});
     }} catch (error) {{
-        showActionAlert('error', 'Action Failed', error.message, ['There may be no active scan to cancel.']);
+        actionAlert('error', 'Action Failed', error.message, ['There may be no active scan to cancel.']);
     }}
 }}
 
@@ -9098,43 +8500,45 @@ function filterTable(inputId, tbodyId) {{
 }}
 
 async function refreshHistory(showNotice = true) {{
+    const actionAlert = Studio.actionNotifier();
+    RemainingWorkspace.setHistoryLoading(true);
     try {{
         const data = await api('/api/history');
-        $('historyRows').innerHTML = data.records.map(row =>
-            `<tr><td>${{esc(row.started_at)}}</td><td>${{esc(row.status)}}</td><td><code>${{esc(row.root)}}</code></td><td>${{esc(row.total_size)}}</td><td>${{esc(row.files_scanned)}}</td><td>${{esc(row.skipped_count)}}</td><td><button data-scan="${{esc(row.scan_id)}}">Open</button></td></tr>`
-        ).join('') || '<tr><td colspan="7">No scan history yet.</td></tr>';
+        RemainingWorkspace.renderHistory(data.records);
         Studio.updateHistory(data.records);
         if (showNotice) {{
-            showActionAlert('success', 'Scan History Refreshed', 'The scan history table has been updated.', [
+            actionAlert('success', 'Scan History Refreshed', 'The scan history table has been updated.', [
                 `Records shown: ${{data.records.length}}`,
                 'History and generated reports remain stored locally.'
             ]);
         }}
     }} catch (error) {{
-        showActionAlert('error', 'History Load Failed', error.message, ['Try refreshing history again.']);
+        RemainingWorkspace.setHistoryError(error);
+        actionAlert('error', 'History Load Failed', error.message, ['Try refreshing history again.']);
     }}
 }}
 
 async function openHistory(scanId) {{
+    const actionAlert = Studio.actionNotifier();
     try {{
         const record = await api('/api/scans/' + encodeURIComponent(scanId));
         showTab('results');
         try {{
             renderResult(record);
-            showActionAlert('info', 'History Record Opened', 'Loaded a saved scan record into the results view.', [
+            actionAlert('info', 'History Record Opened', 'Loaded a saved scan record into the results view.', [
                 `Scan ID: ${{scanId}}`,
                 `Status: ${{record.status}}`,
                 `Path: ${{record.root}}`
             ]);
         }} catch (renderError) {{
             renderResultError(record, renderError);
-            showActionAlert('error', 'History Record Display Failed', renderError.message, [
+            actionAlert('error', 'History Record Display Failed', renderError.message, [
                 `Scan ID: ${{scanId}}`,
                 'The saved record was found, but one or more result sections could not be displayed.'
             ]);
         }}
     }} catch (error) {{
-        showActionAlert('error', 'History Record Failed', error.message, [`Scan ID: ${{scanId}}`]);
+        actionAlert('error', 'History Record Failed', error.message, [`Scan ID: ${{scanId}}`]);
     }}
 }}
 
@@ -9331,7 +8735,7 @@ function verificationGuideReportHtml() {{
 
 function buildProcessReportHtml() {{
     const visible = getVisibleProcesses();
-    const groupMode = $('processGroupBy').value;
+    const groupMode = $('processGroupBy').value === 'none' ? 'publisher' : $('processGroupBy').value;
     const groups = groupProcesses(visible, groupMode === 'uncategorized' ? 'publisher' : groupMode);
     const uncategorized = state.processes.filter(isUncategorizedProcess).sort((a, b) => (Number(b.memory_bytes) || 0) - (Number(a.memory_bytes) || 0));
     const generated = new Date().toLocaleString();
@@ -9377,8 +8781,9 @@ ${{verificationGuideReportHtml()}}
 }}
 
 function downloadProcessReport() {{
+    const actionAlert = Studio.actionNotifier();
     if (!state.processes.length) {{
-        showActionAlert('warning', 'No Process Report Available', 'Refresh processes before downloading a grouped report.', [
+        actionAlert('warning', 'No Process Report Available', 'Refresh processes before downloading a grouped report.', [
             'The report is generated from the currently loaded local process snapshot.'
         ]);
         return;
@@ -9394,7 +8799,7 @@ function downloadProcessReport() {{
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    showActionAlert('success', 'Grouped Process Report Downloaded', 'A local HTML report was generated from the current process snapshot.', [
+    actionAlert('success', 'Grouped Process Report Downloaded', 'A local HTML report was generated from the current process snapshot.', [
         `Processes in current view: ${{getVisibleProcesses().length}}`,
         'Reports may include local program paths. Keep them private unless reviewed.'
     ]);
@@ -9465,8 +8870,9 @@ ${{verificationGuideReportHtml()}}
 }}
 
 function downloadVerificationReport() {{
+    const actionAlert = Studio.actionNotifier();
     if (!state.processes.length) {{
-        showActionAlert('warning', 'No Verification Report Available', 'Refresh processes before downloading a verification report.', [
+        actionAlert('warning', 'No Verification Report Available', 'Refresh processes before downloading a verification report.', [
             'The report is generated from the currently loaded local process snapshot.'
         ]);
         return;
@@ -9482,99 +8888,42 @@ function downloadVerificationReport() {{
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    showActionAlert('success', 'Verification Report Downloaded', 'A local HTML report was generated for processes that need review.', [
+    actionAlert('success', 'Verification Report Downloaded', 'A local HTML report was generated for processes that need review.', [
         `Needs-review entries in current view: ${{getVisibleProcesses().filter(needsReview).length}}`,
         'This is not a malware verdict. Use signature details and trusted security tools for final decisions.'
     ]);
 }}
 
 async function refreshProcesses() {{
-    $('processRows').innerHTML = '<tr><td colspan="4">Loading processes...</td></tr>';
-    $('processSummary').innerHTML = '';
-    $('processGroupTree').innerHTML = '<p class="muted">Loading grouped process view...</p>';
-    showActionAlert('info', 'Refreshing Process List', 'The app is reading local Windows process metadata.', [
-        'This does not stop or modify programs.',
-        'Risk indicators are not final malware verdicts.'
-    ]);
+    const actionAlert = Studio.actionNotifier();
+    ProcessWorkspace.setLoading(true);
     try {{
         const data = await api('/api/processes');
-        state.processes = data.processes || [];
+        state.processes = asArray(data.processes);
         updatePublisherFilterOptions();
         updateReviewFilterOptions();
-        renderProcesses();
-        showActionAlert('success', 'Process List Refreshed', 'Running programs were loaded from this computer.', [
-            `Processes shown: ${{state.processes.length}}`,
-            `Collected at: ${{data.collected_at}}`
-        ]);
+        ProcessWorkspace.setError(null);
+        ProcessWorkspace.onSnapshot();
     }} catch (error) {{
-        $('processRows').innerHTML = `<tr><td colspan="4">${{esc(error.message)}}</td></tr>`;
-        showActionAlert('error', 'Process List Failed', error.message, ['Some process details may require Administrator permission.']);
+        ProcessWorkspace.setError(error.message);
+        actionAlert('error', 'Process List Failed', error.message, ['Some process evidence may be unavailable. The last snapshot is retained.']);
+    }} finally {{
+        ProcessWorkspace.setLoading(false);
     }}
 }}
 
 function renderProcesses() {{
-    const rows = getVisibleProcesses();
-    renderProcessSummary(rows);
-    renderProcessGroupTree(rows);
-    $('processRows').innerHTML = rows.map(p => {{
-        const indicators = asArray(p.risk_indicators).map(i => `<span class="pill ${{esc(i.level)}}">${{esc(i.label)}}</span>`).join('');
-        return `<tr class="process-row" tabindex="0" data-pid="${{esc(p.pid)}}" title="Open technical details for this process"><td class="process-name-cell"><strong>${{esc(p.friendly_name)}}</strong><br><span class="muted">PID ${{esc(p.pid)}} | Parent: ${{esc(p.parent_name || p.parent_pid || 'Unavailable')}} | Publisher: ${{esc(publisherLabel(p))}}</span><br><code class="path-text">${{esc(p.executable_path || 'Path unavailable')}}</code></td><td>${{esc(p.memory)}}</td><td>${{indicators}}</td><td><button class="small-action" data-pid="${{esc(p.pid)}}">Details</button></td></tr>`;
-    }}).join('') || '<tr><td colspan="4">No matching processes.</td></tr>';
+    ProcessWorkspace.render();
 }}
 
 async function showProcessDetail(pid) {{
-    document.querySelectorAll('#processRows tr[data-pid]').forEach(row => {{
-        row.classList.toggle('selected', row.dataset.pid === String(pid));
-    }});
-    $('processDetail').textContent = 'Loading details...';
-    showActionAlert('info', 'Opening Process Details', 'The app is loading local technical details for one process.', [
-        `PID: ${{pid}}`,
-        'Indicators are for review only and are not final malware verdicts.'
-    ]);
-    try {{
-        const data = await api('/api/processes/' + encodeURIComponent(pid));
-        const p = data.process;
-        const indicators = asArray(p.risk_indicators).map(i => `<span class="pill ${{esc(i.level)}}">${{esc(i.label)}}</span>`).join('');
-        const reasons = reviewReasonsForProcess(p);
-        const verificationHtml = `
-            <div class="verification-list">
-                <strong>${{reasons.length ? 'Needs Review' : 'No review flags from local rules'}}</strong>
-                <ul>
-                    ${{reasons.length ? reasons.map(reason => `<li>${{esc(reason)}}</li>`).join('') : '<li>No local review reason was found in this snapshot.</li>'}}
-                </ul>
-                <p class="muted">This is a local review checklist, not a malware verdict.</p>
-            </div>
-        `;
-        $('processDetail').innerHTML = `
-            <h3>${{esc(p.friendly_name)}} <span class="muted">PID ${{esc(p.pid)}}</span></h3>
-            <p>${{indicators}}</p>
-            ${{verificationHtml}}
-            <p><strong>Path</strong><br><code>${{esc(p.executable_path || 'Unavailable')}}</code></p>
-            <p><strong>Command line</strong><br><code>${{esc(p.command_line || 'Unavailable')}}</code></p>
-            <p><strong>Parent PID</strong><br>${{esc(p.parent_pid || 'Unavailable')}}</p>
-            <p><strong>Memory</strong><br>${{esc(p.memory)}}</p>
-            <p><strong>Publisher metadata</strong><br>Publisher: ${{esc(p.publisher || 'Unavailable')}}<br>Product: ${{esc(p.product_name || 'Unavailable')}}</p>
-            <p><strong>Signature</strong><br>Status: ${{esc(p.signature.status)}}<br>Publisher: ${{esc(p.signature.publisher || 'Unavailable')}}<br>Error: ${{esc(p.signature.error || 'None')}}</p>
-            <p><strong>SHA-256</strong><br><code>${{esc(p.sha256 || p.hash_error || 'Unavailable')}}</code></p>
-            <p class="muted">Collected at ${{esc(p.collected_at)}}. This is a local indicator review, not a final safety verdict.</p>
-        `;
-        showActionAlert('info', 'Process Details Loaded', 'Technical details are shown in the process detail panel.', [
-            `PID: ${{p.pid}}`,
-            `Name: ${{p.name || p.friendly_name}}`,
-            'Risk indicators do not prove whether a program is safe or harmful.'
-        ]);
-    }} catch (error) {{
-        $('processDetail').textContent = error.message;
-        showActionAlert('error', 'Process Details Unavailable', error.message, [
-            `PID: ${{pid}}`,
-            'The process may have exited or may require higher permissions.'
-        ]);
-    }}
+    await ProcessWorkspace.open(pid, document.activeElement);
 }}
 
 async function exitApp() {{
+    const actionAlert = Studio.actionNotifier();
     if ($('exitApp').disabled) {{
-        showActionAlert('warning', 'Exit Blocked', 'Cancel or wait for the current scan to finish before exiting.', [
+        actionAlert('warning', 'Exit Blocked', 'Cancel or wait for the current scan to finish before exiting.', [
             'The dashboard will not shut down while a scan is active.'
         ]);
         return;
@@ -9582,11 +8931,11 @@ async function exitApp() {{
 
     const confirmed = confirm('Exit Dashboard?\\n\\nThe local server will stop, this browser dashboard will no longer update, and existing reports/history will remain saved.');
     if (!confirmed) {{
-        showActionAlert('info', 'Exit Cancelled', 'The dashboard server is still running.', ['No files or records were changed.']);
+        actionAlert('info', 'Exit Cancelled', 'The dashboard server is still running.', ['No files or records were changed.']);
         return;
     }}
 
-    showActionAlert('warning', 'Exit Dashboard', 'The dashboard is sending a local shutdown request.', [
+    actionAlert('warning', 'Exit Dashboard', 'The dashboard is sending a local shutdown request.', [
         'Existing reports and scan history remain saved.',
         'You can start the app again by running the script.'
     ]);
@@ -9595,11 +8944,11 @@ async function exitApp() {{
         const data = await api('/api/shutdown', {{ method: 'POST', body: '{{}}' }});
         state.isShuttingDown = true;
         setExitState(false);
-        showActionAlert('success', 'Dashboard Server Is Shutting Down', data.message || 'You may close this tab.', [
+        actionAlert('success', 'Dashboard Server Is Shutting Down', data.message || 'You may close this tab.', [
             'The browser may show connection errors if you refresh after shutdown.'
         ]);
     }} catch (error) {{
-        showActionAlert('error', 'Exit Failed', error.message, [
+        actionAlert('error', 'Exit Failed', error.message, [
             'If a scan is running, cancel or wait for it to finish before exiting.'
         ]);
         await pollStatus();
@@ -9607,7 +8956,22 @@ async function exitApp() {{
 }}
 
 {studio_script}
+{process_script}
+{workspace_script}
+{remaining_script}
 Studio.init();
+ProcessWorkspace.init({{doc:document,win:window,readState:()=>state,api,visibleProcesses:getVisibleProcesses,
+    groupProcesses,publisherLabel,needsReview,reviewReasons:reviewReasonsForProcess,formatBytes,
+    notify:(...args)=>Studio.actionNotifier()(...args),copyText:writeClipboardText}});
+ProcessWorkspace.render();
+Workspace.init({{doc:document,win:window,readState:()=>state,coverage:securityCoverageView,
+    filteredFindings:filteredSecurityFindings,renderFindingContent:renderSecurityFindingContent,
+    timeline:buildSecurityTimelineRows}});
+RemainingWorkspace.init({{doc:document,win:window,page:Workspace.page,renderInstallerFiles}});
+document.addEventListener('click',event=>{{
+    if(event.target.closest('[data-open-process-help]')){{showTab('manual');RemainingWorkspace.openProcessHelp();}}
+    if(event.target.closest('[data-open-processes]')){{showTab('processes');$('processFilter').focus();}}
+}});
 document.querySelectorAll('.tab').forEach(btn => btn.addEventListener('click', () => showTab(btn.dataset.tab)));
 $('useDrive').addEventListener('click', () => {{
     $('rootPath').value = $('driveSelect').value;
@@ -9703,7 +9067,7 @@ $('biggestFiles').addEventListener('click', event => {{
     if (button) copyDirectoryFromButton(button);
 }});
 $('historyRows').addEventListener('click', event => {{
-    const scanId = event.target.dataset.scan;
+    const scanId = event.target.closest('[data-scan]')?.dataset.scan;
     if (scanId) openHistory(scanId);
 }});
 $('processRows').addEventListener('click', event => {{
@@ -9718,7 +9082,6 @@ $('processRows').addEventListener('keydown', event => {{
     event.preventDefault();
     showProcessDetail(row.dataset.pid);
 }});
-initProcessPaneResizer();
 updateSecurityCheckStartState();
 updateAdvancedReviewOptions();
 loadInitial();
