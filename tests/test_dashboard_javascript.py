@@ -63,12 +63,15 @@ class ManifestJavascriptTests(unittest.TestCase):
                 'installerCacheStatus', 'installerCacheRows', 'installerMissingRows'].map(id => [id, {disabled: false, textContent: '', innerHTML: ''}]));
             global.$ = id => elements[id];
             global.showActionAlert = () => {};
+            let cleared = 0;
+            global.renderInstallerCache = data => { assert.equal(data,null); cleared++; };
             global.api = async () => { throw new Error('Scan failed'); };
             await refreshInstallerCache();
             assert.equal(state.installerCache, null);
             assert.equal(elements.exportInstallerCandidates.disabled, true);
             assert.equal(elements.exportInstallerBackupManifest.disabled, true);
             assert.equal(elements.refreshInstallerCache.disabled, false);
+            assert.equal(cleared,1);
         """)
 
 

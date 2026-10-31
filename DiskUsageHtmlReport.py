@@ -6327,6 +6327,12 @@ def build_dashboard_html():
     workspace_style = (ui_root / "workspace_studio.css").read_text(encoding="utf-8")
     workspace_script = (ui_root / "workspace_studio.js").read_text(encoding="utf-8")
     security_layout = (ui_root / "security_workspace.html").read_text(encoding="utf-8")
+    remaining_style = (ui_root / "remaining_workspaces.css").read_text(encoding="utf-8")
+    remaining_script = (ui_root / "remaining_workspaces.js").read_text(encoding="utf-8")
+    installer_layout = (ui_root / "installer_workspace.html").read_text(encoding="utf-8")
+    history_layout = (ui_root / "history_workspace.html").read_text(encoding="utf-8")
+    help_layout = (ui_root / "help_workspace.html").read_text(encoding="utf-8").replace("__PROCESS_VERIFICATION_HELP__", process_guide)
+    about_layout = (ui_root / "about_workspace.html").read_text(encoding="utf-8")
     studio_layout = (ui_root / "sidebar_studio.html").read_text(encoding="utf-8").replace(
         "__APP_VERSION__", APP_VERSION).replace(
         "__STUDIO_ICONS__", (ui_root / "lucide-sprite.svg").read_text(encoding="utf-8"))
@@ -6809,6 +6815,7 @@ summary {{ cursor: pointer; padding: 6px; }}
 {studio_style}
 {process_style}
 {workspace_style}
+{remaining_style}
 </style>
 </head>
 <body>
@@ -6819,272 +6826,15 @@ summary {{ cursor: pointer; padding: 6px; }}
         {process_layout}
     </section>
 
-    <section id="tab-installer" class="tab-panel hidden">
-        <section class="action-alert warning">
-            <h2>Before Reviewing Windows Installer Cache</h2>
-            <p><code>C:\\Windows\\Installer</code> is managed by Windows Installer. Cached <code>.msi</code> and <code>.msp</code> files may be required later for repair, update, modify, or uninstall operations.</p>
-            <p>This dashboard only scans and labels evidence. It does not delete installer cache files, and a probable-orphan result is not a safe-to-delete verdict.</p>
-        </section>
-
-        <section class="section">
-            <h2>Installer Cache Review</h2>
-            <p class="muted">This read-only check compares exact registry paths, reads MSI/MSP metadata, checks installed products and patches, and asks Windows Installer whether an MSP applies to an installed target without launching it. Use it to create a review list, not to clean automatically.</p>
-            <div class="actions">
-                <button id="refreshInstallerCache" class="primary">Scan installer cache</button>
-                <button id="exportInstallerCandidates" disabled>Export review candidates CSV</button>
-                <button id="exportInstallerBackupManifest" disabled>Export backup-review manifest</button>
-            </div>
-            <div id="installerCacheStatus" class="status-line">Installer cache has not been scanned yet.</div>
-            <div id="installerCacheSummary" class="grid" style="margin-top:12px">
-                <div class="metric"><div class="label">Status</div><div class="value">Not Run</div></div>
-                <div class="metric"><div class="label">MSI/MSP Files</div><div class="value">0</div></div>
-                <div class="metric"><div class="label">Direct References</div><div class="value">0</div></div>
-                <div class="metric"><div class="label">Installed Matches</div><div class="value">0</div></div>
-                <div class="metric"><div class="label">Patch Matches</div><div class="value">0</div></div>
-                <div class="metric"><div class="label">Installed MSP Targets</div><div class="value">0</div></div>
-                <div class="metric"><div class="label">Backup Review Candidates</div><div class="value">0</div></div>
-                <div class="metric"><div class="label">Probable Orphans</div><div class="value">0</div></div>
-                <div class="metric"><div class="label">Unknown</div><div class="value">0</div></div>
-            </div>
-            <details class="installer-evidence"><summary>View installer context coverage</summary><div id="installerCoverageDetails" class="muted">Run the review to see which product, patch, and registry scopes were checked.</div></details>
-        </section>
-
-        <section class="section">
-            <h2>Largest Installer Cache Files</h2>
-            <p class="muted">Keep direct references and installed product or patch matches. Probable orphan and unknown rows still require manual review because registration visibility can be limited.</p>
-            <div class="installer-controls">
-                <div><label for="installerStatusFilter">Decision</label><select id="installerStatusFilter"><option value="all">All decisions</option><option value="keep">Keep evidence</option><option value="review">Needs review</option></select></div>
-                <div><label for="installerConfidenceFilter">Confidence</label><select id="installerConfidenceFilter"><option value="all">All confidence levels</option><option>Definitive</option><option>Strong</option><option>High</option><option>Medium</option><option>Low</option><option>Unknown</option></select></div>
-                <div><label for="installerTypeFilter">Package type</label><select id="installerTypeFilter"><option value="all">MSI and MSP</option><option value=".msi">MSI products</option><option value=".msp">MSP patches</option></select></div>
-                <div><label for="installerEligibilityFilter">Backup review</label><select id="installerEligibilityFilter"><option value="all">All eligibility states</option><option>Backup review candidate</option><option>Manual investigation</option><option>Not eligible</option></select></div>
-                <div><label><input id="installerIncompleteOnly" type="checkbox"> Incomplete checks only</label></div>
-            </div>
-            <div id="installerVisibleCount" class="installer-filter-count">0 files shown</div>
-            <div class="table-wrap">
-                <table>
-                    <thead><tr><th>File</th><th>Size</th><th>Modified</th><th>Status</th><th>Confidence</th><th>Applicability</th><th>Product / Publisher</th><th>Recommendation / Evidence</th></tr></thead>
-                    <tbody id="installerCacheRows"><tr><td colspan="8">Scan installer cache to populate this table.</td></tr></tbody>
-                </table>
-            </div>
-        </section>
-
-        <section class="section">
-            <h2>Missing Registered Cache Files</h2>
-            <p class="muted">These are registry references that point to cache files that were not found. They can explain future repair, update, or uninstall failures.</p>
-            <div class="table-wrap">
-                <table>
-                    <thead><tr><th>Missing File</th><th>Product / Publisher</th><th>Recommendation</th></tr></thead>
-                    <tbody id="installerMissingRows"><tr><td colspan="3">No installer cache scan has been run.</td></tr></tbody>
-                </table>
-            </div>
-        </section>
-
-        <section class="section">
-            <h2>Safe Review Workflow</h2>
-            <ol>
-                <li>Use Windows Storage settings and Disk Cleanup first.</li>
-                <li>Run this read-only cache review.</li>
-                <li>Export review candidates if any are found.</li>
-                <li>Review the ProductCode, PatchCode, target ProductCodes, applicability, confidence, and incomplete checks.</li>
-                <li>Keep a backup outside <code>C:\\Windows\\Installer</code> before any manual removal.</li>
-                <li>Confirm Windows Update, app updates, repair, modify, and uninstall operations still work.</li>
-            </ol>
-            <p class="notice">Do not delete files from <code>C:\\Windows\\Installer</code> based only on size, date, or filename.</p>
-        </section>
-    </section>
+    {installer_layout}
 
     {security_layout}
 
-    <section id="tab-history" class="tab-panel hidden">
-        <section class="section">
-            <h2>Scan History</h2>
-            <div class="actions"><button id="refreshHistory">Refresh history</button></div>
-            <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Date</th><th>Status</th><th>Root</th><th>Total</th><th>Files</th><th>Skipped</th><th>Action</th></tr></thead><tbody id="historyRows"></tbody></table></div>
-        </section>
-    </section>
+    {history_layout}
 
-    <section id="tab-manual" class="tab-panel hidden">
-        {process_guide}
-        <section class="section">
-            <h2>User Manual</h2>
-            <p>This guide explains how to use the dashboard safely. It is local to this app and does not fetch external content.</p>
-            <div class="manual-grid">
-                <div class="manual-section full">
-                    <h3>Purpose Of This Tool</h3>
-                    <p>The dashboard is a reporting tool only. It scans selected folders or drives and shows which folders, file types, and individual files are using the most storage.</p>
-                    <p>It does not delete, move, rename, compress, kill, quarantine, upload, or modify files or processes. Cleanup decisions must be reviewed and performed manually by the user.</p>
-                </div>
-                <div class="manual-section">
-                    <h3>Recommended First Scan</h3>
-                    <p>For most users, start with <code>C:\\Users</code>. This is usually faster and safer than scanning the full drive.</p>
-                    <ul>
-                        <li><code>C:\\Users\\YourName\\Downloads</code></li>
-                        <li><code>C:\\Users\\YourName\\Desktop</code></li>
-                        <li><code>C:\\Users\\YourName\\Documents</code></li>
-                        <li><code>C:\\Users\\YourName\\Videos</code></li>
-                        <li><code>C:\\Users\\YourName\\Pictures</code></li>
-                    </ul>
-                </div>
-                <div class="manual-section">
-                    <h3>How To Use The Dashboard</h3>
-                    <ol>
-                        <li>Choose a drive or enter a folder path in the Scan tab.</li>
-                        <li>Read the safety notice and acknowledge it for full-drive or sensitive-folder scans.</li>
-                        <li>Start the scan and watch the Scan Status panel.</li>
-                        <li>Review Results: biggest folders, file types, biggest files, tree view, and skipped paths.</li>
-                        <li>Use Process Review for local process indicators, not final malware decisions.</li>
-                        <li>Open History to compare previous scans.</li>
-                        <li>Use Exit App when no scan is running to stop the local server.</li>
-                    </ol>
-                </div>
-                <div class="manual-section full">
-                    <h3>Scan Settings Explained</h3>
-                    <p>These settings control how much detail the dashboard collects and displays. Higher values can show more detail, but they can also make scans and browser rendering slower.</p>
-                    <ul>
-                        <li><strong>Top items:</strong> the maximum number of biggest folders, file types, and files shown in the results tables. Example: use <code>100</code> for a quick cleanup review, or <code>300</code> when investigating a large project folder.</li>
-                        <li><strong>Tree depth:</strong> how many folder levels the Large Folder Tree expands. Example: <code>3</code> shows a simple overview like Users, Downloads, and Videos; <code>8</code> is useful for deep project folders.</li>
-                        <li><strong>Children per folder:</strong> the maximum number of subfolders shown under each folder in the tree. Example: <code>30</code> keeps the tree compact; <code>100</code> helps when a folder contains many important subfolders.</li>
-                        <li><strong>Min tree size MB:</strong> hides folders smaller than this size from the tree. Example: <code>100</code> focuses on large storage users, <code>500</code> makes full-drive scans easier to read, and <code>0</code> shows very small folders too.</li>
-                    </ul>
-                </div>
-                <div class="manual-section full">
-                    <h3>Scan Setting Examples And Use Cases</h3>
-                    <ul>
-                        <li><strong>Quick personal cleanup:</strong> scan <code>C:\\Users</code> with top items <code>100</code>, tree depth <code>3</code>, children per folder <code>30</code>, and min tree size <code>100 MB</code>.</li>
-                        <li><strong>Full C drive review:</strong> keep the default settings or raise min tree size to <code>500 MB</code> so Windows, app, and user folders are easier to compare. Leave reparse points unchecked unless you have a technical reason.</li>
-                        <li><strong>Deep project investigation:</strong> scan the specific project folder, then use top items <code>300</code>, tree depth <code>8</code>, children per folder <code>100</code>, and min tree size <code>0</code> or <code>25 MB</code>.</li>
-                        <li><strong>After cleanup:</strong> rerun the same folder scan with the same settings so the new history record can be compared with the previous result.</li>
-                    </ul>
-                </div>
-                <div class="manual-section full">
-                    <h3>Reparse Points, Junctions, And Symlinks</h3>
-                    <p>Windows can create folder entries that point somewhere else instead of storing files directly inside that folder. These are commonly called reparse points, junctions, or symlinks.</p>
-                    <ul>
-                        <li><strong>Reparse point:</strong> the general Windows feature for special filesystem links and redirects.</li>
-                        <li><strong>Junction:</strong> a Windows directory link that redirects one folder path to another folder path. Example: a compatibility folder may point from one system location to another.</li>
-                        <li><strong>Symlink:</strong> a symbolic link created by a user, app, developer tool, backup tool, or package manager. Example: a project folder may link to shared assets on <code>D:\\SharedAssets</code>.</li>
-                    </ul>
-                    <p>The dashboard skips these by default to avoid scanning the same files twice, following loops, or showing misleading totals. Include them only when a technical user intentionally wants to follow linked folders and understands that totals may include redirected data.</p>
-                </div>
-                <div class="manual-section">
-                    <h3>Common Use Cases</h3>
-                    <ul>
-                        <li>Find large files in Downloads, Desktop, Videos, Pictures, and Documents.</li>
-                        <li>Review old installers, ZIP files, archives, exports, videos, and backups.</li>
-                        <li>Check large Unity, Blender, Unreal, programming, AI, or creative project folders.</li>
-                        <li>Understand skipped or access-denied paths before rerunning as Administrator.</li>
-                        <li>Review unfamiliar processes with local indicators and technical details.</li>
-                        <li>Run another scan after cleanup to confirm reclaimed space.</li>
-                    </ul>
-                </div>
-                <div class="manual-section">
-                    <h3>What To Review First</h3>
-                    <ul>
-                        <li><strong>Downloads:</strong> old installers, duplicate ZIP files, downloaded videos, Unity packages, Blender files, and backup archives.</li>
-                        <li><strong>Desktop:</strong> temporary screenshots, copied project folders, exported builds, and old archives.</li>
-                        <li><strong>Videos:</strong> OBS recordings, gameplay captures, raw footage, and test exports.</li>
-                        <li><strong>Pictures:</strong> duplicate screenshots, old references, PNG exports, PSD files, and AI-generated images.</li>
-                        <li><strong>Project folders:</strong> generated build folders, caches, dependency folders, and old exports.</li>
-                    </ul>
-                </div>
-                <div class="manual-section">
-                    <h3>Important Do Rules</h3>
-                    <ul>
-                        <li>Do scan <code>C:\\Users</code> or your own user folder first for a practical cleanup review.</li>
-                        <li>Do open large folders manually before deleting anything.</li>
-                        <li>Do use official cleanup tools first: Storage Sense, Disk Cleanup, app uninstallers, launcher cleanup tools, browser settings, and package manager cleanup commands.</li>
-                        <li>Do run as Administrator only when you need a more complete full-drive scan.</li>
-                        <li>Do keep reports private because they may include usernames, project names, client names, source code paths, and personal filenames.</li>
-                        <li>Do close heavy apps such as Unity, Blender, Unreal, Visual Studio, game launchers, video editors, AI scripts, and backup tools when practical.</li>
-                    </ul>
-                </div>
-                <div class="manual-section">
-                    <h3>Important Don't Rules</h3>
-                    <ul>
-                        <li>Don't delete system files just because they are large.</li>
-                        <li>Don't manually delete files inside <code>C:\\Windows</code>, especially <code>System32</code>, <code>WinSxS</code>, <code>Installer</code>, or <code>SoftwareDistribution</code>.</li>
-                        <li>Don't manually delete folders inside <code>Program Files</code> or <code>Program Files (x86)</code>; use uninstallers instead.</li>
-                        <li>Don't randomly delete <code>AppData</code>; it can contain browser profiles, game saves, app settings, local databases, sessions, and caches.</li>
-                        <li>Don't randomly delete Unity <code>Assets</code>, <code>ProjectSettings</code>, or <code>Packages</code>.</li>
-                        <li>Don't assume unknown folders or processes are harmful. NVIDIA, Microsoft, Unity, Visual Studio, package manager, and launcher folders can look unfamiliar but be legitimate.</li>
-                        <li>Don't share reports publicly without redacting private paths.</li>
-                    </ul>
-                </div>
-                <div class="manual-section">
-                    <h3>Good Cleanup Candidates</h3>
-                    <ul>
-                        <li>Old installers in Downloads after the app is already installed.</li>
-                        <li>Duplicate ZIP, RAR, and 7Z files.</li>
-                        <li>Old exported videos, game recordings, and render tests.</li>
-                        <li>Temporary screenshots and failed downloads.</li>
-                        <li>Old build folders and old exported Unity builds.</li>
-                        <li>Old compressed backups after confirming another backup exists.</li>
-                    </ul>
-                </div>
-                <div class="manual-section">
-                    <h3>Folders That Need Extra Care</h3>
-                    <ul>
-                        <li><code>C:\\Windows</code></li>
-                        <li><code>C:\\Program Files</code> and <code>C:\\Program Files (x86)</code></li>
-                        <li><code>C:\\ProgramData</code></li>
-                        <li><code>C:\\Users\\YourName\\AppData</code></li>
-                        <li><code>C:\\Recovery</code> and <code>C:\\System Volume Information</code></li>
-                        <li>Source code repositories, client project folders, database folders, AI datasets, and active game projects.</li>
-                    </ul>
-                </div>
-                <div class="manual-section full">
-                    <h3>Recommended Cleanup Workflow</h3>
-                    <ol>
-                        <li>Scan <code>C:\\Users</code> first.</li>
-                        <li>Review the biggest folders manually and ask: Do I still need this? Is it active? Is it a backup? Can it be recreated? Is there an official cleanup method?</li>
-                        <li>Review file types such as <code>.mp4</code>, <code>.zip</code>, <code>.unitypackage</code>, <code>.blend</code>, and <code>.log</code> to understand storage patterns.</li>
-                        <li>Review biggest files one by one. Do not delete a large file unless you know what it is.</li>
-                        <li>Use safe cleanup methods first: Storage Sense, Disk Cleanup, uninstall unused apps, clear browser cache, clear launcher/editor cache, or move personal files to another drive.</li>
-                        <li>Run the scan again after cleanup to confirm the result.</li>
-                    </ol>
-                </div>
-                <div class="manual-section">
-                    <h3>Unity Project Notes</h3>
-                    <p>Common large folders include <code>Library</code>, <code>Temp</code>, <code>Obj</code>, <code>Logs</code>, <code>Build</code>, <code>Builds</code>, and <code>UserSettings</code>.</p>
-                    <p>Do not casually delete <code>Assets</code>, <code>ProjectSettings</code>, or <code>Packages</code>. <code>Library</code> can often be regenerated, but close Unity first and understand that the next open may be slower.</p>
-                </div>
-                <div class="manual-section">
-                    <h3>Blender And 3D Notes</h3>
-                    <p>Large files may include <code>.blend</code>, <code>.fbx</code>, <code>.obj</code>, <code>.glb</code>, <code>.gltf</code>, <code>.png</code>, <code>.tga</code>, <code>.exr</code>, <code>.psd</code>, <code>.wav</code>, and <code>.mp4</code>.</p>
-                    <p>Remove duplicate exports, old render tests, and archived versions only after confirming models, textures, and references are no longer needed.</p>
-                </div>
-                <div class="manual-section">
-                    <h3>Developer Folder Notes</h3>
-                    <p>Generated folders can be large: <code>node_modules</code>, <code>.venv</code>, <code>venv</code>, <code>__pycache__</code>, <code>dist</code>, <code>build</code>, <code>.cache</code>, <code>.gradle</code>, <code>.nuget</code>, <code>obj</code>, and <code>bin</code>.</p>
-                    <p>Some can be regenerated, but do not delete source folders such as <code>src</code>, <code>Assets</code>, <code>Scripts</code>, <code>ProjectSettings</code>, <code>Packages</code>, or <code>.git</code> unless you know exactly what you are doing.</p>
-                </div>
-                <div class="manual-section">
-                    <h3>Process Review Caution</h3>
-                    <p>A process may look unfamiliar but still be legitimate. The dashboard shows local indicators such as path, publisher/signature data, memory use, and command line where available.</p>
-                    <p>These indicators are not a final malware or safety verdict.</p>
-                </div>
-                <div class="manual-section">
-                    <h3>Report Privacy Reminder</h3>
-                    <p>Reports may reveal usernames, private projects, client names, file names, downloaded content, personal folder structure, business documents, and source code paths.</p>
-                    <p>Before sharing, redact paths such as <code>C:\\Users\\YourName\\Documents\\ClientName_PrivateProject</code>.</p>
-                </div>
-                <div class="manual-section full">
-                    <h3>Final Safety Rule</h3>
-                    <p>A large file is not automatically a bad file. Before deleting anything, confirm what it is, which app or project uses it, whether it can be recreated, whether you have a backup, whether there is an official cleanup method, and whether deleting it could break Windows, an app, or a project.</p>
-                    <p>When unsure, do not delete it immediately. Back it up or move it to a temporary review folder first.</p>
-                </div>
-            </div>
-        </section>
-    </section>
+    {help_layout}
 
-    <section id="tab-about" class="tab-panel hidden">
-        <section class="section">
-            <h2>About And Safety</h2>
-            <p>This app runs locally on 127.0.0.1. It does not upload scan or process data.</p>
-            <p>Process review uses local metadata and risk indicators. It cannot prove that a program is safe or harmful.</p>
-            <pre id="versionInfo"></pre>
-        </section>
-    </section>
+    {about_layout}
 </main>
 </div>
 <script>
@@ -7321,7 +7071,7 @@ function renderInstallerFiles() {{
     }});
 
     $('installerVisibleCount').textContent = `${{visible.length}} of ${{files.length}} files shown`;
-    $('installerCacheRows').innerHTML = visible.map(file => `
+    $('installerCacheRows').innerHTML = RemainingWorkspace.pageInstallerFiles(visible).map(file => `
         <tr>
             <td><strong>${{esc(file.name)}}</strong><br><span class="muted">${{esc(file.package_type || file.extension || 'Installer package')}}</span><br><code>${{esc(file.path)}}</code></td>
             <td data-sort="${{esc(file.size_bytes || 0)}}">${{esc(file.size || '0 B')}}</td>
@@ -7339,21 +7089,9 @@ function renderInstallerCache(data) {{
     state.installerCache = data || null;
     const summary = data?.summary || {{}};
     $('installerCacheStatus').innerHTML = data
-        ? `<strong>${{esc(summary.status || 'Review complete')}}</strong><br><span class="muted">Coverage: ${{esc(data.coverage?.status || 'Unavailable')}} | Cache path: <code>${{esc(data.cache_path || 'Unavailable')}}</code> | Collected: ${{esc(data.collected_at || 'Unavailable')}}</span>`
+        ? `<strong>${{esc(summary.status || 'Not recorded')}}</strong><br><span class="muted">Coverage: ${{esc(data.coverage?.status || 'Unavailable')}} | Cache path: <code>${{esc(data.cache_path || 'Unavailable')}}</code> | Collected: ${{esc(data.collected_at || 'Unavailable')}}</span>`
         : 'Installer cache has not been scanned yet.';
-    $('installerCacheSummary').innerHTML = [
-        metric('Status', summary.status || 'Not Run'),
-        metric('MSI/MSP Files', summary.cache_files || 0),
-        metric('Direct References', summary.registered_files || 0),
-        metric('Installed MSI Matches', summary.installed_product_matches || 0),
-        metric('Registered MSP Matches', summary.registered_patch_matches || 0),
-        metric('Installed MSP Targets', summary.installed_target_matches || 0),
-        metric('Backup Review Candidates', summary.backup_review_candidates || 0),
-        metric('Probable Orphans', summary.probable_orphans || 0),
-        metric('Unknown', summary.unknown_files || 0),
-        metric('Review Size', summary.orphan_candidate_size || '0 B'),
-        metric('Missing Registered', summary.missing_registered_files || 0)
-    ].join('');
+    RemainingWorkspace.renderInstallerSummary(data);
 
     const registryCoverage = data?.coverage?.registry || {{}};
     const contextRows = asArray(data?.coverage?.installer_contexts).map(item =>
@@ -7364,14 +7102,7 @@ function renderInstallerCache(data) {{
     const files = asArray(data?.files);
     renderInstallerFiles();
 
-    const missing = asArray(data?.missing_registered_files);
-    $('installerMissingRows').innerHTML = missing.map(item => `
-        <tr>
-            <td><code>${{esc(item.path || 'Unavailable')}}</code></td>
-            <td>${{esc(installerJoined(item.products))}}<br><span class="muted">${{esc(installerJoined(item.publishers))}}</span></td>
-            <td>${{esc(item.recommendation || 'Restore from original media or vendor repair if an installer asks for this cache file.')}}</td>
-        </tr>
-    `).join('') || '<tr><td colspan="3">No missing registered cache files were reported.</td></tr>';
+    RemainingWorkspace.renderInstallerMissing(data?.missing_registered_files, {{coverage:data?.coverage?.status}});
 
     $('exportInstallerCandidates').disabled = !files.some(file => file.needs_review);
     $('exportInstallerBackupManifest').disabled = !installerManifestReady();
@@ -7384,6 +7115,7 @@ function renderInstallerCache(data) {{
 
 async function refreshInstallerCache() {{
     state.installerCache = null;
+    renderInstallerCache(null);
     $('refreshInstallerCache').disabled = true;
     $('exportInstallerCandidates').disabled = true;
     $('exportInstallerBackupManifest').disabled = true;
@@ -7955,7 +7687,11 @@ function updateSelectOptions(selectId, values, allLabel) {{
     if (!select) return;
     const current = select.value || allLabel;
     const options = [allLabel, ...Array.from(new Set(values.filter(Boolean))).sort()];
-    select.innerHTML = options.map(value => `<option>${{esc(value)}}</option>`).join('');
+    const key = JSON.stringify(options);
+    if (select.dataset.optionsKey !== key) {{
+        select.innerHTML = options.map(value => `<option>${{esc(value)}}</option>`).join('');
+        select.dataset.optionsKey = key;
+    }}
     select.value = options.includes(current) ? current : allLabel;
 }}
 
@@ -8615,7 +8351,7 @@ function renderResult(record) {{
 async function loadInitial() {{
     try {{
         const info = await api('/api/state');
-        $('versionInfo').textContent = JSON.stringify(info.version, null, 2);
+        RemainingWorkspace.renderAbout(info.version);
         $('driveSelect').innerHTML = info.drives.map(d => `<option value="${{esc(d.path)}}">${{esc(d.label)}}</option>`).join('');
         state.securityBaselines = info.security_baselines || [];
         state.securityAllowlist = info.security_allowlist || null;
@@ -8747,11 +8483,10 @@ function filterTable(inputId, tbodyId) {{
 }}
 
 async function refreshHistory(showNotice = true) {{
+    RemainingWorkspace.setHistoryLoading(true);
     try {{
         const data = await api('/api/history');
-        $('historyRows').innerHTML = data.records.map(row =>
-            `<tr><td>${{esc(row.started_at)}}</td><td>${{esc(row.status)}}</td><td><code>${{esc(row.root)}}</code></td><td>${{esc(row.total_size)}}</td><td>${{esc(row.files_scanned)}}</td><td>${{esc(row.skipped_count)}}</td><td><button data-scan="${{esc(row.scan_id)}}">Open</button></td></tr>`
-        ).join('') || '<tr><td colspan="7">No scan history yet.</td></tr>';
+        RemainingWorkspace.renderHistory(data.records);
         Studio.updateHistory(data.records);
         if (showNotice) {{
             showActionAlert('success', 'Scan History Refreshed', 'The scan history table has been updated.', [
@@ -8760,6 +8495,7 @@ async function refreshHistory(showNotice = true) {{
             ]);
         }}
     }} catch (error) {{
+        RemainingWorkspace.setHistoryError(error);
         showActionAlert('error', 'History Load Failed', error.message, ['Try refreshing history again.']);
     }}
 }}
@@ -9199,6 +8935,7 @@ async function exitApp() {{
 {studio_script}
 {process_script}
 {workspace_script}
+{remaining_script}
 Studio.init();
 ProcessWorkspace.init({{doc:document,win:window,readState:()=>state,api,visibleProcesses:getVisibleProcesses,
     groupProcesses,publisherLabel,needsReview,reviewReasons:reviewReasonsForProcess,formatBytes,
@@ -9207,8 +8944,9 @@ ProcessWorkspace.render();
 Workspace.init({{doc:document,win:window,readState:()=>state,coverage:securityCoverageView,
     filteredFindings:filteredSecurityFindings,renderFindingContent:renderSecurityFindingContent,
     timeline:buildSecurityTimelineRows}});
+RemainingWorkspace.init({{doc:document,win:window,page:Workspace.page,renderInstallerFiles}});
 document.addEventListener('click',event=>{{
-    if(event.target.closest('[data-open-process-help]')){{showTab('manual');$('processVerificationHelp').open=true;$('processVerificationHelp').querySelector('summary').focus();}}
+    if(event.target.closest('[data-open-process-help]')){{showTab('manual');RemainingWorkspace.openProcessHelp();}}
     if(event.target.closest('[data-open-processes]')){{showTab('processes');$('processFilter').focus();}}
 }});
 document.querySelectorAll('.tab').forEach(btn => btn.addEventListener('click', () => showTab(btn.dataset.tab)));
@@ -9306,7 +9044,7 @@ $('biggestFiles').addEventListener('click', event => {{
     if (button) copyDirectoryFromButton(button);
 }});
 $('historyRows').addEventListener('click', event => {{
-    const scanId = event.target.dataset.scan;
+    const scanId = event.target.closest('[data-scan]')?.dataset.scan;
     if (scanId) openHistory(scanId);
 }});
 $('processRows').addEventListener('click', event => {{

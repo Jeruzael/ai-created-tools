@@ -36,7 +36,7 @@ No merge, deployment, cleanup, deletion, process termination or Windows changes.
   async selection guards, unavailable evidence, exports/help relocation; commit.
 - [x] C: Run/Findings/Coverage/Baselines/Allowlist/Timeline/Reports navigation,
   compact honest summary, paged evidence and finding drawer; commit.
-- [ ] D: focused Installer views, paged History, help categories/search and
+- [x] D: focused Installer views, paged History, help categories/search and
   expandable About metadata, preserving Phase 1; commit.
 - [ ] E: integrated regression and synthetic HTTP/control checks, backend AST
   comparison, fresh-context review/fixes, manual viewport acceptance record.
@@ -75,3 +75,12 @@ changes were attempted. Connected GitHub independently confirmed the base SHA.
   cancelled historical presentation are integrated. Raw records are unchanged.
   Native dialog behavior, browser layout and screen-reader operation remain
   NOT VERIFIED; a lightweight DOM port is not a visual/browser acceptance test.
+- D: 28 new asset/DOM-port tests passed, preserving 98 original prose blocks.
+  Added one polling-options regression and strengthened failed-rescan coverage
+  to require clearing the old Installer display. Strict integration gate:
+  348 passed, zero failures/errors/skips, including three early E tests. Installer
+  classification/manifest logic and export data remain core-owned. History size
+  sorting uses the API's formatted magnitude, not unavailable raw-byte precision.
+- E review in progress: fresh reviewer reproduced PID-reuse signature attribution,
+  Security disclosure/focus replacement, and later manual failures being suppressed
+  by notification deduplication. These must be corrected before publication.

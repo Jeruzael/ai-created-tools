@@ -66,6 +66,17 @@ assert(elements.securitySummary.innerHTML.includes('Findings: 0'));
 assert(elements.securitySummary.innerHTML.includes('Baseline Changes: 3'));
 """)
 
+    def test_unchanged_polling_does_not_recreate_filter_options(self):
+        self.run_js(['updateSelectOptions'], """
+let writes=0;
+elements.filter={value:'Fixture category',dataset:{},set innerHTML(value){writes++;}};
+updateSelectOptions('filter',['Fixture category','Other'],'All categories');
+updateSelectOptions('filter',['Other','Fixture category'],'All categories');
+assert.equal(writes,1);assert.equal(elements.filter.value,'Fixture category');
+updateSelectOptions('filter',['New category'],'All categories');
+assert.equal(writes,2);assert.equal(elements.filter.value,'All categories');
+""")
+
     def complete_ledger(self):
         coverage = dashboard.new_security_coverage("standard")
         for entry in coverage["collectors"]:
