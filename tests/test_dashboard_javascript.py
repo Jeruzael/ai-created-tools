@@ -17,6 +17,7 @@ class ManifestJavascriptTests(unittest.TestCase):
             self.assertIsNotNone(match, name)
             functions.append(match.group())
         code = "const assert = require('node:assert/strict');\nconst asArray = value => Array.isArray(value) ? value : [];\n"
+        code += "const Studio={actionNotifier:()=> (...args)=>showActionAlert(...args)};\n"
         code += "\n".join(functions) + "\n(async () => {\n" + assertions + "\n})().catch(error => { console.error(error); process.exitCode = 1; });"
         result = subprocess.run(["node", "-"], input=code, text=True, capture_output=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

@@ -331,9 +331,23 @@ assert.match(el('helpResultsStatus').textContent,/0/);change('helpSearch','','in
 
     def test_contextual_process_help_clears_obscuring_filters_and_focuses_existing_summary(self):
         self.run_js("""
+const summary=el('processVerificationHelp').querySelector('summary'),original=summary.focus.bind(summary);let suppressed=false;
+summary.focus=options=>{suppressed=options?.preventScroll===true;original(options);};
 change('helpCategory','installer');change('helpSearch','package','input');RemainingWorkspace.openProcessHelp();
 assert.equal(el('helpCategory').value,'all');assert.equal(el('helpSearch').value,'');assert.equal(el('processVerificationHelp').hidden,false);
 assert.equal(el('processVerificationHelp').open,true);assert.equal(doc.activeElement,el('processVerificationHelp').querySelector('summary'));
+assert.equal(suppressed,false);
+""")
+
+    def test_literal_full_and_partial_windows_paths_match_all_three_tables(self):
+        self.run_js(r"""
+const path=String.raw`C:\Windows\Installer\Fixture.msp`,partial=String.raw`\Installer\Fixture`;
+source=[{name:'Fixture.msp',path}];
+for(const query of [path,partial]){change('installerFilesSearch',query,'input');assert.equal(bounded.length,1);}
+RemainingWorkspace.renderInstallerMissing([{path}]);
+for(const query of [path,partial]){change('installerMissingSearch',query,'input');assert.equal(missingRows().length,1);}
+RemainingWorkspace.renderHistory([{scan_id:'fixture',root:path}]);
+for(const query of [path,partial]){change('historySearch',query,'input');assert.equal(historyRows().length,1);}
 """)
 
     def test_about_human_versions_and_complete_technical_json_are_not_truncated(self):

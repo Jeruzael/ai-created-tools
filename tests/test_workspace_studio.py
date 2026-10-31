@@ -26,10 +26,11 @@ dialog.open=false;dialog.showModal=()=>{dialog.open=true;};dialog.close=()=>{dia
 let status={check_id:'fixture',status:'cancelled',findings:Array.from({length:63},(_,i)=>({finding_id:'f'+i,title:'Finding '+i,score:i,severity:'Info',category:'Fixture',review_reasons:['Review only']}))};
 const state={currentSecurityStatus:status,selectedSecurityFindingId:null};
 const ledger={recorded:false,status:'Not recorded',entries:[]};
-W.init({doc:f.doc,win:f.win,readState:()=>state,coverage:()=>ledger,
+const bridge={doc:f.doc,win:f.win,readState:()=>state,coverage:()=>ledger,
  filteredFindings:s=>(s?.findings||[]).filter(row=>!el('securityFindingFilter').value||row.title.includes(el('securityFindingFilter').value)),
  renderFindingContent:(s,id)=>{el('securityFindingDetail').textContent=s.findings.find(row=>row.finding_id===id).title;},
- timeline:s=>(s?.findings||[]).map((row,i)=>({time:i?'2026-10-31':'',type:'Evidence',item:row.title,summary:'Fixture evidence',severity:'Info',findingId:row.finding_id,sortTime:i,missingTime:i===0}))});
+ timeline:s=>(s?.findings||[]).map((row,i)=>({time:i?'2026-10-31':'',type:'Evidence',item:row.title,summary:'Fixture evidence',severity:'Info',findingId:row.finding_id,sortTime:i,missingTime:i===0}))};
+W.init(bridge);
 """+assertions)
 
     def test_seven_views_have_one_active_panel_and_keyboard_tabs(self):
@@ -81,6 +82,50 @@ assert.match(el('securityTimelineSummary').textContent,/1 missing times/);
 assert(el('securityTimelineRows').querySelector('[data-timeline-finding]'));
 el('securityTimelineSearch').value='Finding 0';el('securityTimelineSearch').dispatchEvent(f.event('input'));
 assert.match(el('securityTimelineRows').textContent,/Time unavailable/);
+""")
+
+    def test_unchanged_poll_keeps_expanded_coverage_and_timeline_nodes(self):
+        self.run_dom("""
+ledger.recorded=true;ledger.status='partial';ledger.entries=[{collector_id:'fixture',category:'Fixture',status:'partial',scope:'Current user',sources:[]}];
+W.renderCoverage(status);const source=el('securityCoverageEvidence').querySelector('details');source.open=true;source.querySelector('summary').focus();
+W.renderCoverage(JSON.parse(JSON.stringify(status)));
+assert(el('securityCoverageEvidence').querySelector('details')===source);assert(source.open);assert(f.doc.activeElement===source.querySelector('summary'));
+W.renderTimeline(status);const event=el('securityTimelineRows').querySelector('details');event.open=true;
+W.renderTimeline(JSON.parse(JSON.stringify(status)));assert(el('securityTimelineRows').querySelector('details')===event);assert(event.open);
+""")
+
+    def test_changed_coverage_keeps_disclosure_and_its_summary_focus(self):
+        self.run_dom("""
+ledger.recorded=true;ledger.status='partial';ledger.entries=[{collector_id:'fixture',category:'Fixture',status:'partial',scope:'Current user',sources:[]}];
+W.renderCoverage(status);const source=el('securityCoverageEvidence').querySelector('details');source.open=true;source.querySelector('summary').focus();
+ledger.entries[0].sources.push({source:'Fixture second source',status:'unavailable',reason_code:'fixture'});W.renderCoverage(status);
+const current=el('securityCoverageEvidence').querySelector('details');assert(current.open);assert.equal(f.doc.activeElement,current.querySelector('summary'));
+""")
+
+    def test_finding_close_restores_replaced_details_action(self):
+        self.run_dom("""
+W.renderFindings(status);W.selectSecurity('findings');
+const button=el('securityFindingsRows').querySelector('button[data-security-finding]'), id=button.dataset.securityFinding;button.focus();
+W.openFinding(status,id);W.renderFindings(status);el('closeFindingInspector').click();
+assert.equal(f.doc.activeElement.dataset.securityFinding,id);assert.equal(f.doc.activeElement.tagName,'BUTTON');assert(f.doc.activeElement.isConnected);
+""")
+
+    def test_timeline_drawer_returns_to_originating_event_not_first_finding_link(self):
+        self.run_dom("""
+W.renderFindings(status);const events=['File Created','File Modified'].map((type,i)=>({time:'2026-10-31',type,item:'Fixture file',summary:'Before',findingId:'f1',sortTime:i}));
+bridge.timeline=()=>events;W.selectSecurity('timeline');W.renderTimeline(status);
+el('securityTimelineRows').querySelectorAll('[data-timeline-finding]')[1].focus();W.openFinding(status,'f1');
+events[1].summary='Updated evidence';W.renderTimeline(status);W.closeFinding();
+assert(f.doc.activeElement.closest('tr').textContent.includes('File Modified'));
+assert.equal(el('security-tab-timeline').getAttribute('aria-selected'),'true');
+""")
+
+    def test_search_matches_literal_windows_paths_and_nested_values(self):
+        self.run_js(r"""
+const path=String.raw`C:\Windows\Installer\Fixture.msp`;
+const rows=[{path,evidence:{commands:[String.raw`Z:\Fixture\App.exe --safe-fixture`]}}];
+assert.equal(W.page(rows,{query:path}).total,1);
+assert.equal(W.page(rows,{query:String.raw`Z:\Fixture\App.exe`}).total,1);
 """)
 
     def test_terminal_steps_preserve_originals_without_waiting_or_invented_success(self):

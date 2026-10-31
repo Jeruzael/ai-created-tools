@@ -57,9 +57,10 @@ def fixture_record(scan_id="00000000000000000000000000000001", status="completed
 
 
 class PreviewApp(dashboard.DashboardApp):
-    def __init__(self):
+    def __init__(self, workspace_fixtures=False):
         super().__init__()
         self.preview_polls = 0
+        self.workspace_fixtures = workspace_fixtures
 
     def start_scan(self, data):
         if data.get("acknowledgeSafety") is not True:
@@ -107,6 +108,9 @@ class PreviewApp(dashboard.DashboardApp):
         raise ValueError("Synthetic preview: native Security Check collection is disabled. No Windows data is read.")
 
     def installer_cache_review(self):
+        if self.workspace_fixtures:
+            from studio_workspace_fixtures import installer_review
+            return installer_review()
         raise ValueError("Synthetic preview: native Installer Cache collection is disabled. No cache files are read.")
 
     def installer_backup_review_manifest(self, data):
@@ -114,7 +118,7 @@ class PreviewApp(dashboard.DashboardApp):
 
 
 @contextmanager
-def preview_environment(empty=False):
+def preview_environment(empty=False, workspace_fixtures=False):
     with tempfile.TemporaryDirectory(prefix="sidebar-studio-preview-") as temporary, ExitStack() as stack:
         root = Path(temporary)
         for name in ("APP_DIR", "RECORDS_DIR", "REPORTS_DIR", "SECURITY_RECORDS_DIR", "BASELINES_DIR"):
@@ -122,10 +126,24 @@ def preview_environment(empty=False):
         stack.enter_context(mock.patch.object(dashboard, "ALLOWLIST_FILE", root / "allowlist.local.json"))
         stack.enter_context(mock.patch.object(dashboard, "VERSION_FILE", root / "dashboard_version.json"))
         stack.enter_context(mock.patch.object(dashboard, "get_available_drives", return_value=[{"path": FIXTURE_ROOT, "label": "StudioFixture (synthetic)"}]))
-        stack.enter_context(mock.patch.object(dashboard, "get_process_snapshot", return_value=[]))
-        stack.enter_context(mock.patch.object(dashboard, "get_process_detail", side_effect=ValueError("Synthetic preview has no native process details.")))
-        app = PreviewApp()
+        if workspace_fixtures:
+            from studio_workspace_fixtures import processes, security_record
+            snapshot = processes()
+            def detail(pid):
+                match = next((row for row in snapshot if row['pid'] == int(pid)), None)
+                if match is None:
+                    raise ValueError("Synthetic preview process is unavailable.")
+                return copy.deepcopy(match)
+            stack.enter_context(mock.patch.object(dashboard, "get_process_snapshot", side_effect=lambda: copy.deepcopy(snapshot)))
+            stack.enter_context(mock.patch.object(dashboard, "get_process_detail", side_effect=detail))
+        else:
+            stack.enter_context(mock.patch.object(dashboard, "get_process_snapshot", return_value=[]))
+            stack.enter_context(mock.patch.object(dashboard, "get_process_detail", side_effect=ValueError("Synthetic preview has no native process details.")))
+        app = PreviewApp(workspace_fixtures)
         stack.enter_context(mock.patch.object(dashboard, "APP_STATE", app))
+        if workspace_fixtures and not empty:
+            record = security_record()
+            dashboard.atomic_write_json(dashboard.security_check_record_path(record['check_id']), record)
         if not empty:
             for index in range(1, 5):
                 record = fixture_record(f"{index:032x}", "cancelled" if index == 3 else "completed")
@@ -152,8 +170,8 @@ def smoke():
         code, result = client.call("/api/scans/cancel", {})
         assert code == 200 and result["status"] == "cancelled"
         assert client.call("/api/security-checks", {"acknowledgeSafety": True})[0] == 400
-        assert client.call("/api/installer-cache")[0] == 400
-        assert client.call("/api/processes")[1]["processes"] == []
+        assert client.call("/api/installer-cache")[0] == (200 if dashboard.APP_STATE.workspace_fixtures else 400)
+        assert len(client.call("/api/processes")[1]["processes"]) == (501 if dashboard.APP_STATE.workspace_fixtures else 0)
         assert client.call("/api/shutdown", {})[0] == 200
         print(json.dumps({"synthetic_http_smoke": "PASS", "checks": 9, "native_collection": False}))
     finally:
@@ -167,8 +185,9 @@ def main():
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--empty", action="store_true")
     parser.add_argument("--smoke", action="store_true")
+    parser.add_argument("--workspace-fixtures", action="store_true", help="Add invented Processes, Security and Installer evidence; native collection remains disabled")
     args = parser.parse_args()
-    with preview_environment(args.empty):
+    with preview_environment(args.empty, args.workspace_fixtures):
         if args.smoke:
             smoke()
         else:

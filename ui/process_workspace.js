@@ -40,7 +40,27 @@ const ProcessWorkspace = (() => {
     const name = p => p.friendly_name || p.name || 'Unknown process';
     const reasons = p => array(bridge.reviewReasons(p));
     const signature = p => p.signature && typeof p.signature === 'object' ? p.signature : {};
-    const knownSignature = p => signature(cache.get(String(p.pid)) || p).status || 'Unavailable';
+    const identityUnavailable = 'Process-instance identity unavailable. Refresh the process snapshot and reopen details.';
+    const knownSignature = p => signature(cachedDetail(p) || p).status || 'Unavailable';
+
+    function processIdentity(expected, actual) {
+        if (!expected || !actual || String(expected.pid) !== String(actual.pid)) return 'mismatch';
+        let matched = false;
+        for (const key of ['started_at', 'executable_path', 'name']) {
+            if (!present(expected[key]) || !present(actual[key])) continue;
+            const normalize = value => key === 'started_at' ? String(value) : String(value).replace(/\//g, '\\').toLowerCase();
+            if (normalize(expected[key]) !== normalize(actual[key])) return 'mismatch';
+            if (key !== 'name') matched = true;
+        }
+        // Names can expose a contradiction, but cannot identify a process instance alone.
+        return matched ? 'matched' : 'unknown';
+    }
+
+    function cachedDetail(p) {
+        if (!p) return null;
+        const cached = cache.get(String(p.pid));
+        return processIdentity(p, cached) === 'matched' ? cached : null;
+    }
 
     function bind(element, type, handler) {
         element.addEventListener(type, handler);
@@ -201,13 +221,14 @@ const ProcessWorkspace = (() => {
     }
 
     function updateSelection() {
+        const processes = new Map(snapshot().map(p => [String(p.pid), p]));
         $('processRows').querySelectorAll('tr[data-pid]').forEach(row => {
             const selected = isOpen() && row.dataset.pid === selectedPid;
             row.classList.toggle('selected', selected);
             if (selected) row.setAttribute('aria-current', 'true'); else row.removeAttribute('aria-current');
             row.querySelector('button').setAttribute('aria-expanded', String(selected));
-            const p = cache.get(row.dataset.pid);
-            if (p) row.querySelector('[data-process-signature]').textContent = knownSignature(p);
+            const p = processes.get(row.dataset.pid);
+            row.querySelector('[data-process-signature]').textContent = p ? knownSignature(p) : 'Unavailable';
         });
     }
 
@@ -303,15 +324,28 @@ const ProcessWorkspace = (() => {
     }
 
     function detailsRequest(pid) {
-        if (cache.has(pid)) return Promise.resolve(cache.get(pid));
+        const expected = snapshot().find(p => String(p.pid) === pid);
+        const cached = cachedDetail(expected);
+        if (cached) return Promise.resolve({process: cached, message: ''});
         if (pending.has(pid)) return pending.get(pid);
         const version = revision;
+        const identity = expected && {...expected};
         const request = (async () => {
             const response = await bridge.api('/api/processes/' + encodeURIComponent(pid));
             const p = response?.process;
             if (!p || typeof p !== 'object' || String(p.pid) !== pid) throw Error('No matching process evidence was returned.');
+            const match = processIdentity(identity, p);
+            if (match === 'mismatch') throw Error('Returned evidence does not match the snapshot process instance. The PID may have been reused.');
+            if (match === 'unknown') {
+                const sig = signature(p);
+                if (!present(identity.name) || !present(p.name) || p.executable_path || p.sha256 ||
+                    (sig.status && sig.status !== 'Unavailable')) throw Error(identityUnavailable);
+                // Preserve protected-path availability errors, not unconfirmed process/file evidence.
+                return {process: {...identity, executable_path: '', command_line: null, sha256: null,
+                    signature: {status: 'Unavailable', error: sig.error}, hash_error: p.hash_error}, message: identityUnavailable};
+            }
             if (version === revision) cache.set(pid, p);
-            return p;
+            return {process: p, message: ''};
         })();
         pending.set(pid, request);
         const cleanup = () => { if (pending.get(pid) === request) pending.delete(pid); };
@@ -330,9 +364,10 @@ const ProcessWorkspace = (() => {
         if (changed || !wasOpen) { activeTab = 'overview'; expanded = false; $('processDetail').scrollTop = 0; }
         $('processDrawer').hidden = false; $('processDrawerBackdrop').hidden = false;
         isolateBackground(); updateSelection();
-        if (cache.has(pid)) {
-            if (changed || !wasOpen || detail !== cache.get(pid)) {
-                detail = cache.get(pid); detailMessage = ''; detailLoading = false; renderDetail();
+        const cached = cachedDetail(snapshot().find(p => String(p.pid) === pid));
+        if (cached) {
+            if (changed || !wasOpen || detail !== cached) {
+                detail = cached; detailMessage = ''; detailLoading = false; renderDetail();
             }
             if (!wasOpen) focus($('processDrawerClose'));
             return;
@@ -340,13 +375,13 @@ const ProcessWorkspace = (() => {
         detail = null; detailMessage = 'Loading local process details...'; detailLoading = true; renderDetail();
         if (!wasOpen) focus($('processDrawerClose'));
         try {
-            const p = await detailsRequest(pid);
+            const result = await detailsRequest(pid);
             if (token !== requestToken || !isOpen() || selectedPid !== pid) return;
-            detail = p; detailLoading = false; detailMessage = ''; renderDetail(); updateSelection();
+            detail = result.process; detailLoading = false; detailMessage = result.message; renderDetail(); updateSelection();
         } catch (error) {
             if (token !== requestToken || !isOpen() || selectedPid !== pid) return;
             detail = null; detailLoading = false;
-            detailMessage = `Process details unavailable: ${error?.message || 'No detail evidence returned.'} The process may have terminated or access may be restricted.`;
+            detailMessage = `Process details unavailable: ${error?.message || 'No detail evidence returned.'} The process may have terminated or access may be restricted. Refresh the process snapshot and reopen details.`;
             renderDetail();
         }
     }

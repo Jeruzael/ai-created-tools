@@ -363,6 +363,13 @@ const Studio = (() => {
             entries:ui.notifications.map(({id,type,title,read})=>({id,type,title,read}))};
     }
 
+    let actionSequence=0;
+    function actionNotifier() {
+        const attempt=++actionSequence;
+        return (type,title,message,details=[],options={})=>notify(type,title,message,details,
+            {...options,eventId:typeof options.eventId==='string'?options.eventId:`action:${attempt}:${title}`});
+    }
+
     function notify(type, title, message, details = [], options = {}) {
         if (!ui) return;
         const item = addNotification([],{type,title,message,details})[0];
@@ -468,6 +475,6 @@ const Studio = (() => {
 
     return {validatePreferences,readPreferences,savePreferences,pageRows,healthModel,overviewModel,completionNotice,addNotification,treeIdentity,
         init,navigate,toggleCollapse,setDrawer,selectResultView,renderOverview,renderRecord,recordError,renderHealth,renderTable,
-        renderTree,updateHistory,updateOperation,notify,pathHtml,notificationState,markNotificationsRead,clearRoutineNotifications,dismissNotification};
+        renderTree,updateHistory,updateOperation,notify,actionNotifier,pathHtml,notificationState,markNotificationsRead,clearRoutineNotifications,dismissNotification};
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = Studio;

@@ -225,7 +225,7 @@ const RemainingWorkspace = (() => {
         $('helpSearch').value = ''; $('helpCategory').value = 'all'; filterHelp();
         const topic = $('processVerificationHelp');
         if (!topic || !$('helpTopics').contains(topic)) return false;
-        topic.open = true; topic.querySelector('summary').focus({preventScroll: true}); return true;
+        topic.open = true; topic.querySelector('summary').focus(); return true;
     }
 
     function renderAbout(version) {

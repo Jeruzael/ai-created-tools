@@ -286,6 +286,168 @@ assert.match(el('processDetailStatus').textContent,/unavailable/i);assert.doesNo
 apiImpl=async()=>({});await ProcessWorkspace.open(1);assert.match(el('processDetailStatus').textContent,/unavailable/i);
 """)
 
+    def test_reused_pid_with_changed_start_time_and_same_path_is_not_displayed_or_cached(self):
+        self.run_js("""
+snapshot=[sample(1,100,{started_at:'2026-01-01T00:00:00Z'})];ProcessWorkspace.render();
+apiImpl=async()=>({process:sample(1,200,{started_at:'2026-01-01T00:01:00Z',friendly_name:'Replacement',
+    signature:{status:'Valid',publisher:'Replacement signer'},sha256:'replacement-hash',command_line:'replacement-command'})});
+await ProcessWorkspace.open(1);
+assert.equal(el('processDrawerTitle').textContent,'App 1');
+assert.match(el('processDetailStatus').textContent,/unavailable/i);assert.match(el('processDetailStatus').textContent,/refresh/i);
+assert.doesNotMatch(el('processDetail').textContent,/Replacement|replacement-hash|replacement-command/);
+for(const key of ['path','hash','command'])assert.equal(doc.querySelector('[data-process-copy="'+key+'"]').disabled,true);
+ProcessWorkspace.close();await ProcessWorkspace.open(1);assert.equal(calls.length,2,'A mismatched response must not be cached');
+""")
+
+    def test_reused_pid_with_changed_path_is_rejected_even_without_or_with_matching_start_time(self):
+        for started_at in (None, "2026-01-01T00:00:00Z"):
+            with self.subTest(started_at=started_at):
+                self.run_js("const startedAt=" + json.dumps(started_at) + ";" + r"""
+snapshot=[sample(1,100,{started_at:startedAt})];ProcessWorkspace.render();
+apiImpl=async()=>({process:sample(1,200,{started_at:startedAt,executable_path:'C:\\Other\\app1.exe',
+    friendly_name:'Replacement',signature:{status:'Valid',publisher:'Replacement signer'},sha256:'replacement-hash'})});
+await ProcessWorkspace.open(1);
+assert.equal(el('processDrawerTitle').textContent,'App 1');
+assert.match(el('processDetailStatus').textContent,/unavailable/i);assert.match(el('processDetailStatus').textContent,/refresh/i);
+assert.doesNotMatch(el('processDetail').textContent,/Replacement|replacement-hash|Other/);
+ProcessWorkspace.close();await ProcessWorkspace.open(1);assert.equal(calls.length,2);
+""")
+
+    def test_reused_pid_signature_never_enriches_or_sorts_the_original_snapshot_row(self):
+        for changed in ("start", "path"):
+            with self.subTest(changed=changed):
+                self.run_js("const changed=" + json.dumps(changed) + ";" + r"""
+snapshot=[sample(1,100,{started_at:'old',signature:{status:'Z snapshot'}}),
+    sample(2,100,{signature:{status:'M snapshot'}})];ProcessWorkspace.render();
+apiImpl=async()=>({process:sample(1,200,{started_at:changed==='start'?'new':'old',
+    executable_path:changed==='path'?'C:\\Other\\app1.exe':snapshot[0].executable_path,
+    signature:{status:'A replacement'}})});
+await ProcessWorkspace.open(1);
+const rowSignature=()=>rows().find(row=>row.dataset.pid==='1').querySelector('[data-process-signature]').textContent;
+assert.equal(rowSignature(),'Z snapshot','Opening must not attribute a reused PID signature to the old row');
+ProcessWorkspace.render();assert.equal(rowSignature(),'Z snapshot','Rerendering must not use a mismatched cache entry');
+sort('signature');assert.deepEqual(pids(),[2,1],'Signature sort must use evidence belonging to each snapshot row');
+assert.equal(snapshot[0].signature.status,'Z snapshot');
+""")
+
+    def test_matching_instance_details_remain_cached_with_available_identity_fields(self):
+        cases = [
+            ({"started_at": "same"}, {"started_at": "same"}),
+            ({"started_at": "snapshot-only"}, {}),
+            ({}, {"started_at": "detail-only"}),
+            ({"started_at": "same", "executable_path": ""}, {"started_at": "same"}),
+            ({}, {"executable_path": "c:/programs/APP1.EXE", "name": "APP1.EXE"}),
+        ]
+        for snapshot_fields, detail_fields in cases:
+            with self.subTest(snapshot=snapshot_fields, detail=detail_fields):
+                self.run_js("const snapshotFields=" + json.dumps(snapshot_fields) +
+                            ";const detailFields=" + json.dumps(detail_fields) + ";" + """
+snapshot=[sample(1,100,snapshotFields)];ProcessWorkspace.render();
+apiImpl=async()=>({process:sample(1,200,{...detailFields,signature:{status:'Valid',publisher:'Legitimate signer'},sha256:'legitimate-hash'})});
+await ProcessWorkspace.open(1);assert.match(el('processDetailSignature').textContent,/Legitimate signer|legitimate-hash/);
+assert.equal(rows()[0].querySelector('[data-process-signature]').textContent,'Valid');
+ProcessWorkspace.close();ProcessWorkspace.render();await ProcessWorkspace.open(1);
+assert.equal(calls.length,1,'Compatible partial identity must not disable legitimate cache reuse');
+assert.equal(el('processDetailStatus').textContent,'');assert.equal(doc.querySelector('[data-process-copy="hash"]').disabled,false);
+""")
+
+    def test_name_only_identity_cannot_authorize_verified_details_or_row_enrichment(self):
+        self.run_js("""
+snapshot=[sample(1,100,{executable_path:'',started_at:null})];ProcessWorkspace.render();
+apiImpl=async()=>({process:sample(1,200,{executable_path:'',started_at:null,
+    signature:{status:'Valid',publisher:'Unconfirmed signer'},sha256:'unconfirmed-hash',command_line:'unconfirmed-command'})});
+await ProcessWorkspace.open(1);
+assert.match(el('processDetailStatus').textContent,/unavailable/i);assert.match(el('processDetailStatus').textContent,/refresh/i);
+assert.doesNotMatch(el('processDetail').textContent,/Unconfirmed signer|unconfirmed-hash|unconfirmed-command/);
+assert.equal(rows()[0].querySelector('[data-process-signature]').textContent,'Unavailable');
+ProcessWorkspace.close();await ProcessWorkspace.open(1);assert.equal(calls.length,2);
+""")
+
+    def test_pid_only_identity_cannot_authorize_details(self):
+        self.run_js("""
+snapshot=[sample(1,100,{name:null,executable_path:null})];ProcessWorkspace.render();
+apiImpl=async()=>({process:sample(1,200,{name:null,executable_path:null,
+    signature:{status:'Valid',publisher:'Unconfirmed signer'},sha256:'unconfirmed-hash'})});
+await ProcessWorkspace.open(1);
+assert.match(el('processDetailStatus').textContent,/unavailable/i);assert.match(el('processDetailStatus').textContent,/refresh/i);
+assert.doesNotMatch(el('processDetailSignature').textContent,/Unconfirmed signer|unconfirmed-hash/);
+ProcessWorkspace.close();await ProcessWorkspace.open(1);assert.equal(calls.length,2);
+""")
+
+    def test_protected_missing_path_preserves_unavailable_errors_without_claiming_identity(self):
+        for snapshot_path in ("", "C:\\Programs\\app1.exe"):
+            with self.subTest(snapshot_path=snapshot_path):
+                self.run_js("const snapshotPath=" + json.dumps(snapshot_path) + ";" + """
+snapshot=[sample(1,100,{executable_path:snapshotPath})];ProcessWorkspace.render();
+apiImpl=async()=>({process:sample(1,null,{executable_path:'',parent_pid:0,command_line:'unconfirmed-command',
+    signature:{status:'Unavailable',error:'Protected path inaccessible'},hash_error:'Hash skipped'})});
+await ProcessWorkspace.open(1);
+assert.match(el('processDetailOverview').textContent,/Parent PID\\s*0/);
+assert.match(el('processDetailSignature').textContent,/Protected path inaccessible/);
+assert.match(el('processDetailSignature').textContent,/Hash skipped/);
+assert.match(el('processDetailStatus').textContent,/unavailable/i);assert.match(el('processDetailStatus').textContent,/refresh/i);
+assert.doesNotMatch(el('processDetailTechnical').textContent,/unconfirmed-command/);
+assert.equal(doc.querySelector('[data-process-copy="hash"]').disabled,true);
+ProcessWorkspace.close();await ProcessWorkspace.open(1);assert.equal(calls.length,2,'Unconfirmed identity must not be cached');
+""")
+
+    def test_conflicting_name_rejects_partial_detail_even_when_file_evidence_is_unavailable(self):
+        self.run_js("""
+snapshot=[sample(1,100,{executable_path:''})];ProcessWorkspace.render();
+apiImpl=async()=>({process:sample(1,null,{name:'replacement.exe',friendly_name:'Replacement',executable_path:'',
+    signature:{status:'Unavailable',error:'Replacement error'},hash_error:'Replacement hash error'})});
+await ProcessWorkspace.open(1);
+assert.equal(el('processDrawerTitle').textContent,'App 1');
+assert.match(el('processDetailStatus').textContent,/unavailable/i);assert.match(el('processDetailStatus').textContent,/refresh/i);
+assert.doesNotMatch(el('processDetail').textContent,/Replacement/);
+""")
+
+    def test_detail_without_a_snapshot_instance_is_unavailable_and_not_cached(self):
+        self.run_js("""
+snapshot=[];ProcessWorkspace.render();await ProcessWorkspace.open(1);
+assert.match(el('processDetailStatus').textContent,/unavailable/i);assert.match(el('processDetailStatus').textContent,/refresh/i);
+assert.doesNotMatch(el('processDetailSignature').textContent,/Example signer/);
+snapshot=[sample(1)];ProcessWorkspace.render();await ProcessWorkspace.open(1);
+assert.match(el('processDetailSignature').textContent,/Example signer/);
+assert.equal(calls.length,2);
+""")
+
+    def test_slow_reused_pid_detail_does_not_poison_rows_or_newer_selection(self):
+        self.run_js("""
+snapshot=[sample(1,100,{started_at:'old'}),sample(2)];ProcessWorkspace.render();
+const old=deferred();apiImpl=url=>url.endsWith('/1')?old.promise:Promise.resolve({process:sample(2,200,{signature:{status:'Valid',publisher:'Current signer'}})});
+const opening=ProcessWorkspace.open(1);await ProcessWorkspace.open(2);
+old.resolve({process:sample(1,200,{started_at:'new',signature:{status:'Replacement'}})});await opening;
+assert.equal(el('processDrawerTitle').textContent,'App 2');assert.match(el('processDetailSignature').textContent,/Current signer/);
+ProcessWorkspace.render();assert.equal(rows().find(row=>row.dataset.pid==='1').querySelector('[data-process-signature]').textContent,'Unavailable');
+await ProcessWorkspace.open(1);assert.equal(calls.length,3,'An old mismatched response must not populate cache in the background');
+""")
+
+    def test_refresh_after_pid_reuse_accepts_and_caches_the_new_snapshot_instance(self):
+        self.run_js("""
+snapshot=[sample(1,100,{started_at:'old'})];ProcessWorkspace.render();
+const replacement=sample(1,200,{started_at:'new',signature:{status:'Valid',publisher:'New instance signer'}});
+apiImpl=async()=>({process:replacement});await ProcessWorkspace.open(1);
+assert.doesNotMatch(el('processDetailSignature').textContent,/New instance signer/);
+snapshot=[{...replacement,signature:undefined}];await ProcessWorkspace.onSnapshot();
+assert.match(el('processDetailSignature').textContent,/New instance signer/);
+assert.equal(rows()[0].querySelector('[data-process-signature]').textContent,'Valid');
+ProcessWorkspace.close();await ProcessWorkspace.open(1);assert.equal(calls.length,2);
+""")
+
+    def test_old_reused_pid_response_cannot_replace_refreshed_instance_cache(self):
+        self.run_js("""
+snapshot=[sample(1,100,{started_at:'old'})];ProcessWorkspace.render();
+const old=deferred(),fresh=deferred();apiImpl=()=>calls.length===1?old.promise:fresh.promise;
+const opening=ProcessWorkspace.open(1);snapshot=[sample(1,200,{started_at:'new'})];
+const refreshing=ProcessWorkspace.onSnapshot();
+fresh.resolve({process:sample(1,200,{started_at:'new',signature:{status:'Valid',publisher:'Fresh signer'}})});await refreshing;
+old.resolve({process:sample(1,300,{started_at:'other',signature:{status:'Stale',publisher:'Stale signer'}})});await opening;
+assert.match(el('processDetailSignature').textContent,/Fresh signer/);assert.doesNotMatch(el('processDetailSignature').textContent,/Stale signer/);
+ProcessWorkspace.close();await ProcessWorkspace.open(1);assert.equal(calls.length,2);
+assert.equal(rows()[0].querySelector('[data-process-signature]').textContent,'Valid');
+""")
+
     def test_missing_evidence_is_explicit_parent_zero_is_preserved_and_signature_is_not_safety(self):
         self.run_js(r"""
 apiImpl=async()=>({process:sample(1,null,{publisher:'',executable_path:'',parent_pid:0,

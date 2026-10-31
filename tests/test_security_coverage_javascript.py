@@ -77,6 +77,14 @@ updateSelectOptions('filter',['New category'],'All categories');
 assert.equal(writes,2);assert.equal(elements.filter.value,'All categories');
 """)
 
+    def test_findings_search_matches_literal_evidence_path_and_preserves_signal_filter(self):
+        self.run_js(['findingSearchText','findingHasUserWritablePath','signalMatchesSecurityFinding','filteredSecurityFindings'], r"""
+const path=String.raw`C:\Users\Fixture\AppData\Local\Example.exe`;
+elements.securityFindingFilter={value:path};elements.securitySignalFilter={value:'userWritable'};
+const record={findings:[{finding_id:'fixture',title:'Fixture item',evidence:{path}}]};
+assert.equal(filteredSecurityFindings(record).length,1);
+""")
+
     def complete_ledger(self):
         coverage = dashboard.new_security_coverage("standard")
         for entry in coverage["collectors"]:

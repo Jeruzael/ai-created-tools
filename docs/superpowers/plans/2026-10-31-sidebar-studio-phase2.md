@@ -38,7 +38,7 @@ No merge, deployment, cleanup, deletion, process termination or Windows changes.
   compact honest summary, paged evidence and finding drawer; commit.
 - [x] D: focused Installer views, paged History, help categories/search and
   expandable About metadata, preserving Phase 1; commit.
-- [ ] E: integrated regression and synthetic HTTP/control checks, backend AST
+- [x] E: integrated regression and synthetic HTTP/control checks, backend AST
   comparison, fresh-context review/fixes, manual viewport acceptance record.
 - [ ] Publish all milestone commits on one branch and one unmerged PR to master;
   verify exact-head Windows CI and publish evidence. No deployment.
@@ -84,3 +84,15 @@ changes were attempted. Connected GitHub independently confirmed the base SHA.
 - E review in progress: fresh reviewer reproduced PID-reuse signature attribution,
   Security disclosure/focus replacement, and later manual failures being suppressed
   by notification deduplication. These must be corrected before publication.
+- E corrections: 12 process-instance regressions, six Security interaction/search
+  regressions, two notification-attempt regressions, one three-table Windows-path
+  regression, one isolated-preview test and four assembly/report tests added.
+  An existing Help test now rejects suppressed scrolling. Original review issues,
+  two D findings and the exact Timeline event return case were corrected. Final
+  strict gate: 371 passed, zero failures/errors/skips; baseline 258 retained,
+  113 new tests. Both nine-check synthetic HTTP configurations and five controlled
+  native checks passed. Fresh reviewer rechecked 170 focused tests, all passed,
+  and reported no remaining actionable findings in the reviewed scope.
+  AST comparison: only build_dashboard_html changed among 166 top-level runtime
+  functions/classes. Human browser/viewport/SR/Admin/Advanced/Authenticode-success
+  and real-cache hashing checks remain NOT VERIFIED. Manual procedure documented.

@@ -5,10 +5,29 @@ const Workspace = (()=>{
     const list=v=>Array.isArray(v)?v.filter(x=>x&&typeof x==='object'&&!Array.isArray(x)):[];
     const available=v=>v===undefined||v===null||v===''?'Unavailable':v;
     let ui;
+    const renderedMarkup=new WeakMap();
+
+    function replaceEvidence(target,html) {
+        if(renderedMarkup.get(target)===html)return;
+        const disclosures=Array.from(target.querySelectorAll('[data-workspace-evidence]'));
+        const expanded=new Map(disclosures.map(node=>[node.dataset.workspaceEvidence,node.open]));
+        const active=ui.doc.activeElement, focused=target.contains(active)?active.closest('[data-workspace-evidence]'):null;
+        target.innerHTML=html;renderedMarkup.set(target,html);
+        target.querySelectorAll('[data-workspace-evidence]').forEach(node=>{
+            if(expanded.has(node.dataset.workspaceEvidence))node.open=expanded.get(node.dataset.workspaceEvidence);
+            if(focused?.dataset.workspaceEvidence===node.dataset.workspaceEvidence)node.querySelector('summary').focus({preventScroll:true});
+        });
+    }
+
+    function searchText(value) {
+        if(value===null||value===undefined)return '';
+        if(typeof value==='object')return Object.values(value).map(searchText).join('\n');
+        return String(value);
+    }
 
     function page(items,options={}) {
         const query=String(options.query??'').trim().toLowerCase();
-        const rows=list(items).filter(row=>!query||JSON.stringify(row).toLowerCase().includes(query));
+        const rows=list(items).filter(row=>!query||searchText(row).toLowerCase().includes(query));
         const match=/^(.*)-(asc|desc)$/.exec(options.sort||'');
         if(match){const [,key,direction]=match;rows.sort((a,b)=>{
             const av=a[key],bv=b[key];
@@ -67,7 +86,7 @@ const Workspace = (()=>{
 
     function paginate(id,source,settings,render,columns) {
         const result=page(source,settings);settings.page=result.page;
-        ui.el(id).innerHTML=result.rows.map(render).join('')||`<tr><td colspan="${columns}">${settings.query?'No matching evidence.':'No evidence recorded for this view. Check run status and coverage.'}</td></tr>`;
+        replaceEvidence(ui.el(id),result.rows.map(render).join('')||`<tr><td colspan="${columns}">${settings.query?'No matching evidence.':'No evidence recorded for this view. Check run status and coverage.'}</td></tr>`);
         const target=ui.el(settings.pager);
         const first=result.total?(result.page-1)*result.pageSize+1:0;
         if(!target.querySelector('[data-workspace-size]'))target.innerHTML=`<span role="status"></span><label>Rows<select data-workspace-size="${settings.key}" aria-label="Rows per page">${[25,50,100].map(n=>`<option>${n}</option>`).join('')}</select></label><button class="icon-button" data-workspace-page="${settings.key}" data-delta="-1" aria-label="Previous page" title="Previous page"><svg class="icon" aria-hidden="true"><use href="#icon-chevron-left"></use></svg></button><button class="icon-button" data-workspace-page="${settings.key}" data-delta="1" aria-label="Next page" title="Next page"><svg class="icon" aria-hidden="true"><use href="#icon-chevron-right"></use></svg></button>`;
@@ -103,7 +122,10 @@ const Workspace = (()=>{
     function openFinding(status,id) {
         const finding=list(status?.findings).find(row=>row.finding_id===id);if(!finding)return;
         const drawer=ui.el('findingInspector');
-        if(!drawer.open)ui.findingOpener=ui.doc.activeElement;
+        if(!drawer.open){
+            ui.findingOpener=ui.doc.activeElement;
+            ui.findingOrigin={view:ui.securityView,id,button:ui.findingOpener?.tagName==='BUTTON',eventKey:ui.findingOpener?.closest('[data-workspace-event]')?.dataset.workspaceEvent};
+        }
         ui.bridge.readState().selectedSecurityFindingId=id;
         ui.bridge.renderFindingContent(status,id);ui.findingContentKey=JSON.stringify([status?.check_id,finding]);
         selectSecurity('findings');
@@ -113,15 +135,25 @@ const Workspace = (()=>{
 
     function closeFinding(restore=true) {
         const drawer=ui.el('findingInspector');if(drawer.open)drawer.close();
-        if(restore)(ui.findingOpener?.isConnected===false?ui.el('security-tab-findings'):ui.findingOpener||ui.el('security-tab-findings')).focus();
+        if(restore){
+            const origin=ui.findingOrigin;
+            if(origin?.view)selectSecurity(origin.view);
+            let target=ui.findingOpener;
+            if(!target?.isConnected){
+                const attribute=origin?.view==='timeline'?'data-timeline-finding':'data-security-finding';
+                const candidates=Array.from(ui.el(origin?.view==='timeline'?'securityTimelineRows':'securityFindingsRows').querySelectorAll('['+attribute+']'));
+                target=candidates.find(node=>node.getAttribute(attribute)===origin?.id&&(!origin.button||node.tagName==='BUTTON')&&(!origin.eventKey||node.dataset.workspaceEvent===origin.eventKey));
+            }
+            (target||ui.el('security-tab-'+(origin?.view||'findings'))).focus({preventScroll:true});
+        }
     }
 
     function renderCoverage(status) {
         if(!ui)return;const view=ui.bridge.coverage(status);const model=coverageModel(status,view);
         const warning=ui.el('securityCoverageWarning');warning.classList.toggle('complete',model.status==='complete');
         warning.textContent=`Collector coverage: ${model.status}. ${model.status==='complete'?'Complete within declared scopes only; not a safety verdict.':'Missing or incomplete evidence is not a clean result.'}`;
-        ui.el('securityCoverageEvidence').innerHTML=`<h3>Collector and source outcomes</h3><p>Run: ${esc(model.terminal)}. Coverage: ${esc(outcome(model.status))}.</p>`+(model.entries.length?`<div class="table-wrap workspace-table"><table class="coverage-outcomes"><thead><tr><th>Collector</th><th>Outcome</th><th>Scope</th><th>Source evidence</th></tr></thead><tbody>${model.entries.map(entry=>`<tr><td>${esc(entry.category)}</td><td>${esc(outcome(entry.status))}</td><td>${esc(entry.scope)}</td><td><details><summary>${list(entry.sources).length} recorded source outcomes</summary>${list(entry.sources).map(source=>`<p><strong>${esc(source.source)}</strong>: ${esc(outcome(source.status))}</p><pre>${esc(source.reason_code||'')} ${esc(source.detail||'')}</pre>`).join('')||'<p>Source outcomes not recorded.</p>'}<p>${esc(entry.reason_code||'')}</p></details></td></tr>`).join('')}</tbody></table></div>`:'<p>No validated collector ledger. Historical missing evidence remains not recorded.</p>');
-        ui.el('securityRunDetails').innerHTML=field('Run status',status?.status)+field('Skipped-source evidence',list(status?.skipped_items).map(row=>`${row.category}: ${row.status||'Unavailable'} - ${row.message||row.detail||''}`).join('\n'));
+        replaceEvidence(ui.el('securityCoverageEvidence'),`<h3>Collector and source outcomes</h3><p>Run: ${esc(model.terminal)}. Coverage: ${esc(outcome(model.status))}.</p>`+(model.entries.length?`<div class="table-wrap workspace-table"><table class="coverage-outcomes"><thead><tr><th>Collector</th><th>Outcome</th><th>Scope</th><th>Source evidence</th></tr></thead><tbody>${model.entries.map(entry=>`<tr><td>${esc(entry.category)}</td><td>${esc(outcome(entry.status))}</td><td>${esc(entry.scope)}</td><td><details data-workspace-evidence="${esc(entry.collector_id||entry.category)}"><summary>${list(entry.sources).length} recorded source outcomes</summary>${list(entry.sources).map(source=>`<p><strong>${esc(source.source)}</strong>: ${esc(outcome(source.status))}</p><pre>${esc(source.reason_code||'')} ${esc(source.detail||'')}</pre>`).join('')||'<p>Source outcomes not recorded.</p>'}<p>${esc(entry.reason_code||'')}</p></details></td></tr>`).join('')}</tbody></table></div>`:'<p>No validated collector ledger. Historical missing evidence remains not recorded.</p>'));
+        replaceEvidence(ui.el('securityRunDetails'),field('Run status',status?.status)+field('Skipped-source evidence',list(status?.skipped_items).map(row=>`${row.category}: ${row.status||'Unavailable'} - ${row.message||row.detail||''}`).join('\n')));
     }
 
     function renderTimeline(status) {
@@ -129,7 +161,8 @@ const Workspace = (()=>{
         const settings=ui.pages.timeline;settings.query=ui.el('securityTimelineSearch').value;settings.sort=ui.el('securityTimelineSort').value;
         const normalized=rows.map(row=>({...row,sortTime:row.missingTime?null:row.sortTime}));
         ui.el('securityTimelineSummary').innerHTML=`<span>${rows.length} evidence events; ${rows.filter(row=>row.missingTime).length} missing times. Chronology is not causation.</span>`;
-        paginate('securityTimelineRows',normalized,settings,row=>`<tr><td>${esc(row.time||'Time unavailable')}</td><td>${esc(row.type)}</td><td>${esc(row.item)}</td><td><details><summary>${esc(String(row.summary||'No details').slice(0,90))}</summary><p>${esc(row.summary)}</p></details></td><td>${esc(row.severity)}</td><td>${row.findingId?`<button data-timeline-finding="${esc(row.findingId)}">Linked finding</button>`:'No linked finding'}</td></tr>`,6);
+        const eventKey=row=>esc(JSON.stringify([row.findingId||row.item,row.type,row.time]));
+        paginate('securityTimelineRows',normalized,settings,row=>`<tr><td>${esc(row.time||'Time unavailable')}</td><td>${esc(row.type)}</td><td>${esc(row.item)}</td><td><details data-workspace-evidence="${eventKey(row)}"><summary>${esc(String(row.summary||'No details').slice(0,90))}</summary><p>${esc(row.summary)}</p></details></td><td>${esc(row.severity)}</td><td>${row.findingId?`<button data-timeline-finding="${esc(row.findingId)}" data-workspace-event="${eventKey(row)}">Linked finding</button>`:'No linked finding'}</td></tr>`,6);
     }
 
     function init(bridge) {
@@ -146,6 +179,6 @@ const Workspace = (()=>{
 
     function rerender(key) { const status=ui.bridge.readState().currentSecurityStatus;if(key==='findings')renderFindings(status);else if(key==='timeline')renderTimeline(status); }
     function onNavigate(name) { if(ui&&name!=='security')closeFinding(false); }
-    return {page,stepRows,coverageModel,outcome,field,init,selectSecurity,renderFindings,openFinding,closeFinding,renderCoverage,renderTimeline,onNavigate};
+    return {page,searchText,stepRows,coverageModel,outcome,field,init,selectSecurity,renderFindings,openFinding,closeFinding,renderCoverage,renderTimeline,onNavigate};
 })();
 if(typeof module!=='undefined'&&module.exports)module.exports=Workspace;

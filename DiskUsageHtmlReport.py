@@ -6870,11 +6870,12 @@ async function writeClipboardText(text) {{
 }}
 
 async function copyDirectoryFromButton(button) {{
+    const actionAlert = Studio.actionNotifier();
     const path = button.dataset.copyPath || '';
     const label = button.dataset.copyLabel || 'directory';
 
     if (!path) {{
-        showActionAlert('warning', 'Copy Directory Unavailable', 'No directory path is available for this result row.', [
+        actionAlert('warning', 'Copy Directory Unavailable', 'No directory path is available for this result row.', [
             'Try selecting another row with a visible path.'
         ]);
         return;
@@ -6891,12 +6892,12 @@ async function copyDirectoryFromButton(button) {{
             if (originalLabel) button.setAttribute('aria-label', originalLabel);
             else button.removeAttribute('aria-label');
         }}, 1400);
-        showActionAlert('success', 'Directory Copied', 'The directory path was copied to the clipboard.', [
+        actionAlert('success', 'Directory Copied', 'The directory path was copied to the clipboard.', [
             `Source: ${{label}}`,
             `Path: ${{path}}`
         ]);
     }} catch (error) {{
-        showActionAlert('error', 'Copy Directory Failed', error.message, [
+        actionAlert('error', 'Copy Directory Failed', error.message, [
             'Your browser may have blocked clipboard access.',
             `Path: ${{path}}`
         ]);
@@ -7114,13 +7115,14 @@ function renderInstallerCache(data) {{
 }}
 
 async function refreshInstallerCache() {{
+    const actionAlert = Studio.actionNotifier();
     state.installerCache = null;
     renderInstallerCache(null);
     $('refreshInstallerCache').disabled = true;
     $('exportInstallerCandidates').disabled = true;
     $('exportInstallerBackupManifest').disabled = true;
     $('installerCacheStatus').innerHTML = 'Reading cache files, registry paths, package metadata, installed targets, and patch applicability...';
-    showActionAlert('info', 'Installer Cache Scan Started', 'The dashboard is running a local read-only review of cached MSI/MSP files.', [
+    actionAlert('info', 'Installer Cache Scan Started', 'The dashboard is running a local read-only review of cached MSI/MSP files.', [
         'No files will be deleted or changed.',
         'This can take a moment on systems with many installer packages.'
     ]);
@@ -7130,7 +7132,7 @@ async function refreshInstallerCache() {{
         renderInstallerCache(data);
         const summary = data.summary || {{}};
         const notes = asArray(data.errors);
-        showActionAlert(notes.length ? 'warning' : 'success', notes.length ? 'Installer Cache Review Complete With Notes' : 'Installer Cache Review Complete', notes.length ? 'The read-only review finished, but some installer records were not visible.' : 'The read-only installer cache review finished.', [
+        actionAlert(notes.length ? 'warning' : 'success', notes.length ? 'Installer Cache Review Complete With Notes' : 'Installer Cache Review Complete', notes.length ? 'The read-only review finished, but some installer records were not visible.' : 'The read-only installer cache review finished.', [
             `MSI/MSP files: ${{summary.cache_files || 0}}`,
             `Direct references: ${{summary.registered_files || 0}}`,
             `Installed product matches: ${{summary.installed_product_matches || 0}}`,
@@ -7146,7 +7148,7 @@ async function refreshInstallerCache() {{
         $('installerCacheStatus').textContent = error.message;
         $('installerCacheRows').innerHTML = '<tr><td colspan="8">Installer cache review failed.</td></tr>';
         $('installerMissingRows').innerHTML = '<tr><td colspan="3">Installer cache review failed.</td></tr>';
-        showActionAlert('error', 'Installer Cache Review Failed', error.message, [
+        actionAlert('error', 'Installer Cache Review Failed', error.message, [
             'Run the dashboard as Administrator if Windows blocks access to installer cache or registry metadata.',
             'No files were changed.'
         ]);
@@ -7163,9 +7165,10 @@ function csvCell(value) {{
 }}
 
 function exportInstallerCandidatesCsv() {{
+    const actionAlert = Studio.actionNotifier();
     const candidates = asArray(state.installerCache?.files).filter(file => file.needs_review);
     if (!candidates.length) {{
-        showActionAlert('info', 'No Installer Candidates To Export', 'The latest installer cache review did not report files needing manual review.', [
+        actionAlert('info', 'No Installer Candidates To Export', 'The latest installer cache review did not report files needing manual review.', [
             'Direct references and installed product or patch matches should be kept.'
         ]);
         return;
@@ -7201,16 +7204,17 @@ function exportInstallerCandidatesCsv() {{
     const csv = [header, ...rows].map(row => row.map(csvCell).join(',')).join('\\r\\n');
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     downloadSecurityBlob(`installer-cache-review-candidates-${{stamp}}.csv`, csv, 'text/csv');
-    showActionAlert('success', 'Installer Candidates Exported', 'A local CSV of installer files needing review was generated.', [
+    actionAlert('success', 'Installer Candidates Exported', 'A local CSV of installer files needing review was generated.', [
         `Candidates exported: ${{candidates.length}}`,
         'This CSV is a review list, not a delete list.'
     ]);
 }}
 
 async function exportInstallerBackupManifest() {{
+    const actionAlert = Studio.actionNotifier();
     const eligible = asArray(state.installerCache?.files).filter(file => file.backup_review?.eligible_for_manifest);
     if (!installerManifestReady()) {{
-        showActionAlert('info', 'No Backup Review Candidates', 'The latest review has no files that meet every manifest requirement.', [
+        actionAlert('info', 'No Backup Review Candidates', 'The latest review has no files that meet every manifest requirement.', [
             'Low, Medium, Unknown, incomplete, registered, and installed-match results are excluded.'
         ]);
         return;
@@ -7221,7 +7225,7 @@ async function exportInstallerBackupManifest() {{
     button.disabled = true;
     $('refreshInstallerCache').disabled = true;
     button.textContent = 'Validating candidates...';
-    showActionAlert('info', 'Building Backup Review Manifest', 'The server is repeating installer checks and calculating SHA-256 hashes for qualifying candidates.', [
+    actionAlert('info', 'Building Backup Review Manifest', 'The server is repeating installer checks and calculating SHA-256 hashes for qualifying candidates.', [
         `Files to hash: ${{eligible.length}}`,
         'No installer files will be moved, deleted, launched, or changed.'
     ]);
@@ -7247,7 +7251,7 @@ async function exportInstallerBackupManifest() {{
             state.installerCache.summary.backup_review_candidates = asArray(state.installerCache.files).filter(file => file.backup_review?.eligible_for_manifest).length;
             renderInstallerCache(state.installerCache);
         }}
-        showActionAlert(issues.length ? 'warning' : 'success', issues.length ? 'Manifest Requires A New Review' : 'Backup Review Manifest Exported', 'The manifest records current validation results for the displayed candidates.', [
+        actionAlert(issues.length ? 'warning' : 'success', issues.length ? 'Manifest Requires A New Review' : 'Backup Review Manifest Exported', 'The manifest records current validation results for the displayed candidates.', [
             `Candidates checked: ${{manifest.candidate_count || 0}}`,
             `Validated candidates: ${{manifest.eligible_candidate_count || 0}}`,
             `Invalidated files: ${{issues.length}}`,
@@ -7255,7 +7259,7 @@ async function exportInstallerBackupManifest() {{
         ]);
     }} catch (error) {{
         if (state.installerCache) state.installerCache.manifestRequiresRefresh = true;
-        showActionAlert('error', 'Manifest Export Failed', error.message, [
+        actionAlert('error', 'Manifest Export Failed', error.message, [
             'Run Installer Cache review again if the server was restarted.',
             'No installer files were changed.'
         ]);
@@ -7395,33 +7399,35 @@ function baselineMeaning(label) {{
 }}
 
 async function refreshSecurityBaselines(showAlert = true) {{
+    const actionAlert = Studio.actionNotifier();
     try {{
         const data = await api('/api/security-baselines');
         state.securityBaselines = data.baselines || [];
         renderSecurityBaselineControls();
         if (showAlert) {{
-            showActionAlert('success', 'Baselines Refreshed', 'Local Security Check baselines were loaded from this computer.', [
+            actionAlert('success', 'Baselines Refreshed', 'Local Security Check baselines were loaded from this computer.', [
                 `Baselines available: ${{state.securityBaselines.length}}`
             ]);
         }}
     }} catch (error) {{
-        showActionAlert('error', 'Baseline Load Failed', error.message, [
+        actionAlert('error', 'Baseline Load Failed', error.message, [
             'Baseline files stay local under the app folder.'
         ]);
     }}
 }}
 
 async function createSecurityBaseline() {{
+    const actionAlert = Studio.actionNotifier();
     const status = state.currentSecurityStatus;
     if (!securityReportReady(status) || status.status !== 'completed') {{
-        showActionAlert('warning', 'Baseline Unavailable', 'Create a baseline only from a completed Security Check record.', [
+        actionAlert('warning', 'Baseline Unavailable', 'Create a baseline only from a completed Security Check record.', [
             'Run a Security Check and review the results first.'
         ]);
         return;
     }}
     const confirmed = confirm('Create Security Baseline?\\n\\nOnly create a baseline after reviewing that this Security Check represents a known-good state. New or changed items in later comparisons are review signals, not proof of harm.');
     if (!confirmed) {{
-        showActionAlert('info', 'Baseline Creation Cancelled', 'No baseline was created.', [
+        actionAlert('info', 'Baseline Creation Cancelled', 'No baseline was created.', [
             'Create a baseline only after reviewing the current system state.'
         ]);
         return;
@@ -7434,13 +7440,13 @@ async function createSecurityBaseline() {{
         }});
         state.securityBaselines = data.baselines || [];
         renderSecurityBaselineControls();
-        showActionAlert('success', 'Security Baseline Created', 'A local baseline was created from the completed Security Check record.', [
+        actionAlert('success', 'Security Baseline Created', 'A local baseline was created from the completed Security Check record.', [
             `Baseline: ${{data.baseline?.label || data.baseline?.baseline_id}}`,
             `Items: ${{data.baseline?.item_count || 0}}`,
             'Future Security Checks can compare against this baseline.'
         ]);
     }} catch (error) {{
-        showActionAlert('error', 'Baseline Creation Failed', error.message, [
+        actionAlert('error', 'Baseline Creation Failed', error.message, [
             'Only completed Security Check records can become baselines.'
         ]);
     }}
@@ -7549,27 +7555,29 @@ function renderSecurityTimeline(status) {{
 }}
 
 async function refreshSecurityAllowlist(showAlert = true) {{
+    const actionAlert = Studio.actionNotifier();
     try {{
         const data = await api('/api/security-allowlist');
         state.securityAllowlist = data;
         renderSecurityAllowlist(data, state.currentSecurityStatus);
         if (showAlert) {{
-            showActionAlert('success', 'Allowlist Refreshed', 'Local known-safe allowlist entries were loaded from this computer.', [
+            actionAlert('success', 'Allowlist Refreshed', 'Local known-safe allowlist entries were loaded from this computer.', [
                 `Entries: ${{data.entry_count || 0}}`,
                 'Allowlisting lowers review priority only; it does not prove safety.'
             ]);
         }}
     }} catch (error) {{
-        showActionAlert('error', 'Allowlist Load Failed', error.message, [
+        actionAlert('error', 'Allowlist Load Failed', error.message, [
             'The allowlist is stored locally as windows/allowlist.local.json.'
         ]);
     }}
 }}
 
 async function addSelectedFindingToAllowlist(findingId) {{
+    const actionAlert = Studio.actionNotifier();
     const status = state.currentSecurityStatus;
     if (!securityReportReady(status)) {{
-        showActionAlert('warning', 'Allowlist Unavailable', 'Add allowlist entries only from a completed or cancelled Security Check record.', [
+        actionAlert('warning', 'Allowlist Unavailable', 'Add allowlist entries only from a completed or cancelled Security Check record.', [
             'Run or load a Security Check record first.'
         ]);
         return;
@@ -7578,7 +7586,7 @@ async function addSelectedFindingToAllowlist(findingId) {{
     if (!finding) return;
     const confirmed = confirm('Add To Local Allowlist?\\n\\nThis lowers review priority for matching future findings. It does not hide evidence and does not prove the item is safe forever.');
     if (!confirmed) {{
-        showActionAlert('info', 'Allowlist Add Cancelled', 'No allowlist entry was created.', [
+        actionAlert('info', 'Allowlist Add Cancelled', 'No allowlist entry was created.', [
             'Only add entries after reviewing the evidence.'
         ]);
         return;
@@ -7596,18 +7604,19 @@ async function addSelectedFindingToAllowlist(findingId) {{
         }});
         state.securityAllowlist = data.allowlist;
         renderSecurityAllowlist(data.allowlist, state.currentSecurityStatus);
-        showActionAlert('success', 'Allowlist Entry Added', 'A local allowlist entry was created for matching future findings.', [
+        actionAlert('success', 'Allowlist Entry Added', 'A local allowlist entry was created for matching future findings.', [
             `Entry: ${{data.entry?.label || data.entry?.entry_id}}`,
             'Evidence remains visible and allowlisting is not a safety guarantee.'
         ]);
     }} catch (error) {{
-        showActionAlert('error', 'Allowlist Add Failed', error.message, [
+        actionAlert('error', 'Allowlist Add Failed', error.message, [
             'Only completed or cancelled Security Check records can be used.'
         ]);
     }}
 }}
 
 async function removeSecurityAllowlistEntry(entryId) {{
+    const actionAlert = Studio.actionNotifier();
     const confirmed = confirm('Remove Allowlist Entry?\\n\\nFuture findings will no longer have their review priority lowered by this entry.');
     if (!confirmed) return;
     try {{
@@ -7617,17 +7626,18 @@ async function removeSecurityAllowlistEntry(entryId) {{
         }});
         state.securityAllowlist = data.allowlist;
         renderSecurityAllowlist(data.allowlist, state.currentSecurityStatus);
-        showActionAlert('success', 'Allowlist Entry Removed', 'The local allowlist entry was removed.', [
+        actionAlert('success', 'Allowlist Entry Removed', 'The local allowlist entry was removed.', [
             `Entry: ${{data.entry?.label || entryId}}`
         ]);
     }} catch (error) {{
-        showActionAlert('error', 'Allowlist Remove Failed', error.message, [
+        actionAlert('error', 'Allowlist Remove Failed', error.message, [
             'Refresh the allowlist and try again if the entry was already removed.'
         ]);
     }}
 }}
 
 function exportSecurityAllowlist() {{
+    const actionAlert = Studio.actionNotifier();
     const allowlist = state.securityAllowlist || {{ schema_version: 'security-allowlist-v1', entries: [] }};
     const payload = {{
         schema_version: 'security-allowlist-export-v1',
@@ -7636,12 +7646,13 @@ function exportSecurityAllowlist() {{
         entries: allowlist.entries || []
     }};
     downloadSecurityBlob(`security-allowlist-${{new Date().toISOString().replace(/[:.]/g, '-')}}.json`, JSON.stringify(payload, null, 2), 'application/json');
-    showActionAlert('success', 'Allowlist Exported', 'A local JSON allowlist export was generated.', [
+    actionAlert('success', 'Allowlist Exported', 'A local JSON allowlist export was generated.', [
         'Review before sharing because entries can reveal local software and paths.'
     ]);
 }}
 
 async function importSecurityAllowlistFromFile(file) {{
+    const actionAlert = Studio.actionNotifier();
     if (!file) return;
     const confirmed = confirm('Import Allowlist?\\n\\nImported entries lower review priority for matching future findings. Import only allowlists you trust.');
     if (!confirmed) return;
@@ -7655,12 +7666,12 @@ async function importSecurityAllowlistFromFile(file) {{
         }});
         state.securityAllowlist = data.allowlist;
         renderSecurityAllowlist(data.allowlist, state.currentSecurityStatus);
-        showActionAlert('success', 'Allowlist Imported', 'The imported allowlist was validated and merged locally.', [
+        actionAlert('success', 'Allowlist Imported', 'The imported allowlist was validated and merged locally.', [
             `Entries: ${{data.allowlist?.entry_count || 0}}`,
             'Allowlisting is not a safety guarantee.'
         ]);
     }} catch (error) {{
-        showActionAlert('error', 'Allowlist Import Failed', error.message, [
+        actionAlert('error', 'Allowlist Import Failed', error.message, [
             'The import must be valid JSON with allowlist entries and valid match keys.'
         ]);
     }} finally {{
@@ -7678,7 +7689,7 @@ function findingSearchText(finding) {{
         finding.allowlist_status,
         (finding.review_reasons || []).join(' '),
         finding.plain_explanation,
-        JSON.stringify(finding.evidence || {{}})
+        Workspace.searchText(finding.evidence || {{}})
     ].join(' ').toLowerCase();
 }}
 
@@ -8072,9 +8083,10 @@ function downloadSecurityBlob(filename, content, mimeType) {{
 }}
 
 function downloadSecurityReport(kind) {{
+    const actionAlert = Studio.actionNotifier();
     const status = state.currentSecurityStatus;
     if (!securityReportReady(status)) {{
-        showActionAlert('warning', 'Security Report Unavailable', 'Run or load a completed Security Check before downloading a report.', [
+        actionAlert('warning', 'Security Report Unavailable', 'Run or load a completed Security Check before downloading a report.', [
             'Reports are generated locally from completed or cancelled Security Check records.'
         ]);
         return;
@@ -8087,7 +8099,7 @@ function downloadSecurityReport(kind) {{
     }};
     const [builder, filename, title] = builders[kind];
     downloadSecurityBlob(filename, builder(status), 'text/html');
-    showActionAlert('success', title, 'A local HTML report was generated from the current Security Check record.', [
+    actionAlert('success', title, 'A local HTML report was generated from the current Security Check record.', [
         `Check ID: ${{status.check_id}}`,
         `Findings: ${{status.summary?.findings_total || asArray(status.findings).length}}`,
         'Reports may include private local system details. Review before sharing.'
@@ -8095,9 +8107,10 @@ function downloadSecurityReport(kind) {{
 }}
 
 function downloadSecurityJsonReport() {{
+    const actionAlert = Studio.actionNotifier();
     const status = state.currentSecurityStatus;
     if (!securityReportReady(status)) {{
-        showActionAlert('warning', 'Technical JSON Unavailable', 'Run or load a completed Security Check before downloading technical JSON.', [
+        actionAlert('warning', 'Technical JSON Unavailable', 'Run or load a completed Security Check before downloading technical JSON.', [
             'Technical JSON is generated only when this button is clicked.'
         ]);
         return;
@@ -8111,7 +8124,7 @@ function downloadSecurityJsonReport() {{
         record: status
     }};
     downloadSecurityBlob(`security-check-technical-${{securityReportStamp(status)}}.json`, JSON.stringify(payload, null, 2), 'application/json');
-    showActionAlert('success', 'Technical JSON Downloaded', 'A local JSON export was generated only after the explicit download action.', [
+    actionAlert('success', 'Technical JSON Downloaded', 'A local JSON export was generated only after the explicit download action.', [
         `Check ID: ${{status.check_id}}`,
         'Review JSON before sharing because it may contain private local system details.'
     ]);
@@ -8152,6 +8165,7 @@ function renderSecurityCheckStatus(status) {{
 }}
 
 async function startSecurityCheck() {{
+    const actionAlert = Studio.actionNotifier();
     const advanced = selectedSecurityMode() === 'advanced';
     const payload = {{
         acknowledgeSafety: $('ackSecurityCheck').checked,
@@ -8162,7 +8176,7 @@ async function startSecurityCheck() {{
         eventLogCorrelation: advanced && $('securityEventLogCorrelation').checked,
         sysmonCorrelation: advanced && $('securitySysmonCorrelation').checked
     }};
-    showActionAlert('info', 'Security Check Starting', 'The dashboard is asking the local server to start a read-only lifecycle job.', [
+    actionAlert('info', 'Security Check Starting', 'The dashboard is asking the local server to start a read-only lifecycle job.', [
         `Mode: ${{payload.mode}}`,
         `Registry backup opt-in: ${{payload.registryBackup ? 'yes' : 'no'}}`,
         `Baseline comparison: ${{payload.baselineId ? 'enabled' : 'none'}}`,
@@ -8178,14 +8192,14 @@ async function startSecurityCheck() {{
         setExitState(true, 'Cancel or wait for the current Security Check to finish before exiting.', 'security');
         renderSecurityCheckStatus(status);
         showTab('security');
-        showActionAlert('success', 'Security Check Started', 'Lifecycle progress is now visible in the Security Check tab.', [
+        actionAlert('success', 'Security Check Started', 'Lifecycle progress is now visible in the Security Check tab.', [
             `Check ID: ${{status.check_id}}`,
             status.options?.baseline_compare ? `Comparing against baseline: ${{status.options.baseline_label || status.options.baseline_id}}` : 'No baseline comparison selected.',
             status.mode === 'advanced' ? 'Advanced Review collectors are included in this run.' : 'Standard Review collectors are included in this run.',
             'Signature status and SHA-256 are collected for referenced files when available. Reports are available after the run completes.'
         ]);
     }} catch (error) {{
-        showActionAlert('error', 'Security Check Failed To Start', error.message, [
+        actionAlert('error', 'Security Check Failed To Start', error.message, [
             'Confirm the acknowledgement checkbox is selected.',
             'Wait for any active disk scan or Security Check to finish.'
         ]);
@@ -8193,13 +8207,14 @@ async function startSecurityCheck() {{
 }}
 
 async function cancelSecurityCheck() {{
-    showActionAlert('warning', 'Security Check Cancellation Requested', 'The dashboard is asking the local Security Check lifecycle job to stop.', [
+    const actionAlert = Studio.actionNotifier();
+    actionAlert('warning', 'Security Check Cancellation Requested', 'The dashboard is asking the local Security Check lifecycle job to stop.', [
         'A partial local lifecycle record may be saved.'
     ]);
     try {{
         await api('/api/security-checks/cancel', {{ method: 'POST', body: '{{}}' }});
     }} catch (error) {{
-        showActionAlert('error', 'Security Check Cancel Failed', error.message, ['There may be no active Security Check to cancel.']);
+        actionAlert('error', 'Security Check Cancel Failed', error.message, ['There may be no active Security Check to cancel.']);
     }}
 }}
 
@@ -8374,6 +8389,7 @@ async function loadInitial() {{
 }}
 
 async function startScan() {{
+    const actionAlert = Studio.actionNotifier();
     const payload = {{
         root: $('rootPath').value,
         top: $('topItems').value,
@@ -8384,7 +8400,7 @@ async function startScan() {{
         acknowledgeSafety: $('ackSafety').checked
     }};
     const scanType = /^[A-Za-z]:\\\\?$/.test(payload.root.trim()) ? 'drive' : 'directory';
-    showActionAlert('info', 'Scan Starting', 'The dashboard is asking the local server to start a read-only scan.', [
+    actionAlert('info', 'Scan Starting', 'The dashboard is asking the local server to start a read-only scan.', [
         `Path: ${{payload.root}}`,
         `Scan type: ${{scanType}}`,
         `Safety acknowledged: ${{payload.acknowledgeSafety ? 'yes' : 'no'}}`
@@ -8395,13 +8411,13 @@ async function startScan() {{
         $('cancelScan').disabled = false;
         setExitState(true, 'Cancel or wait for the current scan to finish before exiting.');
         updateSecurityCheckStartState();
-        showActionAlert('success', 'Scan Started', 'Live progress is now visible in the scan status panel.', [
+        actionAlert('success', 'Scan Started', 'Live progress is now visible in the scan status panel.', [
             `Path: ${{payload.root}}`,
             'The tool is still read-only and will save a local scan record when done.'
         ], started.scan_id ? {{eventId:`scan:${{started.scan_id}}:started`}} : {{}});
         showTab('scan');
     }} catch (error) {{
-        showActionAlert('error', 'Action Failed', error.message, [
+        actionAlert('error', 'Action Failed', error.message, [
             'Check the path and safety acknowledgement.',
             'Full-drive and sensitive-folder scans require acknowledgement.'
         ]);
@@ -8464,14 +8480,15 @@ async function pollStatus() {{
 }}
 
 async function cancelScan() {{
-    showActionAlert('warning', 'Scan Cancellation Requested', 'The dashboard is asking the scanner to stop.', [
+    const actionAlert = Studio.actionNotifier();
+    actionAlert('warning', 'Scan Cancellation Requested', 'The dashboard is asking the scanner to stop.', [
         'Cancellation may take a moment.',
         'A partial local record may be saved.'
     ]);
     try {{
         await api('/api/scans/cancel', {{ method: 'POST', body: '{{}}' }});
     }} catch (error) {{
-        showActionAlert('error', 'Action Failed', error.message, ['There may be no active scan to cancel.']);
+        actionAlert('error', 'Action Failed', error.message, ['There may be no active scan to cancel.']);
     }}
 }}
 
@@ -8483,43 +8500,45 @@ function filterTable(inputId, tbodyId) {{
 }}
 
 async function refreshHistory(showNotice = true) {{
+    const actionAlert = Studio.actionNotifier();
     RemainingWorkspace.setHistoryLoading(true);
     try {{
         const data = await api('/api/history');
         RemainingWorkspace.renderHistory(data.records);
         Studio.updateHistory(data.records);
         if (showNotice) {{
-            showActionAlert('success', 'Scan History Refreshed', 'The scan history table has been updated.', [
+            actionAlert('success', 'Scan History Refreshed', 'The scan history table has been updated.', [
                 `Records shown: ${{data.records.length}}`,
                 'History and generated reports remain stored locally.'
             ]);
         }}
     }} catch (error) {{
         RemainingWorkspace.setHistoryError(error);
-        showActionAlert('error', 'History Load Failed', error.message, ['Try refreshing history again.']);
+        actionAlert('error', 'History Load Failed', error.message, ['Try refreshing history again.']);
     }}
 }}
 
 async function openHistory(scanId) {{
+    const actionAlert = Studio.actionNotifier();
     try {{
         const record = await api('/api/scans/' + encodeURIComponent(scanId));
         showTab('results');
         try {{
             renderResult(record);
-            showActionAlert('info', 'History Record Opened', 'Loaded a saved scan record into the results view.', [
+            actionAlert('info', 'History Record Opened', 'Loaded a saved scan record into the results view.', [
                 `Scan ID: ${{scanId}}`,
                 `Status: ${{record.status}}`,
                 `Path: ${{record.root}}`
             ]);
         }} catch (renderError) {{
             renderResultError(record, renderError);
-            showActionAlert('error', 'History Record Display Failed', renderError.message, [
+            actionAlert('error', 'History Record Display Failed', renderError.message, [
                 `Scan ID: ${{scanId}}`,
                 'The saved record was found, but one or more result sections could not be displayed.'
             ]);
         }}
     }} catch (error) {{
-        showActionAlert('error', 'History Record Failed', error.message, [`Scan ID: ${{scanId}}`]);
+        actionAlert('error', 'History Record Failed', error.message, [`Scan ID: ${{scanId}}`]);
     }}
 }}
 
@@ -8716,7 +8735,7 @@ function verificationGuideReportHtml() {{
 
 function buildProcessReportHtml() {{
     const visible = getVisibleProcesses();
-    const groupMode = $('processGroupBy').value;
+    const groupMode = $('processGroupBy').value === 'none' ? 'publisher' : $('processGroupBy').value;
     const groups = groupProcesses(visible, groupMode === 'uncategorized' ? 'publisher' : groupMode);
     const uncategorized = state.processes.filter(isUncategorizedProcess).sort((a, b) => (Number(b.memory_bytes) || 0) - (Number(a.memory_bytes) || 0));
     const generated = new Date().toLocaleString();
@@ -8762,8 +8781,9 @@ ${{verificationGuideReportHtml()}}
 }}
 
 function downloadProcessReport() {{
+    const actionAlert = Studio.actionNotifier();
     if (!state.processes.length) {{
-        showActionAlert('warning', 'No Process Report Available', 'Refresh processes before downloading a grouped report.', [
+        actionAlert('warning', 'No Process Report Available', 'Refresh processes before downloading a grouped report.', [
             'The report is generated from the currently loaded local process snapshot.'
         ]);
         return;
@@ -8779,7 +8799,7 @@ function downloadProcessReport() {{
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    showActionAlert('success', 'Grouped Process Report Downloaded', 'A local HTML report was generated from the current process snapshot.', [
+    actionAlert('success', 'Grouped Process Report Downloaded', 'A local HTML report was generated from the current process snapshot.', [
         `Processes in current view: ${{getVisibleProcesses().length}}`,
         'Reports may include local program paths. Keep them private unless reviewed.'
     ]);
@@ -8850,8 +8870,9 @@ ${{verificationGuideReportHtml()}}
 }}
 
 function downloadVerificationReport() {{
+    const actionAlert = Studio.actionNotifier();
     if (!state.processes.length) {{
-        showActionAlert('warning', 'No Verification Report Available', 'Refresh processes before downloading a verification report.', [
+        actionAlert('warning', 'No Verification Report Available', 'Refresh processes before downloading a verification report.', [
             'The report is generated from the currently loaded local process snapshot.'
         ]);
         return;
@@ -8867,13 +8888,14 @@ function downloadVerificationReport() {{
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    showActionAlert('success', 'Verification Report Downloaded', 'A local HTML report was generated for processes that need review.', [
+    actionAlert('success', 'Verification Report Downloaded', 'A local HTML report was generated for processes that need review.', [
         `Needs-review entries in current view: ${{getVisibleProcesses().filter(needsReview).length}}`,
         'This is not a malware verdict. Use signature details and trusted security tools for final decisions.'
     ]);
 }}
 
 async function refreshProcesses() {{
+    const actionAlert = Studio.actionNotifier();
     ProcessWorkspace.setLoading(true);
     try {{
         const data = await api('/api/processes');
@@ -8884,7 +8906,7 @@ async function refreshProcesses() {{
         ProcessWorkspace.onSnapshot();
     }} catch (error) {{
         ProcessWorkspace.setError(error.message);
-        showActionAlert('error', 'Process List Failed', error.message, ['Some process evidence may be unavailable. The last snapshot is retained.']);
+        actionAlert('error', 'Process List Failed', error.message, ['Some process evidence may be unavailable. The last snapshot is retained.']);
     }} finally {{
         ProcessWorkspace.setLoading(false);
     }}
@@ -8899,8 +8921,9 @@ async function showProcessDetail(pid) {{
 }}
 
 async function exitApp() {{
+    const actionAlert = Studio.actionNotifier();
     if ($('exitApp').disabled) {{
-        showActionAlert('warning', 'Exit Blocked', 'Cancel or wait for the current scan to finish before exiting.', [
+        actionAlert('warning', 'Exit Blocked', 'Cancel or wait for the current scan to finish before exiting.', [
             'The dashboard will not shut down while a scan is active.'
         ]);
         return;
@@ -8908,11 +8931,11 @@ async function exitApp() {{
 
     const confirmed = confirm('Exit Dashboard?\\n\\nThe local server will stop, this browser dashboard will no longer update, and existing reports/history will remain saved.');
     if (!confirmed) {{
-        showActionAlert('info', 'Exit Cancelled', 'The dashboard server is still running.', ['No files or records were changed.']);
+        actionAlert('info', 'Exit Cancelled', 'The dashboard server is still running.', ['No files or records were changed.']);
         return;
     }}
 
-    showActionAlert('warning', 'Exit Dashboard', 'The dashboard is sending a local shutdown request.', [
+    actionAlert('warning', 'Exit Dashboard', 'The dashboard is sending a local shutdown request.', [
         'Existing reports and scan history remain saved.',
         'You can start the app again by running the script.'
     ]);
@@ -8921,11 +8944,11 @@ async function exitApp() {{
         const data = await api('/api/shutdown', {{ method: 'POST', body: '{{}}' }});
         state.isShuttingDown = true;
         setExitState(false);
-        showActionAlert('success', 'Dashboard Server Is Shutting Down', data.message || 'You may close this tab.', [
+        actionAlert('success', 'Dashboard Server Is Shutting Down', data.message || 'You may close this tab.', [
             'The browser may show connection errors if you refresh after shutdown.'
         ]);
     }} catch (error) {{
-        showActionAlert('error', 'Exit Failed', error.message, [
+        actionAlert('error', 'Exit Failed', error.message, [
             'If a scan is running, cancel or wait for it to finish before exiting.'
         ]);
         await pollStatus();
@@ -8939,7 +8962,7 @@ async function exitApp() {{
 Studio.init();
 ProcessWorkspace.init({{doc:document,win:window,readState:()=>state,api,visibleProcesses:getVisibleProcesses,
     groupProcesses,publisherLabel,needsReview,reviewReasons:reviewReasonsForProcess,formatBytes,
-    notify:showActionAlert,copyText:writeClipboardText}});
+    notify:(...args)=>Studio.actionNotifier()(...args),copyText:writeClipboardText}});
 ProcessWorkspace.render();
 Workspace.init({{doc:document,win:window,readState:()=>state,coverage:securityCoverageView,
     filteredFindings:filteredSecurityFindings,renderFindingContent:renderSecurityFindingContent,
