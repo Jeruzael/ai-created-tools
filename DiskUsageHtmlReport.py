@@ -6324,6 +6324,9 @@ def build_dashboard_html():
     process_script = (ui_root / "process_workspace.js").read_text(encoding="utf-8")
     process_layout = (ui_root / "process_workspace.html").read_text(encoding="utf-8")
     process_guide = (ui_root / "process_verification_help.html").read_text(encoding="utf-8")
+    workspace_style = (ui_root / "workspace_studio.css").read_text(encoding="utf-8")
+    workspace_script = (ui_root / "workspace_studio.js").read_text(encoding="utf-8")
+    security_layout = (ui_root / "security_workspace.html").read_text(encoding="utf-8")
     studio_layout = (ui_root / "sidebar_studio.html").read_text(encoding="utf-8").replace(
         "__APP_VERSION__", APP_VERSION).replace(
         "__STUDIO_ICONS__", (ui_root / "lucide-sprite.svg").read_text(encoding="utf-8"))
@@ -6805,6 +6808,7 @@ summary {{ cursor: pointer; padding: 6px; }}
 }}
 {studio_style}
 {process_style}
+{workspace_style}
 </style>
 </head>
 <body>
@@ -6889,226 +6893,7 @@ summary {{ cursor: pointer; padding: 6px; }}
         </section>
     </section>
 
-    <section id="tab-security" class="tab-panel hidden">
-        <section class="action-alert info">
-            <h2>Before You Run a Security Check</h2>
-            <p>This local review area reads Windows security-related indicators such as startup entries, browser policies, proxy settings, DNS settings, Defender exclusions, scheduled tasks, services summary, referenced file verification, and optional Advanced Review sources.</p>
-            <p>It is designed as a local read-only review workflow. Findings mean review this, not this is malware. Advanced Review may take longer and may need Administrator permission for complete WMI, event log, Sysmon, driver, service, and Explorer extension data.</p>
-        </section>
-
-        <div class="security-layout">
-            <div>
-                <section class="section">
-                    <h2>Security Check Setup</h2>
-                    <p>Choose how the local review should run. Standard Review is the active read-only collector set.</p>
-                    <label style="margin-top:10px"><input id="ackSecurityCheck" type="checkbox" style="width:auto"> I understand this is a review report and not a malware verdict.</label>
-
-                    <h3>Check Mode</h3>
-                    <div class="security-mode-grid">
-                        <label class="security-mode">
-                            <input type="radio" name="securityMode" value="standard" checked>
-                            <strong>Standard Review</strong>
-                            <span class="muted">Startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, services summary, command/name indicators, and referenced file verification.</span>
-                        </label>
-                        <label class="security-mode">
-                            <input type="radio" name="securityMode" value="advanced">
-                            <strong>Advanced Review</strong>
-                            <span class="muted">Adds WMI persistence, event log correlation, optional Sysmon if already installed, deeper services/drivers, and Explorer autorun-style locations. It may take longer and some sources may need Administrator permission.</span>
-                        </label>
-                    </div>
-
-                    <h3>Options</h3>
-                    <div class="security-option-list">
-                        <label><input id="securityRegistryBackup" type="checkbox" disabled> Registry backups (unavailable in this version)</label>
-                        <label>Compare against baseline
-                            <select id="securityBaselineSelect">
-                                <option value="">No baseline comparison</option>
-                            </select>
-                        </label>
-                        <label><input id="securityWmiCheck" type="checkbox" checked> Include WMI persistence check</label>
-                        <label><input id="securityEventLogCorrelation" type="checkbox" checked> Include Event Log correlation</label>
-                        <label><input id="securitySysmonCorrelation" type="checkbox" checked> Include optional Sysmon data if installed</label>
-                    </div>
-
-                    <div class="actions">
-                        <button id="startSecurityCheck" class="primary" disabled>Start Security Check</button>
-                        <button id="cancelSecurityCheck" class="danger" disabled>Cancel Security Check</button>
-                    </div>
-                </section>
-
-                <section class="section">
-                    <h2>Security Check Progress</h2>
-                    <div id="securityStatus" class="status-line">No Security Check running.</div>
-                    <p class="muted">This local read-only check records progress, findings, skipped sources, and verification evidence without changing system settings.</p>
-                    <div id="securityProgress" class="security-progress">
-                        <div class="security-step"><span>Preparing local review</span><span class="security-step-status">Waiting</span></div>
-                        <div class="security-step"><span>Reading standard security locations</span><span class="security-step-status">Waiting</span></div>
-                        <div class="security-step"><span>Checking file signatures and SHA-256 hashes</span><span class="security-step-status">Waiting</span></div>
-                        <div class="security-step"><span>Running optional Advanced Review collectors</span><span class="security-step-status">Waiting</span></div>
-                        <div class="security-step"><span>Saving local security check record</span><span class="security-step-status">Waiting</span></div>
-                    </div>
-                </section>
-            </div>
-
-            <div>
-                <section class="section">
-                    <h2>Security Summary</h2>
-                    <div id="securitySummary" class="grid">
-                        <div class="metric"><div class="label">Overall Status</div><div class="value">Not Run</div></div>
-                        <div class="metric"><div class="label">Findings</div><div class="value">0</div></div>
-                        <div class="metric"><div class="label">Needs Review</div><div class="value">0</div></div>
-                        <div class="metric"><div class="label">No Obvious Issue</div><div class="value">0</div></div>
-                        <div class="metric"><div class="label">Skipped Sources</div><div class="value">0</div></div>
-                    </div>
-                </section>
-
-                <section class="section">
-                    <h2>Baseline Comparison</h2>
-                    <p class="muted">Create a baseline only after reviewing that the current completed Security Check looks normal. New, changed, or removed labels are comparison signals, not proof that something is harmful.</p>
-                    <div class="actions">
-                        <button id="refreshSecurityBaselines">Refresh baselines</button>
-                        <button id="createSecurityBaseline" disabled>Create baseline from current run</button>
-                    </div>
-                    <div id="securityBaselineSummary" class="grid" style="margin-top:12px">
-                        <div class="metric"><div class="label">Baseline</div><div class="value">None</div></div>
-                        <div class="metric"><div class="label">New</div><div class="value">0</div></div>
-                        <div class="metric"><div class="label">Changed</div><div class="value">0</div></div>
-                        <div class="metric"><div class="label">Removed</div><div class="value">0</div></div>
-                    </div>
-                    <div class="table-wrap" style="margin-top:12px">
-                        <table>
-                            <thead><tr><th>Status</th><th>Category</th><th>Item</th><th>Meaning</th></tr></thead>
-                            <tbody id="securityBaselineRows"><tr><td colspan="4">No baseline comparison loaded.</td></tr></tbody>
-                        </table>
-                    </div>
-                </section>
-
-                <section class="section">
-                    <h2>Known-Safe Allowlist</h2>
-                    <p class="muted">Allowlisting is local-only and lowers review priority for matching future findings. It does not hide evidence and does not prove an item is safe forever.</p>
-                    <div class="actions">
-                        <button id="refreshSecurityAllowlist">Refresh allowlist</button>
-                        <button id="exportSecurityAllowlist">Export allowlist</button>
-                        <button id="importSecurityAllowlist">Import allowlist</button>
-                        <input id="securityAllowlistFile" type="file" accept="application/json,.json" style="display:none">
-                    </div>
-                    <div id="securityAllowlistSummary" class="grid" style="margin-top:12px">
-                        <div class="metric"><div class="label">Entries</div><div class="value">0</div></div>
-                        <div class="metric"><div class="label">Matches</div><div class="value">0</div></div>
-                    </div>
-                    <div class="table-wrap" style="margin-top:12px">
-                        <table>
-                            <thead><tr><th>Created</th><th>Category</th><th>Item</th><th>Note</th><th>Action</th></tr></thead>
-                            <tbody id="securityAllowlistRows"><tr><td colspan="5">No allowlist entries loaded.</td></tr></tbody>
-                        </table>
-                    </div>
-                </section>
-
-                <section class="section">
-                    <h2>Findings Review</h2>
-                    <p class="muted">Run a Security Check to review startup entries, browser policies, proxy/DNS settings, Defender exclusions, scheduled tasks, services summary, and referenced file verification. Findings are review items with evidence, not malware verdicts.</p>
-                    <div class="form-grid">
-                        <label>Search
-                            <input id="securityFindingFilter" placeholder="Finding, category, setting, path, registry key...">
-                        </label>
-                        <label>Severity
-                            <select id="securitySeverityFilter">
-                                <option>All severities</option>
-                                <option>High Review</option>
-                                <option>Medium Review</option>
-                                <option>Low Review</option>
-                                <option>Info</option>
-                            </select>
-                        </label>
-                        <label>Category
-                            <select id="securityCategoryFilter">
-                                <option>All categories</option>
-                            </select>
-                        </label>
-                        <label>Status
-                            <select id="securityStatusFilter">
-                                <option>All statuses</option>
-                            </select>
-                        </label>
-                        <label>Signal
-                            <select id="securitySignalFilter">
-                                <option>All signals</option>
-                                <option value="unsigned">Unsigned files</option>
-                                <option value="command">Command indicators</option>
-                                <option value="userWritable">User-writable paths</option>
-                            </select>
-                        </label>
-                        <label>Baseline
-                            <select id="securityBaselineFilter">
-                                <option>All baseline labels</option>
-                                <option value="new">New</option>
-                                <option value="changed">Changed</option>
-                                <option value="unchanged">Unchanged</option>
-                            </select>
-                        </label>
-                    </div>
-                    <div class="table-wrap" style="margin-top:12px">
-                        <table>
-                            <thead><tr><th>Severity</th><th>Score</th><th>Category</th><th>Item</th><th>Reason</th><th>Action</th></tr></thead>
-                            <tbody id="securityFindingsRows"><tr><td colspan="6">No security findings yet. Run a Security Check to populate this table.</td></tr></tbody>
-                        </table>
-                    </div>
-                </section>
-
-                <section class="section">
-                    <h2>Finding Details</h2>
-                    <div id="securityFindingDetail" class="security-detail-panel">
-                        <p class="muted">Select a finding to see plain-language explanation, technical evidence, and safe next steps.</p>
-                        <span class="security-badge">What this is</span>
-                        <span class="security-badge">Why it matters</span>
-                        <span class="security-badge">Technical evidence</span>
-                        <span class="security-badge">Safe next steps</span>
-                    </div>
-                </section>
-
-                <section class="section">
-                    <h2>Timeline</h2>
-                    <p class="muted">Timeline rows are ordered evidence points from the current Security Check record and local baselines. Times are for review context only and do not prove cause or harm.</p>
-                    <div id="securityTimelineSummary" class="grid">
-                        <div class="metric"><div class="label">Timeline Rows</div><div class="value">0</div></div>
-                        <div class="metric"><div class="label">Missing Times</div><div class="value">0</div></div>
-                    </div>
-                    <div class="table-wrap" style="margin-top:12px">
-                        <table>
-                            <thead><tr><th>Date / Time</th><th>Event Type</th><th>Item</th><th>Summary</th><th>Severity</th><th>Action</th></tr></thead>
-                            <tbody id="securityTimelineRows"><tr><td colspan="6">No timeline loaded. Run or load a Security Check record.</td></tr></tbody>
-                        </table>
-                    </div>
-                </section>
-            </div>
-        </div>
-
-        <section class="section">
-            <h2>Review Categories</h2>
-            <p>These blocks summarize the current Standard Review collectors. Empty or skipped sources are shown calmly so the run can still finish.</p>
-            <div id="securityCategoryBlocks" class="category-list">
-                <div class="category-item"><strong>Registry Startup</strong><p>Run keys and startup-folder entries.</p><span class="security-badge">ready</span></div>
-                <div class="category-item"><strong>Browser Policy Review</strong><p>Chrome and Edge managed settings, forced extensions, homepage, search, and proxy policies.</p><span class="security-badge">ready</span></div>
-                <div class="category-item"><strong>Proxy And DNS Review</strong><p>Proxy, PAC script, and DNS server indicators.</p><span class="security-badge">ready</span></div>
-                <div class="category-item"><strong>Microsoft Defender Exclusions</strong><p>Excluded paths, processes, extensions, and IP addresses.</p><span class="security-badge">ready</span></div>
-                <div class="category-item"><strong>Scheduled Tasks Review</strong><p>Task actions, triggers, authors, last run, next run, and command review indicators.</p><span class="security-badge">ready</span></div>
-                <div class="category-item"><strong>Windows Services Summary</strong><p>Scoped automatic-service summary and individual service command/name review items.</p><span class="security-badge">ready</span></div>
-                <div class="category-item"><strong>File Verification</strong><p>File existence, Authenticode signatures, publishers, SHA-256 hashes, and timestamps.</p><span class="security-badge">ready</span></div>
-                <div class="category-item"><strong>Advanced Review</strong><p>WMI persistence, event log correlation, optional Sysmon, deeper services/drivers, and Explorer autorun-style locations.</p><span class="security-badge">advanced</span></div>
-            </div>
-        </section>
-
-        <section class="section">
-            <h2>Reports</h2>
-            <p>Download local reports from the current completed or cancelled Security Check record. Reports may include local paths, usernames, command lines, registry values, hashes, and installed software details, so review them before sharing.</p>
-            <div class="actions">
-                <button id="downloadSecurityFullReport" disabled>Download Full Security Report</button>
-                <button id="downloadSecurityFindingsReport" disabled>Download Findings Only</button>
-                <button id="downloadSecurityVerificationReport" disabled>Download Verification Report</button>
-                <button id="downloadSecurityJsonReport" disabled>Download Technical JSON</button>
-            </div>
-        </section>
-    </section>
+    {security_layout}
 
     <section id="tab-history" class="tab-panel hidden">
         <section class="section">
@@ -7425,6 +7210,7 @@ function setExitState(workActive, reason = '', workType = 'scan') {{
 function showTab(name) {{
     name = Studio.navigate(name, true);
     if (name !== 'processes') ProcessWorkspace.hide();
+    Workspace.onNavigate(name);
 
     if (name === 'manual') {{
         showActionAlert('info', 'Manual Opened', 'The user manual explains safe scan usage, cleanup workflow, use cases, and expanded do\\'s and don\\'ts.', [
@@ -7748,20 +7534,9 @@ async function exportInstallerBackupManifest() {{
     }}
 }}
 
-function renderSecurityProgress(steps = []) {{
-    const rows = steps.length ? steps : [
-        {{ label: 'Preparing local review', status: 'Waiting', detail: 'Waiting to start.' }},
-        {{ label: 'Reading standard security locations', status: 'Waiting', detail: 'Waiting to read local review sources.' }},
-        {{ label: 'Checking file signatures and SHA-256 hashes', status: 'Waiting', detail: 'Waiting to verify referenced files.' }},
-        {{ label: 'Running optional Advanced Review collectors', status: 'Waiting', detail: 'Waiting for Advanced Review selection.' }},
-        {{ label: 'Saving local security check record', status: 'Waiting', detail: 'No lifecycle record has been saved yet.' }}
-    ];
-    $('securityProgress').innerHTML = rows.map(step => `
-        <div class="security-step">
-            <span><strong>${{esc(step.label)}}</strong><br><span class="muted">${{esc(step.detail || '')}}</span></span>
-            <span class="security-step-status">${{esc(step.status || 'Waiting')}}</span>
-        </div>
-    `).join('');
+function renderSecurityProgress(steps = [], status = null) {{
+    const rows = Workspace.stepRows(steps, status);
+    $('securityProgress').innerHTML = rows.map(step => `<div class="security-step"><span><strong>${{esc(step.label)}}</strong><br><span class="muted">${{esc(step.detail || '')}}</span></span><span class="security-step-status">${{esc(step.status)}}</span></div>`).join('');
 }}
 
 function uniqueCount(items) {{
@@ -7809,27 +7584,18 @@ function securityCoverageHtml(status) {{
 }}
 
 function renderSecuritySummary(summary = {{}}, status = null) {{
-    const findings = status?.findings || [];
-    const needsReview = findings.filter(finding => finding.status === 'Needs Review').length;
-    const noObvious = findings.filter(finding => finding.status === 'No Obvious Issue').length;
-    const categories = uniqueCount(findings.map(finding => finding.category));
     const coverage = securityCoverageView(status);
+    const ran = Boolean(status?.check_id);
+    const findings = Array.isArray(status?.findings) ? status.findings : null;
+    const missing = ran ? 'Not recorded' : 'Not run';
     $('securitySummary').innerHTML = [
-        metric('Overall Status', summary.overall_status || 'Not Run'),
+        metric('Overall Status', status?.status || 'Not run'),
         metric('Collector Coverage', coverage.status),
-        metric('Complete Collectors', coverage.recorded ? `${{coverage.complete}} / ${{coverage.selected}} selected` : coverage.status),
-        metric('Disabled Collectors', coverage.recorded ? coverage.disabled : coverage.status),
-        metric('Findings', summary.findings_total || 0),
-        metric('Needs Review', needsReview),
-        metric('No Obvious Issue', noObvious),
-        metric('High Review', summary.high_review || 0),
-        metric('Medium Review', summary.medium_review || 0),
-        metric('Low Review', summary.low_review || 0),
-        metric('Categories', categories),
-        metric('Unsigned Files', summary.unsigned_files || 0),
-        metric('Allowlist Matches', summary.allowlist_matches || 0),
-        metric('Baseline Changes', summary.baseline_changes || 0),
-        metric('Skipped Sources', summary.skipped_count || 0)
+        metric('Findings', summary.findings_total ?? (findings ? findings.length : missing)),
+        metric('Needs Review', findings ? findings.filter(f=>f.status === 'Needs Review').length : missing),
+        metric('Skipped Sources', summary.skipped_count ?? missing),
+        metric('Baseline Changes', status?.baseline_comparison
+            ? ['new','changed','removed'].reduce((total,key)=>total + (status.baseline_comparison[key] ?? 0),0) : 'Not compared')
     ].join('') + (coverage.recorded && !['complete','pending','running'].includes(coverage.status)
         ? '<p class="notice warning" role="status">Collector coverage is incomplete. Review source limitations before interpreting missing findings.</p>' : '');
 }}
@@ -7998,7 +7764,10 @@ function buildSecurityTimelineRows(status) {{
     if (!status || !status.check_id) return rows;
 
     addTimelineRow(rows, status.started_at, 'Security Check Started', status.check_id, `Mode: ${{status.mode || 'standard'}}`, 'Info');
-    addTimelineRow(rows, status.completed_at, 'Security Check Completed', status.check_id, `Status: ${{status.status || 'Unavailable'}}`, status.status === 'failed' ? 'High Review' : 'Info');
+    if (status.completed_at || ['completed','cancelled','failed'].includes(status.status)) {{
+        const outcome = status.status === 'completed' ? 'Completed' : status.status === 'cancelled' ? 'Cancelled' : status.status === 'failed' ? 'Failed' : 'Finalized';
+        addTimelineRow(rows, status.completed_at, `Security Check ${{outcome}}`, status.check_id, `Status: ${{status.status || 'Unavailable'}}`, status.status === 'failed' ? 'High Review' : 'Info');
+    }}
 
     const comparison = status.baseline_comparison || null;
     if (comparison) {{
@@ -8044,26 +7813,7 @@ function buildSecurityTimelineRows(status) {{
 }}
 
 function renderSecurityTimeline(status) {{
-    const rows = buildSecurityTimelineRows(status);
-    const missing = rows.filter(row => row.missingTime).length;
-    $('securityTimelineSummary').innerHTML = [
-        metric('Timeline Rows', rows.length),
-        metric('Missing Times', missing),
-        metric('Evidence Only', 'No causation')
-    ].join('');
-    $('securityTimelineRows').innerHTML = rows.map(row => {{
-        const action = row.findingId
-            ? `<button type="button" data-timeline-finding="${{esc(row.findingId)}}">Details</button>`
-            : '<span class="muted">No linked finding</span>';
-        return `<tr>
-            <td>${{esc(row.time || 'Time unavailable')}}</td>
-            <td>${{esc(row.type)}}</td>
-            <td>${{esc(row.item)}}</td>
-            <td>${{esc(row.summary)}}</td>
-            <td>${{esc(row.severity)}}</td>
-            <td>${{action}}</td>
-        </tr>`;
-    }}).join('') || '<tr><td colspan="6">No timeline rows are available for this Security Check record.</td></tr>';
+    Workspace.renderTimeline(status);
 }}
 
 async function refreshSecurityAllowlist(showAlert = true) {{
@@ -8297,33 +8047,7 @@ function renderSecurityCategoryBlocks(status) {{
 }}
 
 function renderSecurityFindings(status) {{
-    const findings = filteredSecurityFindings(status);
-    if (!findings.length) {{
-        const hasAny = (status?.findings || []).length > 0;
-        $('securityFindingsRows').innerHTML = `<tr><td colspan="6">${{hasAny ? 'No findings match the current filter.' : 'No findings were collected yet. Run a Security Check or review skipped sources below.'}}</td></tr>`;
-        renderSecurityRunDetail(status);
-        return;
-    }}
-    $('securityFindingsRows').innerHTML = findings.map(finding => {{
-        const reasons = (finding.review_reasons || []).join('; ') || finding.status || 'Review item';
-        const baseline = finding.baseline_status ? `<br><span class="security-badge">${{esc(finding.baseline_status)}}</span>` : '';
-        const allowlist = finding.allowlist_status ? `<br><span class="security-badge">allowlist match</span>` : '';
-        const selected = finding.finding_id === state.selectedSecurityFindingId ? ' selected' : '';
-        return `<tr class="security-finding-row${{selected}}" tabindex="0" role="button" aria-label="Open finding details" data-security-finding="${{esc(finding.finding_id)}}">
-            <td>${{esc(finding.severity || 'Info')}}</td>
-            <td>${{esc(finding.score ?? 0)}}</td>
-            <td>${{esc(finding.category || 'Uncategorized')}}</td>
-            <td>${{esc(finding.title || 'Untitled')}}${{baseline}}${{allowlist}}</td>
-            <td>${{esc(reasons)}}</td>
-            <td><button type="button" data-security-finding="${{esc(finding.finding_id)}}">Details</button></td>
-        </tr>`;
-    }}).join('');
-
-    if (state.selectedSecurityFindingId && findings.some(finding => finding.finding_id === state.selectedSecurityFindingId)) {{
-        renderSecurityFindingDetail(status, state.selectedSecurityFindingId);
-    }} else {{
-        renderSecurityRunDetail(status);
-    }}
+    Workspace.renderFindings(status);
 }}
 
 function renderSecurityRunDetail(status) {{
@@ -8342,6 +8066,10 @@ function renderSecurityRunDetail(status) {{
 }}
 
 function renderSecurityFindingDetail(status, findingId) {{
+    Workspace.openFinding(status, findingId);
+}}
+
+function renderSecurityFindingContent(status, findingId) {{
     const finding = (status?.findings || []).find(item => item.finding_id === findingId);
     if (!finding) {{
         renderSecurityRunDetail(status);
@@ -8531,7 +8259,7 @@ function securityTimelineHtml(status) {{
 }}
 
 function securityStepsHtml(status) {{
-    const rows = asArray(status.steps).map(step => `<tr><td>${{esc(step.label || step.id || 'Step')}}</td><td>${{esc(step.status || 'Unknown')}}</td><td>${{esc(step.detail || '')}}</td></tr>`).join('');
+    const rows = Workspace.stepRows(status.steps, status).map(step => `<tr><td>${{esc(step.label || step.id || 'Step')}}</td><td>${{esc(step.status || 'Not recorded')}}</td><td>${{esc(step.detail || '')}}</td></tr>`).join('');
     return `<h2>Lifecycle Steps</h2>
 <table><thead><tr><th>Step</th><th>Status</th><th>Detail</th></tr></thead>
 <tbody>${{rows || '<tr><td colspan="3">No lifecycle step details recorded.</td></tr>'}}</tbody></table>`;
@@ -8664,16 +8392,18 @@ function renderSecurityCheckStatus(status) {{
         $('securityStatus').textContent = 'No Security Check running.';
         renderSecurityProgress();
         renderSecuritySummary();
+        Workspace.renderCoverage(null);
         renderSecurityFilterOptions(null);
         renderSecurityCategoryBlocks(null);
-        $('securityFindingsRows').innerHTML = '<tr><td colspan="6">No security findings yet. Run a Security Check to populate this table.</td></tr>';
+        renderSecurityFindings(null);
         renderSecurityRunDetail(null);
         return;
     }}
 
     state.currentSecurityStatus = status;
-    renderSecurityProgress(status.steps || []);
+    renderSecurityProgress(status.steps || [], status);
     renderSecuritySummary(status.summary || {{}}, status);
+    Workspace.renderCoverage(status);
     renderSecurityFilterOptions(status);
     const options = status.options || {{}};
     $('securityStatus').innerHTML = `Security Check <code>${{esc(status.check_id)}}</code><br>Status: <strong>${{esc(status.status)}}</strong> | Mode: ${{esc(status.mode || 'standard')}} | Registry backup opt-in: ${{options.registry_backup_opt_in ? 'yes' : 'no'}}`;
@@ -8763,14 +8493,16 @@ async function pollSecurityStatus() {{
             const statusKey = `${{status.check_id}}:${{status.status}}`;
             if (state.lastSecurityStatusKey !== statusKey) {{
                 state.lastSecurityStatusKey = statusKey;
-                const alertType = status.status === 'completed' ? 'success' : (status.status === 'cancelled' ? 'warning' : 'error');
+                const coverage = securityCoverageView(status);
+                const alertType = status.status === 'completed' ? (coverage.status === 'complete' ? 'success' : 'warning') : (status.status === 'cancelled' ? 'warning' : 'error');
                 const title = status.status === 'completed' ? 'Security Check Completed' : (status.status === 'cancelled' ? 'Security Check Cancelled' : 'Security Check Failed');
                 showActionAlert(alertType, title, `Security Check status: ${{status.status}}.`, [
                     `Check ID: ${{status.check_id}}`,
                     `Record: ${{status.record_path || 'Unavailable'}}`,
                     status.error ? `Error: ${{status.error}}` : 'A local lifecycle record was saved.',
-                    `Findings collected: ${{status.summary?.findings_total || 0}}; skipped sources: ${{status.summary?.skipped_count || 0}}.`
-                ]);
+                    `Findings collected: ${{status.summary?.findings_total ?? 'Not recorded'}}; skipped sources: ${{status.summary?.skipped_count ?? 'Not recorded'}}.`,
+                    `Collector coverage: ${{coverage.status}}. Missing evidence is not a clean result.`
+                ], {{eventId: `security:${{statusKey}}`}});
             }}
         }}
     }} catch (error) {{
@@ -9466,11 +9198,15 @@ async function exitApp() {{
 
 {studio_script}
 {process_script}
+{workspace_script}
 Studio.init();
 ProcessWorkspace.init({{doc:document,win:window,readState:()=>state,api,visibleProcesses:getVisibleProcesses,
     groupProcesses,publisherLabel,needsReview,reviewReasons:reviewReasonsForProcess,formatBytes,
     notify:showActionAlert,copyText:writeClipboardText}});
 ProcessWorkspace.render();
+Workspace.init({{doc:document,win:window,readState:()=>state,coverage:securityCoverageView,
+    filteredFindings:filteredSecurityFindings,renderFindingContent:renderSecurityFindingContent,
+    timeline:buildSecurityTimelineRows}});
 document.addEventListener('click',event=>{{
     if(event.target.closest('[data-open-process-help]')){{showTab('manual');$('processVerificationHelp').open=true;$('processVerificationHelp').querySelector('summary').focus();}}
     if(event.target.closest('[data-open-processes]')){{showTab('processes');$('processFilter').focus();}}

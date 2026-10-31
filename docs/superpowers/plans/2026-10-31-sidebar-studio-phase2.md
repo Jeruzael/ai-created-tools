@@ -34,7 +34,7 @@ No merge, deployment, cleanup, deletion, process termination or Windows changes.
   mark-read/clear/dismiss, dedup, visible/read handling; verify and commit.
 - [x] B: full-width paged/sorted/grouped process table and accessible inspector;
   async selection guards, unavailable evidence, exports/help relocation; commit.
-- [ ] C: Run/Findings/Coverage/Baselines/Allowlist/Timeline/Reports navigation,
+- [x] C: Run/Findings/Coverage/Baselines/Allowlist/Timeline/Reports navigation,
   compact honest summary, paged evidence and finding drawer; commit.
 - [ ] D: focused Installer views, paged History, help categories/search and
   expandable About metadata, preserving Phase 1; commit.
@@ -68,3 +68,10 @@ changes were attempted. Connected GitHub independently confirmed the base SHA.
 - B: 37 new sidecar tests passed. Parent integrated existing API/filter/export
   bridges and moved the complete verification guide to Help. Full working suite
   passed 307 (including six uncommitted C model tests); B's scoped gate is 301.
+- C: 12 presentation/model/DOM-port tests and three core report regressions added.
+  The three historical/report assertions failed before the correction. Strict
+  gate: 316 passed, zero failures/errors/skips. Seven views, bounded findings and
+  timeline, focus-return drawer, coverage/source evidence, six summaries and
+  cancelled historical presentation are integrated. Raw records are unchanged.
+  Native dialog behavior, browser layout and screen-reader operation remain
+  NOT VERIFIED; a lightweight DOM port is not a visual/browser acceptance test.
