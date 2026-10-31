@@ -7476,8 +7476,8 @@ async function api(path, options = {{}}) {{
     return data;
 }}
 
-function showActionAlert(type, title, message, details = []) {{
-    Studio.notify(type, title, message, details);
+function showActionAlert(type, title, message, details = [], options = {{}}) {{
+    Studio.notify(type, title, message, details, options);
 }}
 
 function setExitState(workActive, reason = '', workType = 'scan') {{
@@ -9005,7 +9005,7 @@ async function startScan() {{
         `Safety acknowledged: ${{payload.acknowledgeSafety ? 'yes' : 'no'}}`
     ]);
     try {{
-        await api('/api/scans', {{ method: 'POST', body: JSON.stringify(payload) }});
+        const started = await api('/api/scans', {{ method: 'POST', body: JSON.stringify(payload) }});
         $('startScan').disabled = true;
         $('cancelScan').disabled = false;
         setExitState(true, 'Cancel or wait for the current scan to finish before exiting.');
@@ -9013,7 +9013,7 @@ async function startScan() {{
         showActionAlert('success', 'Scan Started', 'Live progress is now visible in the scan status panel.', [
             `Path: ${{payload.root}}`,
             'The tool is still read-only and will save a local scan record when done.'
-        ]);
+        ], started.scan_id ? {{eventId:`scan:${{started.scan_id}}:started`}} : {{}});
         showTab('scan');
     }} catch (error) {{
         showActionAlert('error', 'Action Failed', error.message, [
@@ -9062,7 +9062,7 @@ async function pollStatus() {{
                         `Health: ${{status.result.scan_health?.title || 'Unavailable'}}`,
                         status.result.scan_health?.message || 'Review scan health details in Results.',
                         status.error ? `Error: ${{status.error}}` : 'A local scan record was saved.'
-                    ]);
+                    ], {{eventId:`scan:${{status.scan_id}}:${{status.status}}`}});
                 }}
             }}
         }}
